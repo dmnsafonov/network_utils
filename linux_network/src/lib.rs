@@ -2,6 +2,7 @@
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
+extern crate pnet_packet;
 
 #[macro_use] extern crate numeric_enums;
 
@@ -22,3 +23,11 @@ pub use self::socket::*;
 pub use self::structs::*;
 
 pub use numeric_enums::*;
+
+pub use pnet_packet::ipv6::Ipv6;
+pub use pnet_packet::icmpv6::{
+    Icmpv6,
+    Icmpv6Code,
+    Icmpv6Type,
+};
+pub use pnet_packet::icmpv6::checksum as icmpv6_checksum;

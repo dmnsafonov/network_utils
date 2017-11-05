@@ -1,5 +1,9 @@
 error_chain!(
     errors {
+        BufferTooSmall(len: ::libc::size_t) {
+            description("provided buffer too small")
+            display("provided buffer of length {} too small", len)
+        }
         IfNameTooLong(name: String) {
             description("interface name too long")
             display("interface name \"{}\" is too long", name)

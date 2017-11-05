@@ -6,6 +6,9 @@ use ::std::ptr::*;
 
 use ::libc::*;
 use ::nix::sys::socket::{AddressFamily, SockType, SOCK_NONBLOCK};
+use ::pnet_packet::*;
+use ::pnet_packet::ip::IpNextHeaderProtocols;
+use ::pnet_packet::ipv6::*;
 
 use ::numeric_enums::*;
 
@@ -16,7 +19,10 @@ use ::functions::raw::*;
 use ::structs::raw::*;
 use ::util::*;
 
-pub struct IpV6Socket(RawFd);
+pub struct IpV6Socket {
+    fd: RawFd,
+    proto: c_int
+}
 
 impl IpV6Socket {
     pub fn new(family: AddressFamily, typ: SockType, proto: c_int)
@@ -28,14 +34,15 @@ impl IpV6Socket {
         };
 
         Ok(
-            IpV6Socket(
-                ::nix::sys::socket::socket(
+            IpV6Socket {
+                fd: ::nix::sys::socket::socket(
                     family,
                     typ,
                     SOCK_NONBLOCK,
                     proto_arg
-                )?
-            )
+                )?,
+                proto: proto
+            }
         )
     }
 
@@ -84,7 +91,7 @@ impl IpV6Socket {
         };
 
         n1try!(::libc::setsockopt(
-            self.0,
+            self.fd,
             level.to_num(),
             opt.to_num(),
             arg,
@@ -128,9 +135,9 @@ impl IpV6Socket {
 
         let mut addr_size = size_of_val(&addr) as socklen_t;
         let size = n1try!(::libc::recvfrom(
-            self.0,
+            self.fd,
             ref_to_mut_cvoid(buf),
-            buf.len(),
+            buf.len() as size_t,
             flags.get(),
             transmute::<&mut sockaddr_in6, &mut sockaddr>(&mut addr),
             &mut addr_size
@@ -146,9 +153,9 @@ impl IpV6Socket {
         Ok((&mut buf[..size as usize], sockaddr))
     }}
 
-    pub fn sendto<'a>(
+    pub fn sendto(
         &mut self,
-        buf: &'a [u8],
+        buf: &[u8],
         addr: SocketAddrV6,
         flags: SendFlagSet
     ) -> Result<size_t> { unsafe {
@@ -164,24 +171,69 @@ impl IpV6Socket {
         addr_in.sin6_addr = addr_raw;
 
         Ok(n1try!(::libc::sendto(
-            self.0,
+            self.fd,
             ref_to_cvoid(buf),
-            buf.len(),
+            buf.len() as size_t,
             flags.get(),
             transmute::<&sockaddr_in6, &sockaddr>(&addr_in),
             addr_size)) as size_t
         )
     }}
+
+    pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
+            -> Result<Ipv6> {
+        let mut packet = MutableIpv6Packet::owned(vec![0; maxsize])
+            .ok_or(ErrorKind::BufferTooSmall(maxsize))?;
+        match self.proto {
+            IPPROTO_IPV6 => unimplemented!(),
+            _ => {
+                let (len, addr) = (|(x,y): (&mut [u8],_)| (x.len(),y))
+                    (self.recvfrom(packet.payload_mut(), flags)?);
+                packet.set_version(6);
+                packet.set_flow_label(addr.flowinfo());
+                packet.set_payload_length(len as u16);
+                packet.set_next_header(match self.proto {
+                    IPPROTO_ICMPV6 => IpNextHeaderProtocols::Icmpv6,
+                    _ => unimplemented!()
+                });
+                packet.set_source(*addr.ip());
+
+                Ok(packet.from_packet())
+            }
+        }
+    }
+
+    pub fn sendpacket(
+            &mut self,
+            packet: &Ipv6,
+            scope_id: u32,
+            flags: SendFlagSet)
+                -> Result<size_t> {
+        let mut buf = MutableIpv6Packet::owned(
+            vec![0; Ipv6Packet::packet_size(&packet)]).unwrap();
+        buf.populate(&packet);
+
+        Ok(self.sendto(
+            buf.packet(),
+            SocketAddrV6::new(
+                packet.destination,
+                0,
+                packet.flow_label,
+                scope_id
+            ),
+            flags
+        )?)
+    }
 }
 
 impl Drop for IpV6Socket {
     fn drop(&mut self) {
-        log_if_err(::nix::unistd::close(self.0).map_err(Error::from));
+        log_if_err(::nix::unistd::close(self.fd).map_err(Error::from));
     }
 }
 
 impl AsRawFd for IpV6Socket {
     fn as_raw_fd(&self) -> RawFd {
-        self.0
+        self.fd
     }
 }
