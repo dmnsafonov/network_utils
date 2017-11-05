@@ -19,7 +19,8 @@ use ::util::*;
 pub struct IpV6Socket(RawFd);
 
 impl IpV6Socket {
-    pub fn new(family: AddressFamily, typ: SockType, proto: c_int) -> Result<IpV6Socket> {
+    pub fn new(family: AddressFamily, typ: SockType, proto: c_int)
+            -> Result<IpV6Socket> {
         let proto_arg = match family {
             AddressFamily::Inet6 => proto,
             AddressFamily::Packet => (proto as u16).to_be() as i32,
@@ -93,7 +94,8 @@ impl IpV6Socket {
         Ok(())
     }}
 
-    pub fn set_allmulti<T>(&mut self, allmulti: bool, ifname: T) -> Result<bool>
+    pub fn set_allmulti<T>(&mut self, allmulti: bool, ifname: T)
+            -> Result<bool>
             where T: AsRef<str> { unsafe {
         let mut ifr: ifreq = zeroed();
         let ifname_bytes = ifname.as_ref().as_bytes();
@@ -120,7 +122,7 @@ impl IpV6Socket {
         Ok(prev != 0)
     }}
 
-    pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: SendRcvFlagSet)
+    pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlagSet)
             -> Result<(&'a mut [u8], SocketAddrV6)> { unsafe {
         let mut addr: sockaddr_in6 = zeroed();
 
@@ -142,6 +144,33 @@ impl IpV6Socket {
         );
 
         Ok((&mut buf[..size as usize], sockaddr))
+    }}
+
+    pub fn sendto<'a>(
+        &mut self,
+        buf: &'a [u8],
+        addr: SocketAddrV6,
+        flags: SendFlagSet
+    ) -> Result<size_t> { unsafe {
+        let mut addr_in: sockaddr_in6 = zeroed();
+        let addr_size = size_of_val(&addr_in) as socklen_t;
+
+        addr_in.sin6_family = AddressFamily::Inet6 as u16;
+        addr_in.sin6_flowinfo = addr.flowinfo();
+        addr_in.sin6_scope_id = addr.scope_id();
+
+        let mut addr_raw: in6_addr = zeroed();
+        addr_raw.s6_addr = addr.ip().octets();
+        addr_in.sin6_addr = addr_raw;
+
+        Ok(n1try!(::libc::sendto(
+            self.0,
+            ref_to_cvoid(buf),
+            buf.len(),
+            flags.get(),
+            transmute::<&sockaddr_in6, &sockaddr>(&addr_in),
+            addr_size)) as size_t
+        )
     }}
 }
 

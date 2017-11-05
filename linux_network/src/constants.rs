@@ -183,7 +183,7 @@ gen_enum!(pub IcmpV6Type: uint8_t;
     (ND_REDIRECT => NdRedirect)
 );
 
-gen_enum!(pub SendRcvFlags: c_int;
+gen_enum!(pub RecvFlags: c_int;
     (MSG_CMSG_CLOEXEC => CmsgCloexec),
     (MSG_DONTWAIT => DontWait),
     (MSG_ERRQUEUE => ErrQueue),
@@ -192,7 +192,18 @@ gen_enum!(pub SendRcvFlags: c_int;
     (MSG_TRUNC => Trunc),
     (MSG_WAITALL => WaitAll)
 );
-gen_flag_set!(pub SendRcvFlagSet, SendRcvFlags: c_int);
+gen_flag_set!(pub RecvFlagSet, RecvFlags: c_int);
+
+gen_enum!(pub SendFlags: c_int;
+    (MSG_CONFIRM => Confirm),
+    (MSG_DONTROUTE => DontRoute),
+    (MSG_DONTWAIT => DontWait),
+    (MSG_EOR => Eor),
+    (MSG_MORE => More),
+    (MSG_NOSIGNAL => NoSignal),
+    (MSG_OOB => Oob)
+);
+gen_flag_set!(pub SendFlagSet, SendFlags: c_int);
 
 gen_enum!(pub BpfCommandFlags: u16;
     (BPF_LD => LD),
