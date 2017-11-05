@@ -1,0 +1,9 @@
+[package]
+name = "ipv6_packet"
+version = "0.1.0"
+authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
+
+[dependencies]
+linux_network = { path = "../linux_network" }
+nom = "^3.2.1"
+numeric_enums = { path = "../numeric_enums" }

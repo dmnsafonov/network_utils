@@ -1,0 +1,7 @@
+[package]
+name = "ping6-datasend"
+version = "0.1.0"
+authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
+
+[dependencies]
+rsicmp6 = { path = "../rsicmp6" }

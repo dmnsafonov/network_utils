@@ -1,0 +1,23 @@
+[package]
+name = "rsndpproxy"
+version = "0.1.0"
+authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
+description = "Simple NDP proxy implementation, written in Rust."
+
+[dependencies]
+error-chain = "^0.11.0"
+env_logger = "^0.4.3"
+capabilities = "^0.3.0"
+clap = "^2.26.2"
+interfaces = "^0.0.3"
+ipnetwork = "^0.12.7"
+libc = "^0.2.31"
+log = "^0.3.8"
+linux_network = { path = "../linux_network" }
+nix = "^0.9.0"
+pnet_packet = "^0.20.0"
+serde = "^1.0.15"
+serde_derive = "^1.0.15"
+syslog = "^3.3.0"
+toml = "^0.4.5"
+users = "^0.6.0"
