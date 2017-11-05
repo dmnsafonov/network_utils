@@ -139,8 +139,6 @@ fn serve_requests(config: &Config) -> Result<()> {
         servers.insert(s.as_raw_fd(), s);
     }
 
-    drop_net_admin()?;
-
     for ev in &*epoll.borrow() {
         let fd = ev.data() as RawFd;
 
@@ -263,25 +261,6 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     debug!("dropped linux capabilities");
 
     // TODO: chroot, namespaces
-
-    Ok(())
-}
-
-fn drop_net_admin() -> Result<()> {
-    use capabilities::*;
-
-    let mut caps = Capabilities::new()
-        .chain_err(|| ErrorKind::PrivDrop)?;
-    let req_caps = [
-        Capability::CAP_NET_BROADCAST,
-        Capability::CAP_NET_RAW
-    ];
-
-    if !caps.update(&req_caps, Flag::Permitted, true) {
-        bail!(ErrorKind::PrivDrop);
-    }
-
-    debug!("dropped the NET_ADMIN capability");
 
     Ok(())
 }
