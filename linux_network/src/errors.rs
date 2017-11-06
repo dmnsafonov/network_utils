@@ -8,9 +8,17 @@ error_chain!(
             description("interface name too long")
             display("interface name \"{}\" is too long", name)
         }
+        NoInterface(name: String) {
+            description("cannot find the requested interface")
+            display("cannot find interface {}", name)
+        }
+        WrongSize {
+            description("wrone buffer length")
+        }
     }
 
     foreign_links {
+        InterfacesError(::interfaces::InterfacesError);
         IoError(::std::io::Error);
         NixError(::nix::Error);
         NullInString(::std::ffi::NulError);

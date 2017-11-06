@@ -8,11 +8,11 @@ use ::numeric_enums::*;
 
 use ::*;
 use ::constants::raw::*;
+use ::structs::raw::*;
 use ::errors::*;
 
 pub mod raw {
     use super::*;
-    use super::structs::raw::*;
 
     macro_rules! ioctl {
         ( $name:ident; $command:expr; $typ:ty ) => (
@@ -26,6 +26,7 @@ pub mod raw {
 
     ioctl!(get_interface_flags; super::constants::raw::SIOCGIFFLAGS; ifreq);
     ioctl!(set_interface_flags; super::constants::raw::SIOCSIFFLAGS; ifreq);
+    ioctl!(get_interface_index; super::constants::raw::SIOCGIFINDEX; ifreq);
 }
 
 pub fn get_securebits() -> Result<SecBitSet> { unsafe {
@@ -71,4 +72,48 @@ pub fn fcntl_lock_fd<F>(fd: &mut F) -> Result<()>
     lock.l_whence = SEEK_SET as c_short;
     n1try!(fcntl(fd.as_raw_fd(), F_SETLK, &mut lock));
     Ok(())
+}}
+
+fn ifreq_with_ifname<F,T>(fd: &F, ifname: T)
+        -> Result<ifreq> where
+        F: AsRawFd + ?Sized,
+        T: AsRef<str> { unsafe {
+    let mut ifr: ifreq = zeroed();
+
+    let ifname_ref = ifname.as_ref();
+    let ifname_bytes = ifname_ref.as_bytes();
+    if ifname_bytes.len() >= IFNAMSIZ {
+        bail!(ErrorKind::IfNameTooLong(ifname_ref.to_string()));
+    }
+    copy_nonoverlapping(ifname_bytes.as_ptr(),
+        ifr.ifr_name.as_mut_ptr() as *mut u8,
+        ifname_bytes.len());
+
+    Ok(ifr)
+}}
+
+pub fn get_interface_flags<F,T>(fd: &F, ifname: T) -> Result<c_short> where
+        F: AsRawFd + ?Sized,
+        T: AsRef<str> { unsafe {
+    let mut ifr = ifreq_with_ifname(fd, ifname)?;
+    self::raw::get_interface_flags(fd, &mut ifr)?;
+    Ok(ifr.un.ifr_flags)
+}}
+
+pub fn set_interface_flags<F,T>(fd: &F, ifname: T, flags: c_short)
+        -> Result<()> where
+        F: AsRawFd + ?Sized,
+        T: AsRef<str> { unsafe {
+    let mut ifr = ifreq_with_ifname(fd, ifname)?;
+    ifr.un.ifr_flags = flags;
+    self::raw::set_interface_flags(fd, &mut ifr)?;
+    Ok(())
+}}
+
+pub fn get_interface_index<F,T>(fd: &F, ifname: T) -> Result<c_int> where
+        F: AsRawFd + ?Sized,
+        T: AsRef<str> { unsafe {
+    let mut ifr = ifreq_with_ifname(fd, ifname)?;
+    self::raw::get_interface_index(fd, &mut ifr)?;
+    Ok(ifr.un.ifr_ifindex)
 }}

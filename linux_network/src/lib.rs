@@ -1,4 +1,5 @@
 #[macro_use] extern crate error_chain;
+extern crate interfaces;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
