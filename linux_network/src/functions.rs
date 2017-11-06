@@ -17,7 +17,7 @@ pub mod raw {
     macro_rules! ioctl {
         ( $name:ident; $command:expr; $typ:ty ) => (
             pub unsafe fn $name<T>(fd: &T, arg: &mut $typ) -> Result<()>
-                    where T: AsRawFd {
+                    where T: AsRawFd + ?Sized {
                 n1try!(ioctl(fd.as_raw_fd(), $command, arg as *mut $typ));
                 Ok(())
             }

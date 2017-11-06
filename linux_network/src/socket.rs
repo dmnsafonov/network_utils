@@ -19,6 +19,7 @@ use ::functions::raw::*;
 use ::structs::raw::*;
 use ::util::*;
 
+// TODO: split to packet and raw socket
 pub struct IpV6Socket {
     fd: RawFd,
     proto: c_int
@@ -45,89 +46,6 @@ impl IpV6Socket {
             }
         )
     }
-
-    pub fn setsockopt(&mut self, level: SockOptLevel, opt: &SockOpt)
-            -> Result<()> { unsafe {
-        let cint_arg: c_int;
-        let cstring_arg: CString;
-        let arg: *const c_void;
-        let size: socklen_t;
-
-        macro_rules! bool_opt {
-            ( $flag:ident ) => ({
-                cint_arg = $flag as c_int;
-                arg = ref_to_cvoid(&cint_arg);
-                size = size_of_val(&cint_arg) as socklen_t;
-            })
-        }
-
-        macro_rules! struct_opt {
-            ( $struct_ref:ident ) => ({
-                arg = ref_to_cvoid($struct_ref);
-                size = size_of_val($struct_ref) as socklen_t;
-            })
-        }
-
-        macro_rules! string_opt {
-            ( $str:ident ) => ({
-                cstring_arg = CString::new($str)?;
-                arg = cstring_arg.as_ptr() as *const c_void;
-                size = ($str.len() + 1) as socklen_t;
-
-                if size + 1 > raw::IFNAMSIZ as socklen_t {
-                    bail!(ErrorKind::IfNameTooLong($str.to_string()));
-                }
-            })
-        }
-
-        match opt {
-            &SockOpt::IpHdrIncl(f) => bool_opt!(f),
-            &SockOpt::IcmpV6Filter(filter) => struct_opt!(filter),
-            &SockOpt::BindToDevice(str) => string_opt!(str),
-            &SockOpt::DontRoute(f) => bool_opt!(f),
-            &SockOpt::V6Only(f) => bool_opt!(f),
-            &SockOpt::AttachFilter(filter) => struct_opt!(filter),
-            &SockOpt::LockFilter(f) => bool_opt!(f)
-        };
-
-        n1try!(::libc::setsockopt(
-            self.fd,
-            level.to_num(),
-            opt.to_num(),
-            arg,
-            size
-        ));
-
-        Ok(())
-    }}
-
-    pub fn set_allmulti<T>(&mut self, allmulti: bool, ifname: T)
-            -> Result<bool>
-            where T: AsRef<str> { unsafe {
-        let mut ifr: ifreq = zeroed();
-        let ifname_bytes = ifname.as_ref().as_bytes();
-
-        if ifname_bytes.len() >= IFNAMSIZ {
-            bail!(ErrorKind::IfNameTooLong(ifname.as_ref().to_string()));
-        }
-        copy_nonoverlapping(ifname_bytes.as_ptr(),
-            ifr.ifr_name.as_mut_ptr() as *mut u8,
-            ifname_bytes.len());
-
-        let iff_allmulti = IFF_ALLMULTI as c_short;
-
-        get_interface_flags(self, &mut ifr)?;
-        let prev = ifr.un.ifr_flags & iff_allmulti;
-
-        if allmulti {
-            ifr.un.ifr_flags |= iff_allmulti;
-        } else {
-            ifr.un.ifr_flags &= !iff_allmulti;
-        }
-        set_interface_flags(self, &mut ifr)?;
-
-        Ok(prev != 0)
-    }}
 
     pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlagSet)
             -> Result<(&'a mut [u8], SocketAddrV6)> { unsafe {
@@ -237,3 +155,91 @@ impl AsRawFd for IpV6Socket {
         self.fd
     }
 }
+
+pub trait SocketCommon where
+        Self: AsRawFd + Sized {
+    fn setsockopt(&mut self, level: SockOptLevel, opt: &SockOpt)
+            -> Result<()> { unsafe {
+        let cint_arg: c_int;
+        let cstring_arg: CString;
+        let arg: *const c_void;
+        let size: socklen_t;
+
+        macro_rules! bool_opt {
+            ( $flag:ident ) => ({
+                cint_arg = $flag as c_int;
+                arg = ref_to_cvoid(&cint_arg);
+                size = size_of_val(&cint_arg) as socklen_t;
+            })
+        }
+
+        macro_rules! struct_opt {
+            ( $struct_ref:ident ) => ({
+                arg = ref_to_cvoid($struct_ref);
+                size = size_of_val($struct_ref) as socklen_t;
+            })
+        }
+
+        macro_rules! string_opt {
+            ( $str:ident ) => ({
+                cstring_arg = CString::new($str)?;
+               arg = cstring_arg.as_ptr() as *const c_void;
+                size = ($str.len() + 1) as socklen_t;
+
+                if size + 1 > raw::IFNAMSIZ as socklen_t {
+                    bail!(ErrorKind::IfNameTooLong($str.to_string()));
+                }
+            })
+        }
+
+        match opt {
+            &SockOpt::IpHdrIncl(f) => bool_opt!(f),
+            &SockOpt::IcmpV6Filter(filter) => struct_opt!(filter),
+            &SockOpt::BindToDevice(str) => string_opt!(str),
+            &SockOpt::DontRoute(f) => bool_opt!(f),
+            &SockOpt::V6Only(f) => bool_opt!(f),
+            &SockOpt::AttachFilter(filter) => struct_opt!(filter),
+            &SockOpt::LockFilter(f) => bool_opt!(f)
+        };
+
+        n1try!(::libc::setsockopt(
+            self.as_raw_fd(),
+            level.to_num(),
+            opt.to_num(),
+            arg,
+            size
+        ));
+
+       Ok(())
+    }}
+
+    fn set_allmulti<T>(&mut self, allmulti: bool, ifname: T)
+            -> Result<bool>
+            where T: AsRef<str> { unsafe {
+        let mut ifr: ifreq = zeroed();
+        let ifname_bytes = ifname.as_ref().as_bytes();
+
+        if ifname_bytes.len() >= IFNAMSIZ {
+            bail!(ErrorKind::IfNameTooLong(ifname.as_ref().to_string()));
+        }
+        copy_nonoverlapping(ifname_bytes.as_ptr(),
+            ifr.ifr_name.as_mut_ptr() as *mut u8,
+            ifname_bytes.len());
+
+        let iff_allmulti = IFF_ALLMULTI as c_short;
+
+        get_interface_flags(self as &AsRawFd, &mut ifr)?;
+        let prev = ifr.un.ifr_flags & iff_allmulti;
+
+        if allmulti {
+            ifr.un.ifr_flags |= iff_allmulti;
+        } else {
+            ifr.un.ifr_flags &= !iff_allmulti;
+        }
+        set_interface_flags(self as &AsRawFd, &mut ifr)?;
+
+        Ok(prev != 0)
+    }}
+}
+
+impl SocketCommon for IpV6Socket {}
