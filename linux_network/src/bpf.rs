@@ -47,10 +47,10 @@ macro_rules! bpf_filter {
     );
 
     ( ( $( $acc:tt )+ );;; ($len:expr);;; bpf_stmt!( $( $arg:tt )+ ); $( $o:tt )* ) => (
-        bpf_filter!( ( $( $acc )*, bpf_stmt!( $( $arg )* ) );;; ($len);;; $( $o )* )
+        bpf_filter!( ( $( $acc )*, bpf_stmt!( $( $arg )* ) );;; ($len + 1);;; $( $o )* )
     );
     ( ( $( $acc:tt )+ );;; ($len:expr);;; bpf_jump!( $( $arg:tt )+ ); $( $o:tt )* ) => (
-        bpf_filter!( ( $( $acc )*, bpf_jump!( $( $arg )* ) );;; ($len);;; $( $o )* )
+        bpf_filter!( ( $( $acc )*, bpf_jump!( $( $arg )* ) );;; ($len + 1);;; $( $o )* )
     );
 
     ( ( $( $acc:tt )+ );;; ($len:expr);;; ) => ({
