@@ -48,7 +48,7 @@ pub fn set_no_new_privs(x: bool) -> Result<()> { unsafe {
     // see kernel Documentation/prctl/no_new_privs.txt for the 0's
     n1try!(prctl(
         PR_SET_NO_NEW_PRIVS,
-        if x {1} else {0} as c_ulong,
+        x as c_ulong,
         0 as c_ulong,
         0 as c_ulong,
         0 as c_ulong));

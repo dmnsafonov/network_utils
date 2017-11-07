@@ -42,7 +42,7 @@ impl IpV6RawSocket {
             ref_to_mut_cvoid(buf),
             buf.len() as size_t,
             flags.get(),
-            transmute::<&mut sockaddr_in6, &mut sockaddr>(&mut addr),
+            as_sockaddr_mut(&mut addr),
             &mut addr_size
         ));
 
@@ -78,7 +78,7 @@ impl IpV6RawSocket {
             ref_to_cvoid(buf),
             buf.len() as size_t,
             flags.get(),
-            transmute::<&sockaddr_in6, &sockaddr>(&addr_in),
+            as_sockaddr(&addr_in),
             addr_size)) as size_t
         )
     }}
@@ -141,7 +141,7 @@ impl IpV6PacketSocket {
             addr.sll_ifindex = ret.if_index;
             n1try!(bind(
                 sock,
-                transmute::<&sockaddr_ll, &sockaddr>(&addr),
+                as_sockaddr(&addr),
                 size_of_val(&addr) as socklen_t
             ));
         }
@@ -161,7 +161,7 @@ impl IpV6PacketSocket {
             ref_to_mut_cvoid(packet.packet_mut()),
             maxsize,
             flags.get(),
-            transmute::<&mut sockaddr_ll, &mut sockaddr>(&mut addr),
+            as_sockaddr_mut(&mut addr),
             &mut addr_size
         ));
 
@@ -195,7 +195,7 @@ impl IpV6PacketSocket {
             ref_to_cvoid(buf.packet()),
             len as size_t,
             flags.get(),
-            transmute::<&sockaddr_ll, &sockaddr>(&addr_ll),
+            as_sockaddr(&addr_ll),
             addr_size)) as size_t
         )
     }}
@@ -292,3 +292,11 @@ pub trait SocketCommon where
 
 impl SocketCommon for IpV6RawSocket {}
 impl SocketCommon for IpV6PacketSocket {}
+
+unsafe fn as_sockaddr<T>(x: &T) -> &sockaddr {
+    transmute::<&T, &sockaddr>(x)
+}
+
+unsafe fn as_sockaddr_mut<T>(x: &mut T) -> &mut sockaddr {
+    transmute::<&mut T, &mut sockaddr>(x)
+}
