@@ -6,7 +6,6 @@ use ::std::os::unix::prelude::*;
 use ::libc::*;
 use ::nix::sys::socket::{AddressFamily, SockType, SOCK_NONBLOCK, socket};
 use ::pnet_packet::*;
-use ::pnet_packet::ip::IpNextHeaderProtocols;
 use ::pnet_packet::ipv6::*;
 
 use ::numeric_enums::*;
@@ -151,12 +150,23 @@ impl IpV6PacketSocket {
     }
 
     pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
-            -> Result<(Ipv6, MacAddr)> {
+            -> Result<(Ipv6, MacAddr)> { unsafe {
         let mut packet = MutableIpv6Packet::owned(vec![0; maxsize])
             .ok_or(ErrorKind::BufferTooSmall(maxsize))?;
 
-        unimplemented!()
-    }
+        let mut addr: sockaddr_ll = zeroed();
+        let mut addr_size = size_of_val(&addr) as socklen_t;
+        n1try!(::libc::recvfrom(
+            self.fd,
+            ref_to_mut_cvoid(packet.packet_mut()),
+            maxsize,
+            flags.get(),
+            transmute::<&mut sockaddr_ll, &mut sockaddr>(&mut addr),
+            &mut addr_size
+        ));
+
+        Ok((packet.from_packet(), MacAddr::from_bytes(addr.sll_addr)?))
+    }}
 
     pub fn sendpacket(
             &mut self,

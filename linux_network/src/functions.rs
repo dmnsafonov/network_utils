@@ -74,9 +74,7 @@ pub fn fcntl_lock_fd<F>(fd: &mut F) -> Result<()>
     Ok(())
 }}
 
-fn ifreq_with_ifname<F,T>(fd: &F, ifname: T)
-        -> Result<ifreq> where
-        F: AsRawFd + ?Sized,
+fn ifreq_with_ifname<T>(ifname: T) -> Result<ifreq> where
         T: AsRef<str> { unsafe {
     let mut ifr: ifreq = zeroed();
 
@@ -95,7 +93,7 @@ fn ifreq_with_ifname<F,T>(fd: &F, ifname: T)
 pub fn get_interface_flags<F,T>(fd: &F, ifname: T) -> Result<c_short> where
         F: AsRawFd + ?Sized,
         T: AsRef<str> { unsafe {
-    let mut ifr = ifreq_with_ifname(fd, ifname)?;
+    let mut ifr = ifreq_with_ifname(ifname)?;
     self::raw::get_interface_flags(fd, &mut ifr)?;
     Ok(ifr.un.ifr_flags)
 }}
@@ -104,7 +102,7 @@ pub fn set_interface_flags<F,T>(fd: &F, ifname: T, flags: c_short)
         -> Result<()> where
         F: AsRawFd + ?Sized,
         T: AsRef<str> { unsafe {
-    let mut ifr = ifreq_with_ifname(fd, ifname)?;
+    let mut ifr = ifreq_with_ifname(ifname)?;
     ifr.un.ifr_flags = flags;
     self::raw::set_interface_flags(fd, &mut ifr)?;
     Ok(())
@@ -113,7 +111,7 @@ pub fn set_interface_flags<F,T>(fd: &F, ifname: T, flags: c_short)
 pub fn get_interface_index<F,T>(fd: &F, ifname: T) -> Result<c_int> where
         F: AsRawFd + ?Sized,
         T: AsRef<str> { unsafe {
-    let mut ifr = ifreq_with_ifname(fd, ifname)?;
+    let mut ifr = ifreq_with_ifname(ifname)?;
     self::raw::get_interface_index(fd, &mut ifr)?;
     Ok(ifr.un.ifr_ifindex)
 }}
