@@ -17,7 +17,7 @@ use ::util::*;
 use super::errors::{Error, ErrorKind, Result, ResultExt};
 
 pub struct Server<'a> {
-    sock: IpV6Socket,
+    sock: IpV6PacketSocket,
 //    tif: NetworkInterface,
     epoll: Rc<RefCell<EPoll<'a>>>,
     write_queue: VecDeque<Ipv6Packet<'a>>,
