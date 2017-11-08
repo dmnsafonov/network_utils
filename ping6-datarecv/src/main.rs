@@ -43,7 +43,10 @@ fn the_main() -> Result<()> {
         SockFlag::empty()
     )?;
     if let Some(ifname) = matches.value_of("bind") {
-        sock.setsockopt(SockOptLevel::Socket, &SockOpt::BindToDevice(ifname))?;
+        sock.setsockopt(
+            SockOptLevel::Socket,
+            &SockOpt::BindToDevice(ifname)
+        )?;
         info!("bound to {} interface", ifname);
     }
 
