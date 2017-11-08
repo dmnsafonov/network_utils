@@ -36,7 +36,7 @@ error_chain!(
     }
 
     links {
-        CBindings(
+        LinuxNetwork (
             ::linux_network::errors::Error,
             ::linux_network::errors::ErrorKind
         );
