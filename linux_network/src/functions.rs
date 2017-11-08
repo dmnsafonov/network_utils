@@ -7,8 +7,7 @@ use ::libc::*;
 use ::numeric_enums::*;
 
 use ::*;
-use ::constants::raw::*;
-use ::structs::raw::*;
+use ::raw::*;
 use ::errors::*;
 
 pub mod raw {
@@ -24,9 +23,9 @@ pub mod raw {
         )
     }
 
-    ioctl!(get_interface_flags; super::constants::raw::SIOCGIFFLAGS; ifreq);
-    ioctl!(set_interface_flags; super::constants::raw::SIOCSIFFLAGS; ifreq);
-    ioctl!(get_interface_index; super::constants::raw::SIOCGIFINDEX; ifreq);
+    ioctl!(get_interface_flags; SIOCGIFFLAGS; ifreq);
+    ioctl!(set_interface_flags; SIOCSIFFLAGS; ifreq);
+    ioctl!(get_interface_index; SIOCGIFINDEX; ifreq);
 }
 
 pub fn get_securebits() -> Result<SecBitSet> { unsafe {

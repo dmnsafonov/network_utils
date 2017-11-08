@@ -16,6 +16,12 @@ pub mod functions;
 pub mod socket;
 pub mod structs;
 
+pub mod raw {
+    pub use constants::raw::*;
+    pub use functions::raw::*;
+    pub use structs::raw::*;
+}
+
 pub use self::bpf::*;
 pub use self::epoll::*;
 pub use self::constants::*;

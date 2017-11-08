@@ -12,7 +12,7 @@ use ::numeric_enums::*;
 
 use ::*;
 use ::errors::{Error, ErrorKind, Result, ResultExt};
-use ::constants::raw::*;
+use ::raw::*;
 use ::util::*;
 
 pub struct IpV6RawSocket(RawFd);
@@ -243,7 +243,7 @@ pub trait SocketCommon where
                 arg = cstring_arg.as_ptr() as *const c_void;
                 size = ($str.len() + 1) as socklen_t;
 
-                if size + 1 > raw::IFNAMSIZ as socklen_t {
+                if size + 1 > IFNAMSIZ as socklen_t {
                     bail!(ErrorKind::IfNameTooLong($str.to_string()));
                 }
             })
