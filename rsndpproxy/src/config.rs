@@ -158,24 +158,24 @@ pub fn read_config() -> Result<Config> {
             .takes_value(true)
             .value_name("FILE")
             .default_value(DEFAULT_CONFIG_PATH)
-            .help("Sets configuration file name"))
-        .arg(Arg::with_name("daemonize")
+            .help("Sets configuration file name")
+        ).arg(Arg::with_name("daemonize")
             .short("d")
             .long("daemonize")
-            .help("Forks and sets log to syslog instead of the console"))
-        .arg(Arg::with_name("pid")
+            .help("Forks and sets log to syslog instead of the console")
+        ).arg(Arg::with_name("pid")
             .short("p")
             .long("pid-file")
             .takes_value(true)
             .value_name("FILE")
             .default_value(DEFAULT_PID_PATH)
-            .help("Sets pid file name"))
-        .arg(Arg::with_name("verbose")
+            .help("Sets pid file name")
+        ).arg(Arg::with_name("verbose")
             .short("v")
             .long("verbose")
             .help("Enables extremely verbose logging when daemonizing.  \
-                Use RUST_LOG for the console logging"))
-        .get_matches();
+                Use RUST_LOG for the console logging")
+        ).get_matches();
 
     let config_filename = matches.value_of_os("config").unwrap();
     let config_filename_str = config_filename.to_string_lossy().into_owned();
