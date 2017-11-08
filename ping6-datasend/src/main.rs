@@ -23,7 +23,6 @@ error_chain!(
 );
 
 use std::net::*;
-use std::ops::Add;
 use std::str::FromStr;
 
 use clap::*;
@@ -71,18 +70,8 @@ fn the_main() -> Result<()> {
     let src = SocketAddrV6::new(src_addr, 0, 0, 0);
 
     // TODO: support link-local addresses
-    let dest_addr = matches
-        .value_of("destination")
-        .unwrap()
-        .to_string()
-        .add(":0")
-        .to_socket_addrs()?
-        .filter(SocketAddr::is_ipv6)
-        .map(|x| match x {
-            SocketAddr::V6(x) => x.ip().clone(),
-            _ => unreachable!()
-        }).next()
-        .ok_or(ErrorKind::Msg("".to_string()))?;
+    let dest_addr = Ipv6Addr::from_str(matches.value_of("destination")
+        .unwrap())?;
     let dest = SocketAddrV6::new(dest_addr, 0, 0, 0);
 
     info!("resolved destination address: {}", dest);
@@ -91,7 +80,7 @@ fn the_main() -> Result<()> {
         libc::IPPROTO_ICMPV6,
         SockFlag::empty()
     )?;
-    sock.bind(&src)?;
+    sock.bind(src)?;
     debug!("bound to address {}", src);
 
     // TODO: drop privileges
