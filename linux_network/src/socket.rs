@@ -34,7 +34,7 @@ impl IpV6RawSocket {
         )
     }
 
-    pub fn bind(&mut self, addr: &SocketAddrV6) -> Result<()> { unsafe {
+    pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> { unsafe {
         let addr_in = make_sockaddr_in6(addr);
         n1try!(bind(
             self.0,
@@ -71,10 +71,10 @@ impl IpV6RawSocket {
     pub fn sendto(
         &mut self,
         buf: &[u8],
-        addr: &SocketAddrV6,
+        addr: SocketAddrV6,
         flags: SendFlagSet
     ) -> Result<size_t> { unsafe {
-        let addr_in = make_sockaddr_in6(&addr);
+        let addr_in = make_sockaddr_in6(addr);
         let addr_size = size_of_val(&addr_in) as socklen_t;
 
         Ok(n1try!(::libc::sendto(
@@ -100,7 +100,7 @@ impl AsRawFd for IpV6RawSocket {
     }
 }
 
-fn make_sockaddr_in6(addr: &SocketAddrV6) -> sockaddr_in6 { unsafe {
+fn make_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 { unsafe {
     let mut addr_in: sockaddr_in6 = zeroed();
 
     addr_in.sin6_family = AddressFamily::Inet6 as u16;

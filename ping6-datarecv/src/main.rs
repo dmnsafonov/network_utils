@@ -3,6 +3,7 @@ extern crate env_logger;
 #[macro_use] extern crate error_chain;
 extern crate libc;
 #[macro_use] extern crate log;
+extern crate pnet_packet;
 
 extern crate linux_network;
 
@@ -20,6 +21,8 @@ error_chain!(
 );
 
 use clap::*;
+use pnet_packet::icmpv6::*;
+
 use linux_network::*;
 
 quick_main!(the_main);
