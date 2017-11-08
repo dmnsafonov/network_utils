@@ -4,7 +4,7 @@ use ::std::net::*;
 use ::std::os::unix::prelude::*;
 
 use ::libc::*;
-use ::nix::sys::socket::{AddressFamily, SockFlag, SockType, socket};
+use ::nix::sys::socket::{AddressFamily, SockType, socket};
 use ::pnet_packet::*;
 use ::pnet_packet::ipv6::*;
 
@@ -14,6 +14,8 @@ use ::*;
 use ::errors::{Error, ErrorKind, Result, ResultExt};
 use ::raw::*;
 use ::util::*;
+
+pub use ::nix::sys::socket::SockFlag;
 
 pub struct IpV6RawSocket(RawFd);
 
