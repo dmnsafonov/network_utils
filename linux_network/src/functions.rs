@@ -26,6 +26,7 @@ pub mod raw {
     ioctl!(get_interface_flags; SIOCGIFFLAGS; ifreq);
     ioctl!(set_interface_flags; SIOCSIFFLAGS; ifreq);
     ioctl!(get_interface_index; SIOCGIFINDEX; ifreq);
+    ioctl!(get_interface_mtu; SIOCGIFMTU; ifreq);
 }
 
 pub fn get_securebits() -> Result<SecBitSet> { unsafe {
@@ -113,4 +114,12 @@ pub fn get_interface_index<F,T>(fd: &F, ifname: T) -> Result<c_int> where
     let mut ifr = ifreq_with_ifname(ifname)?;
     self::raw::get_interface_index(fd, &mut ifr)?;
     Ok(ifr.un.ifr_ifindex)
+}}
+
+pub fn get_interface_mtu<F,T>(fd: &F, ifname: T) -> Result<c_int> where
+        F: AsRawFd + ?Sized,
+        T: AsRef<str> { unsafe {
+    let mut ifr = ifreq_with_ifname(ifname)?;
+    self::raw::get_interface_mtu(fd, &mut ifr)?;
+    Ok(ifr.un.ifr_mtu)
 }}

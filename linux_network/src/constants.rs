@@ -34,6 +34,7 @@ pub mod raw {
     pub const SIOCGIFFLAGS: c_ulong = 0x8913;
     pub const SIOCSIFFLAGS: c_ulong = 0x8914;
     pub const SIOCGIFINDEX: c_ulong = 0x8933;
+    pub const SIOCGIFMTU: c_ulong = 0x8921;
 
     pub const BPF_LD: u16 = 0x00;
     pub const BPF_LDX: u16 = 0x01;
