@@ -27,6 +27,7 @@ use std::str::FromStr;
 
 use clap::*;
 use pnet_packet::icmpv6::*;
+use pnet_packet::Packet;
 
 use linux_network::*;
 
@@ -68,6 +69,7 @@ fn the_main() -> Result<()> {
         sock.bind(SocketAddrV6::new(
             Ipv6Addr::from_str(addr)?, 0, 0, 0)
         )?;
+        info!("bound to {} address", addr);
     }
     if let Some(ifname) = matches.value_of("bind-to-interface") {
         sock.setsockopt(
@@ -77,9 +79,23 @@ fn the_main() -> Result<()> {
         info!("bound to {} interface", ifname);
     }
 
+    let mut filter = icmp6_filter::new();
+    filter.pass(IcmpV6Type::EchoRequest);
+    sock.setsockopt(SockOptLevel::IcmpV6, &SockOpt::IcmpV6Filter(&filter))?;
+
     // TODO: drop privileges
 
-    // TODO: actually, receive datagrams
+    loop {
+        let mut buf = [0; 1280];
 
-    Ok(())
+        sock.recvfrom(&mut buf, RecvFlagSet::new())?;
+        let packet = Icmpv6Packet::new(&buf).unwrap();
+
+        if use_raw {
+            println!("received message: {}",
+                String::from_utf8_lossy(packet.payload()));
+        } else {
+            unimplemented!();
+        }
+    }
 }
