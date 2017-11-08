@@ -33,7 +33,7 @@ impl<'a> Server<'a> {
     fn setup_bpf(&mut self) -> Result<()> {
         use ::libc::*;
 
-        use ::linux_network::constants::raw::*;
+        use ::linux_network::raw::*;
         use ::linux_network::BpfCommandFlags::*;
 
         // TODO: process ipv6 extension headers properly
