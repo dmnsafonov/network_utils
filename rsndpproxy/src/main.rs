@@ -236,7 +236,7 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     set_securebits(bits)?;
     debug!("securebits set to 0b{:b}", bits.get());
 
-    set_no_new_privs(true)?;
+    set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
     let mut caps = Capabilities::new()

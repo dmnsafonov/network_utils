@@ -15,7 +15,7 @@ error_chain!(
             description("privilege operation error")
         }
     }
-    
+
     foreign_links {
         AddrParseError(std::net::AddrParseError);
         IoError(std::io::Error);
@@ -89,7 +89,7 @@ fn the_main() -> Result<()> {
     caps.apply().chain_err(err)?;
     debug!("dropped all capabilities");
 
-    set_no_new_privs(true)?;
+    set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
     let bound_addr = match matches.value_of("bind") {

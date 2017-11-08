@@ -44,11 +44,11 @@ pub fn set_securebits(bits: SecBitSet) -> Result<()> { unsafe {
     Ok(())
 }}
 
-pub fn set_no_new_privs(x: bool) -> Result<()> { unsafe {
+pub fn set_no_new_privs() -> Result<()> { unsafe {
     // see kernel Documentation/prctl/no_new_privs.txt for the 0's
     n1try!(prctl(
         PR_SET_NO_NEW_PRIVS,
-        x as c_ulong,
+        1 as c_ulong,
         0 as c_ulong,
         0 as c_ulong,
         0 as c_ulong));
