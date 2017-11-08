@@ -32,9 +32,3 @@ pub use self::structs::*;
 pub use numeric_enums::*;
 
 pub use pnet_packet::ipv6::Ipv6;
-pub use pnet_packet::icmpv6::{
-    Icmpv6,
-    Icmpv6Code,
-    Icmpv6Type,
-};
-pub use pnet_packet::icmpv6::checksum as icmpv6_checksum;
