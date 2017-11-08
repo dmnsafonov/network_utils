@@ -4,7 +4,7 @@ use ::std::net::*;
 use ::std::os::unix::prelude::*;
 
 use ::libc::*;
-use ::nix::sys::socket::{AddressFamily, SockType, SOCK_NONBLOCK, socket};
+use ::nix::sys::socket::{AddressFamily, SockFlag, SockType, socket};
 use ::pnet_packet::*;
 use ::pnet_packet::ipv6::*;
 
@@ -18,14 +18,14 @@ use ::util::*;
 pub struct IpV6RawSocket(RawFd);
 
 impl IpV6RawSocket {
-    pub fn new(proto: c_int)
+    pub fn new(proto: c_int, flags: SockFlag)
             -> Result<IpV6RawSocket> {
         Ok(
             IpV6RawSocket(
                 socket(
                     AddressFamily::Inet6,
                     SockType::Raw,
-                    SOCK_NONBLOCK,
+                    flags,
                     proto
                 )?
             )
@@ -104,7 +104,7 @@ pub struct IpV6PacketSocket {
 }
 
 impl IpV6PacketSocket {
-    pub fn new<T>(proto: c_int, if_name: T)
+    pub fn new<T>(proto: c_int, flags: SockFlag, if_name: T)
             -> Result<IpV6PacketSocket> where
             T: AsRef<str> {
         let proto_arg = match proto {
@@ -122,7 +122,7 @@ impl IpV6PacketSocket {
         let sock = socket(
             AddressFamily::Packet,
             SockType::Datagram,
-            SOCK_NONBLOCK,
+            flags,
             proto_arg
         )?;
 
