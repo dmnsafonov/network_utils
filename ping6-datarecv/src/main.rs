@@ -96,7 +96,7 @@ fn the_main() -> Result<()> {
     loop {
         let mut buf = [0; 65535]; // mtu unlikely to be higher
 
-        let (_, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
+        let (buf, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
         let addr = sockaddr.ip();
         let packet = Icmpv6Packet::new(&buf).unwrap();
         let payload = packet.payload();
@@ -133,7 +133,7 @@ fn the_main() -> Result<()> {
             let packet_crc = ((payload[2] as u16) << 8) & (payload[3] as u16);
 
             if len != (payload.len() - 4) as u16 {
-                debug!("wrong packet length, dropping");
+                debug!("wrong encapsulated packet length, dropping");
                 continue;
             }
 
