@@ -1,3 +1,4 @@
+extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate crc16;
 extern crate env_logger;
