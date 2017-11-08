@@ -42,6 +42,7 @@ use pnet_packet::Packet;
 
 use linux_network::*;
 
+// TODO: add correct signal handling
 quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
