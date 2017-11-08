@@ -132,9 +132,9 @@ impl IpV6PacketSocket {
             macaddr: if_addr,
             proto: proto_arg
         };
+        ret.if_index = get_interface_index(&ret, name)?;
 
         unsafe {
-            ret.if_index = get_interface_index(&ret, name)?;
             let mut addr: sockaddr_ll = zeroed();
             addr.sll_family = AF_PACKET as c_ushort;
             addr.sll_protocol = proto_arg as c_ushort;
