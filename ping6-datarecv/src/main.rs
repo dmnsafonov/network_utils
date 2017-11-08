@@ -9,6 +9,8 @@ extern crate linux_network;
 
 error_chain!(
     foreign_links {
+        AddrParseError(std::net::AddrParseError);
+        IoError(std::io::Error);
         LogInit(::log::SetLoggerError);
     }
 
@@ -19,6 +21,9 @@ error_chain!(
         );
     }
 );
+
+use std::net::*;
+use std::str::FromStr;
 
 use clap::*;
 use pnet_packet::icmpv6::*;
@@ -35,7 +40,13 @@ fn the_main() -> Result<()> {
         .about(crate_description!())
         .arg(Arg::with_name("bind")
             .long("bind")
-            .short("b")
+            .short("-b")
+            .takes_value(true)
+            .value_name("ADDRESS")
+            .help("Bind to an address")
+        ).arg(Arg::with_name("bind-to-interface")
+            .long("bind-to-interface")
+            .short("I")
             .takes_value(true)
             .value_name("INTERFACE")
             .help("Bind to an interface")
@@ -45,7 +56,14 @@ fn the_main() -> Result<()> {
         ::libc::IPPROTO_ICMPV6,
         SockFlag::empty()
     )?;
-    if let Some(ifname) = matches.value_of("bind") {
+
+    if let Some(addr) = matches.value_of("bind") {
+        // TODO: support link-local addresses
+        sock.bind(SocketAddrV6::new(
+            Ipv6Addr::from_str(addr)?, 0, 0, 0)
+        )?;
+    }
+    if let Some(ifname) = matches.value_of("bind-to-interface") {
         sock.setsockopt(
             SockOptLevel::Socket,
             &SockOpt::BindToDevice(ifname)
