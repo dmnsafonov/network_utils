@@ -100,6 +100,7 @@ fn the_main() -> Result<()> {
             packet_descr.payload = b.into();
         } else {
             let len = b.len();
+            assert!(len <= 65535); // max mtu on linux
 
             let mut crc_st = crc16::State::<crc16::CCITT_FALSE>::new();
             crc_st.update(&[

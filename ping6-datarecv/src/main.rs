@@ -129,11 +129,11 @@ fn the_main() -> Result<()> {
                 addr,
                 String::from_utf8_lossy(packet.payload()));
         } else {
-            let len = ((payload[0] as u16) << 8) & (payload[1] as u16);
-            let packet_crc = ((payload[2] as u16) << 8) & (payload[3] as u16);
+            let len = ((payload[0] as u16) << 8) | (payload[1] as u16);
+            let packet_crc = ((payload[2] as u16) << 8) | (payload[3] as u16);
 
             if len != (payload.len() - 4) as u16 {
-                debug!("wrong encapsulated packet length, dropping");
+                debug!("wrong encapsulated packet length: {}, dropping", len);
                 continue;
             }
 
