@@ -2,7 +2,7 @@ use ::std::net::Ipv6Addr;
 use ::libc::*;
 
 macro_rules! n1try {
-    ( $e: expr ) => ({
+    ( $e:expr ) => ({
         let ret = $e;
         if ret == -1 {
             bail!(::std::io::Error::last_os_error())

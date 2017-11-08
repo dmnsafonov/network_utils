@@ -34,6 +34,16 @@ impl IpV6RawSocket {
         )
     }
 
+    pub fn bind(&mut self, addr: &SocketAddrV6) -> Result<()> { unsafe {
+        let addr_in = make_sockaddr_in6(addr);
+        n1try!(bind(
+            self.0,
+            as_sockaddr(&addr_in),
+            size_of_val(&addr_in) as socklen_t
+        ));
+        Ok(())
+    }}
+
     pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlagSet)
             -> Result<(&'a mut [u8], SocketAddrV6)> { unsafe {
         let mut addr: sockaddr_in6 = zeroed();
@@ -61,19 +71,11 @@ impl IpV6RawSocket {
     pub fn sendto(
         &mut self,
         buf: &[u8],
-        addr: SocketAddrV6,
+        addr: &SocketAddrV6,
         flags: SendFlagSet
     ) -> Result<size_t> { unsafe {
-        let mut addr_in: sockaddr_in6 = zeroed();
+        let addr_in = make_sockaddr_in6(&addr);
         let addr_size = size_of_val(&addr_in) as socklen_t;
-
-        addr_in.sin6_family = AddressFamily::Inet6 as u16;
-        addr_in.sin6_flowinfo = addr.flowinfo();
-        addr_in.sin6_scope_id = addr.scope_id();
-
-        let mut addr_raw: in6_addr = zeroed();
-        addr_raw.s6_addr = addr.ip().octets();
-        addr_in.sin6_addr = addr_raw;
 
         Ok(n1try!(::libc::sendto(
             self.0,
@@ -97,6 +99,20 @@ impl AsRawFd for IpV6RawSocket {
         self.0
     }
 }
+
+fn make_sockaddr_in6(addr: &SocketAddrV6) -> sockaddr_in6 { unsafe {
+    let mut addr_in: sockaddr_in6 = zeroed();
+
+    addr_in.sin6_family = AddressFamily::Inet6 as u16;
+    addr_in.sin6_flowinfo = addr.flowinfo();
+    addr_in.sin6_scope_id = addr.scope_id();
+
+    let mut addr_raw: in6_addr = zeroed();
+    addr_raw.s6_addr = addr.ip().octets();
+    addr_in.sin6_addr = addr_raw;
+
+    addr_in
+}}
 
 pub struct IpV6PacketSocket {
     fd: RawFd,
