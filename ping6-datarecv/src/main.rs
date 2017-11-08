@@ -7,6 +7,10 @@ extern crate libc;
 extern crate linux_network;
 
 error_chain!(
+    foreign_links {
+        LogInit(::log::SetLoggerError);
+    }
+
     links {
         LinuxNetwork (
             linux_network::errors::Error,
@@ -20,7 +24,7 @@ use linux_network::*;
 
 quick_main!(the_main);
 fn the_main() -> Result<()> {
-    env_logger::init();
+    env_logger::init()?;
 
     let matches = App::new(crate_name!())
         .version(crate_version!())
