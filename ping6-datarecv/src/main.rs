@@ -87,7 +87,7 @@ fn the_main() -> Result<()> {
     // TODO: drop privileges
 
     loop {
-        let mut buf = [0; 1280]; // TODO: mtu
+        let mut buf = [0; 65535]; // mtu unlikely to be higher
 
         let (_, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
         let addr = sockaddr.ip();
