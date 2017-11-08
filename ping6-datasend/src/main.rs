@@ -1,4 +1,5 @@
 #[macro_use] extern crate clap;
+extern crate crc16;
 extern crate env_logger;
 #[macro_use] extern crate error_chain;
 extern crate libc;
@@ -86,30 +87,50 @@ fn the_main() -> Result<()> {
     // TODO: drop privileges
 
     for i in matches.values_of("messages").unwrap() {
+        let b = i.as_bytes();
+
+        let mut packet_descr = Icmpv6 {
+            icmpv6_type: Icmpv6Types::EchoRequest,
+            icmpv6_code: Icmpv6Codes::NoCode,
+            checksum: 0,
+            payload: vec![]
+        };
+
         if use_raw {
-            let packet_descr = Icmpv6 {
-                icmpv6_type: Icmpv6Types::EchoRequest,
-                icmpv6_code: Icmpv6Codes::NoCode,
-                checksum: 0,
-                payload: i.as_bytes().into()
-            };
-
-            let buf = vec![0; Icmpv6Packet::packet_size(&packet_descr)];
-            let mut packet = MutableIcmpv6Packet::owned(buf).unwrap();
-            packet.populate(&packet_descr);
-
-            let cm = icmpv6::checksum(
-                &packet.to_immutable(),
-                src_addr,
-                dest_addr
-            );
-            packet.set_checksum(cm);
-
-            sock.sendto(packet.packet(), dest, SendFlagSet::new())?;
+            packet_descr.payload = b.into();
         } else {
-            // TODO: make identified (with length + checksum) packet mode
-            unimplemented!();
+            let len = b.len();
+
+            let mut crc_st = crc16::State::<crc16::CCITT_FALSE>::new();
+            crc_st.update(&[
+                ((len & 0xff00) >> 8) as u8,
+                (len & 0xff) as u8
+            ]);
+            crc_st.update(b);
+            let crc = crc_st.get();
+
+            let mut payload = Vec::with_capacity(len + 4);
+            payload.push(((len & 0xff00) >> 8) as u8);
+            payload.push((len & 0xff) as u8);
+            payload.push(((crc & 0xff00) >> 8) as u8);
+            payload.push((crc & 0xff) as u8);
+            payload.extend_from_slice(b);
+
+            packet_descr.payload = payload;
         }
+
+        let buf = vec![0; Icmpv6Packet::packet_size(&packet_descr)];
+        let mut packet = MutableIcmpv6Packet::owned(buf).unwrap();
+        packet.populate(&packet_descr);
+
+        let cm = icmpv6::checksum(
+            &packet.to_immutable(),
+            src_addr,
+            dest_addr
+        );
+        packet.set_checksum(cm);
+
+        sock.sendto(packet.packet(), dest, SendFlagSet::new())?;
 
         info!("message \"{}\" sent", i);
     }

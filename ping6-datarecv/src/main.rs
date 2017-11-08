@@ -1,4 +1,5 @@
 #[macro_use] extern crate clap;
+extern crate crc16;
 extern crate env_logger;
 #[macro_use] extern crate error_chain;
 extern crate libc;
@@ -86,16 +87,44 @@ fn the_main() -> Result<()> {
     // TODO: drop privileges
 
     loop {
-        let mut buf = [0; 1280];
+        let mut buf = [0; 1280]; // TODO: mtu
 
-        sock.recvfrom(&mut buf, RecvFlagSet::new())?;
+        let (_, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
+        let addr = sockaddr.ip();
         let packet = Icmpv6Packet::new(&buf).unwrap();
+        let payload = packet.payload();
+
+        debug!("received packet, length = {} from {}", payload.len(), addr);
+
+        // TODO: validate icmpv6 packet
 
         if use_raw {
-            println!("received message: {}",
+            println!("received message from {}: {}",
+                addr,
                 String::from_utf8_lossy(packet.payload()));
         } else {
-            unimplemented!();
+            let len = ((payload[0] as u16) << 8) & (payload[1] as u16);
+            let packet_crc = ((payload[2] as u16) << 8) & (payload[3] as u16);
+
+            if len != (payload.len() - 4) as u16 {
+                debug!("wrong packet length, dropping");
+                continue;
+            }
+
+            let mut crc_st = crc16::State::<crc16::CCITT_FALSE>::new();
+            crc_st.update(&payload[0..2]);
+            crc_st.update(&payload[4..]);
+            let crc = crc_st.get();
+
+            if packet_crc != crc {
+                debug!("wrong crc, dropping");
+                continue;
+            }
+
+            println!("received message from {}: {}",
+                addr,
+                String::from_utf8_lossy(&payload[4..])
+            );
         }
     }
 }
