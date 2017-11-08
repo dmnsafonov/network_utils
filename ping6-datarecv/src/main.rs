@@ -50,7 +50,13 @@ fn the_main() -> Result<()> {
             .takes_value(true)
             .value_name("INTERFACE")
             .help("Bind to an interface")
+        ).arg(Arg::with_name("raw")
+            .long("raw")
+            .short("r")
+            .help("Show all received packets' payload")
         ).get_matches();
+
+    let use_raw = matches.is_present("raw");
 
     let mut sock = IpV6RawSocket::new(
         ::libc::IPPROTO_ICMPV6,
