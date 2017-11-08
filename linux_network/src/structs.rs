@@ -61,7 +61,7 @@ pub mod raw {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct icmp6_filter {
     icmp6_filt: [uint32_t; 8]
@@ -87,7 +87,7 @@ impl icmp6_filter {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct MacAddr([u8; 6]);
 
 impl MacAddr {

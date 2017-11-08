@@ -81,14 +81,14 @@ macro_rules! gen_enum_arg_ref {
 macro_rules! _gen_enum {
     ( $name:ident; $( ( $cnst:ident => $var:ident ) ),+ ) => (
         #[allow(dead_code)]
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         enum $name {
             $( $var ),*
         }
     );
     ( pub $name:ident; $( ( $cnst:ident => $var:ident ) ),+ ) => (
         #[allow(dead_code)]
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum $name {
             $( $var ),*
         }
@@ -311,13 +311,13 @@ pub trait NumEnumFlagSet<F, T> where
 #[macro_export]
 macro_rules! gen_flag_set {
     ( $name:ident, $t:ty: $it:ty ) => (
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         struct $name($it);
 
         _gen_flag_set_impl!($name, $t, $it);
     );
     ( pub $name:ident, $t:ty: $it:ty ) => (
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub struct $name($it);
 
         _gen_flag_set_impl!($name, $t, $it);

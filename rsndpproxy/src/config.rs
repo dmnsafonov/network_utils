@@ -38,7 +38,7 @@ pub struct PrefixConfig {
     #[serde(default)] pub router: bool
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Ipv6Prefix(Ipv6Network);
 
 impl Serialize for Ipv6Prefix {
@@ -75,7 +75,7 @@ impl<'de> Visitor<'de> for Ipv6PrefixVisitor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SuTarget {
     pub name: String,
     pub uid: uid_t,
