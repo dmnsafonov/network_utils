@@ -27,8 +27,10 @@ use std::net::*;
 use std::str::FromStr;
 
 use clap::*;
+use pnet_packet::icmpv6;
 use pnet_packet::icmpv6::*;
-use pnet_packet::Packet;
+use pnet_packet::icmpv6::ndp::Icmpv6Codes;
+use pnet_packet::{FromPacket, Packet, PrimitiveValues};
 
 use linux_network::*;
 
@@ -65,10 +67,15 @@ fn the_main() -> Result<()> {
         SockFlag::empty()
     )?;
 
-    if let Some(addr) = matches.value_of("bind") {
+    let bound_addr = match matches.value_of("bind") {
+        Some(x) => Some(Ipv6Addr::from_str(x)?),
+        None => None
+    };
+
+    if let Some(addr) = bound_addr {
         // TODO: support link-local addresses
         sock.bind(SocketAddrV6::new(
-            Ipv6Addr::from_str(addr)?, 0, 0, 0)
+            addr, 0, 0, 0)
         )?;
         info!("bound to {} address", addr);
     }
@@ -96,7 +103,26 @@ fn the_main() -> Result<()> {
 
         debug!("received packet, length = {} from {}", payload.len(), addr);
 
-        // TODO: validate icmpv6 packet
+        let icmp = packet.from_packet();
+        assert_eq!(icmp.icmpv6_type, Icmpv6Types::EchoRequest);
+
+        if let Some(dest_addr) = bound_addr {
+            let cm = icmpv6::checksum(&packet, *addr, dest_addr);
+            if icmp.checksum != cm {
+                info!("wrong icmp checksum {}, correct is {}, dropping",
+                    icmp.checksum,
+                    cm
+                );
+                continue;
+            }
+        }
+
+        if icmp.icmpv6_code != Icmpv6Codes::NoCode {
+            info!("nonzero code {} in echo request, dropping",
+                icmp.icmpv6_code.to_primitive_values().0
+            );
+            continue;
+        }
 
         if use_raw {
             println!("received message from {}: {}",
