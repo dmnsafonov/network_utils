@@ -10,6 +10,12 @@ extern crate pnet_packet;
 extern crate linux_network;
 
 error_chain!(
+    errors {
+        Priv {
+            description("privilege operation error")
+        }
+    }
+    
     foreign_links {
         AddrParseError(std::net::AddrParseError);
         IoError(std::io::Error);
@@ -27,6 +33,7 @@ error_chain!(
 use std::net::*;
 use std::str::FromStr;
 
+use capabilities::*;
 use clap::*;
 use pnet_packet::icmpv6;
 use pnet_packet::icmpv6::*;
@@ -63,10 +70,27 @@ fn the_main() -> Result<()> {
 
     let use_raw = matches.is_present("raw");
 
+    let err = || ErrorKind::Priv;
+    let mut caps = Capabilities::from_current_proc()
+        .chain_err(&err)?;
+    if !caps.update(&[Capability::CAP_NET_RAW], Flag::Effective, true) {
+        bail!(err());
+    }
+    caps.apply().chain_err(&err)?;
+    debug!("gained CAP_NET_RAW");
+
     let mut sock = IpV6RawSocket::new(
         ::libc::IPPROTO_ICMPV6,
         SockFlag::empty()
     )?;
+    debug!("raw socket created");
+
+    caps.reset_all();
+    caps.apply().chain_err(err)?;
+    debug!("dropped all capabilities");
+
+    set_no_new_privs(true)?;
+    debug!("PR_SET_NO_NEW_PRIVS set");
 
     let bound_addr = match matches.value_of("bind") {
         Some(x) => Some(Ipv6Addr::from_str(x)?),
@@ -91,8 +115,6 @@ fn the_main() -> Result<()> {
     let mut filter = icmp6_filter::new();
     filter.pass(IcmpV6Type::EchoRequest);
     sock.setsockopt(SockOptLevel::IcmpV6, &SockOpt::IcmpV6Filter(&filter))?;
-
-    // TODO: drop privileges
 
     loop {
         let mut buf = [0; 65535]; // mtu unlikely to be higher
