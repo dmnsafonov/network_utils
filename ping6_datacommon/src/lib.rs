@@ -8,7 +8,8 @@ extern crate nix;
 error_chain!(
     errors {
         Priv {
-            description("privilege operation error")
+            description("privilege operation error (is cap_net_raw+p not set \
+                on the executable?)")
         }
     }
 
