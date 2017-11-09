@@ -1,5 +1,9 @@
 error_chain!(
     errors {
+        AddrError(str: String) {
+            description("error getting address info")
+            display("error getting address {} info", str)
+        }
         BufferTooSmall(len: ::libc::size_t) {
             description("provided buffer too small")
             display("provided buffer of length {} too small", len)

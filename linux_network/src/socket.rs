@@ -125,11 +125,6 @@ impl IpV6PacketSocket {
     pub fn new<T>(proto: c_int, flags: SockFlag, if_name: T)
             -> Result<IpV6PacketSocket> where
             T: AsRef<str> {
-        let proto_arg = match proto {
-            IPPROTO_IPV6 => (ETHERTYPE_IPV6 as c_ushort).to_be() as c_int,
-            _ => unimplemented!()
-        };
-
         let name = if_name.as_ref();
         let err = || ErrorKind::NoInterface(name.to_string());
         let iface = ::interfaces::Interface::get_by_name(name)
@@ -141,21 +136,21 @@ impl IpV6PacketSocket {
             AddressFamily::Packet,
             SockType::Datagram,
             flags,
-            proto_arg
+            proto
         )?;
 
         let mut ret = IpV6PacketSocket {
             fd: sock,
             if_index: -1,
             macaddr: if_addr,
-            proto: proto_arg
+            proto: proto
         };
         ret.if_index = get_interface_index(&ret, name)?;
 
         unsafe {
             let mut addr: sockaddr_ll = zeroed();
             addr.sll_family = AF_PACKET as c_ushort;
-            addr.sll_protocol = proto_arg as c_ushort;
+            addr.sll_protocol = proto as c_ushort;
             addr.sll_ifindex = ret.if_index;
             n1try!(bind(
                 sock,

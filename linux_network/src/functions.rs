@@ -1,3 +1,4 @@
+use ::std::ffi::*;
 use ::std::mem::*;
 use ::std::ptr::*;
 use ::std::os::unix::prelude::*;
@@ -122,4 +123,45 @@ pub fn get_interface_mtu<F,T>(fd: &F, ifname: T) -> Result<c_int> where
     let mut ifr = ifreq_with_ifname(ifname)?;
     self::raw::get_interface_mtu(fd, &mut ifr)?;
     Ok(ifr.un.ifr_mtu)
+}}
+
+pub fn make_sockaddr_in6_v6_dgram<T>(
+    addr_str: T,
+    proto: c_int,
+    flags: AddrInfoFlagSet
+) -> Result<sockaddr_in6> where T: AsRef<str> { unsafe {
+    let mut ai: addrinfo = zeroed();
+    ai.ai_family = AF_INET6;
+    ai.ai_socktype = SOCK_DGRAM;
+    ai.ai_protocol = proto;
+    ai.ai_flags = flags.get();
+
+    let mut res: *mut addrinfo = null_mut();
+
+    let err = getaddrinfo(
+        CString::new(addr_str.as_ref())?.as_ptr(),
+        null(),
+        &ai,
+        &mut res
+    );
+    if err != 0 {
+        match err {
+            EAI_SYSTEM => bail!(::std::io::Error::last_os_error()),
+            _ => bail!(ErrorKind::AddrError(
+                    CStr::from_ptr(gai_strerror(err))
+                    .to_string_lossy()
+                    .into_owned()
+                ))
+        }
+    }
+
+    assert_eq!(((*res).ai_addrlen) as usize, size_of::<sockaddr_in6>());
+    let sa = ::std::ptr::read(
+        transmute::<*mut sockaddr, *mut sockaddr_in6>((*res).ai_addr)
+    );
+    assert_eq!(sa.sin6_family, AF_INET6 as sa_family_t);
+
+    freeaddrinfo(res);
+
+    Ok(sa)
 }}

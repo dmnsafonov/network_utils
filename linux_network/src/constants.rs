@@ -250,3 +250,14 @@ gen_enum!(pub BpfCommandFlags: u16;
     (BPF_X => X)
 );
 gen_flag_set!(pub BpfCommand, BpfCommandFlags: u16);
+
+gen_enum!(pub AddrInfoFlags: c_int;
+    (AI_ADDRCONFIG => AddrConfig),
+    (AI_ALL => All),
+    (AI_CANONNAME => CanonName),
+    (AI_NUMERICHOST => NumericHost),
+    (AI_NUMERICSERV => NumericServ),
+    (AI_PASSIVE => Passive),
+    (AI_V4MAPPED => V4Mapped)
+);
+gen_flag_set!(pub AddrInfoFlagSet, AddrInfoFlags: c_int);
