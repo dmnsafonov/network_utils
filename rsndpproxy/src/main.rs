@@ -6,7 +6,6 @@ extern crate env_logger;
 #[macro_use] extern crate error_chain;
 extern crate interfaces;
 extern crate ipnetwork;
-extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate pnet_packet;
@@ -31,6 +30,7 @@ use std::os::unix::prelude::*;
 use std::rc::*;
 
 use nix::Errno;
+use nix::libc;
 use nix::sys::signal::*;
 use nix::sys::signalfd::*;
 use nix::unistd::*;

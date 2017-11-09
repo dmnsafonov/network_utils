@@ -1,6 +1,5 @@
 #[macro_use] extern crate error_chain;
 extern crate interfaces;
-extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate pnet_packet;
@@ -21,6 +20,8 @@ pub mod raw {
     pub use functions::raw::*;
     pub use structs::raw::*;
 }
+
+use nix::libc;
 
 pub use self::bpf::*;
 pub use self::epoll::*;
