@@ -1,0 +1,10 @@
+[package]
+name = "ping6_datacommon"
+version = "0.1.0"
+authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
+
+[dependencies]
+capabilities = "^0.3.0"
+crc16 = "^0.3.4"
+error-chain = "^0.11.0"
+log = "^0.3.8"
