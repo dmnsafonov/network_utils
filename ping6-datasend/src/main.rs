@@ -121,7 +121,7 @@ fn get_args<'a>() -> ArgMatches<'a> {
 fn checked_payload<T>(payload: T) -> Vec<u8> where T: AsRef<[u8]> {
     let b = payload.as_ref();
     let len = b.len();
-    assert!(len <= 65535); // max mtu on linux
+    assert!(len <= std::u16::MAX as usize);
 
     let crc = ping6_data_checksum(b);
 
