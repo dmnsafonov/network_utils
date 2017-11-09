@@ -63,10 +63,7 @@ fn the_main() -> Result<()> {
     };
 
     if let Some(addr) = bound_addr {
-        // TODO: support link-local addresses
-        sock.bind(SocketAddrV6::new(
-            addr, 0, 0, 0)
-        )?;
+        sock.bind(make_socket_addr(addr))?;
         info!("bound to {} address", addr);
     }
     if let Some(ifname) = matches.value_of("bind-to-interface") {
@@ -83,7 +80,7 @@ fn the_main() -> Result<()> {
     debug!("set icmpv6 type filter");
 
     loop {
-        let mut buf = [0; 65535]; // mtu unlikely to be higher
+        let mut buf = vec![0; 65535]; // mtu unlikely to be higher
 
         let (buf, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
         let src = *sockaddr.ip();
