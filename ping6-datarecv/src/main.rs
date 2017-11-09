@@ -39,7 +39,6 @@ use pnet_packet::{FromPacket, Packet, PrimitiveValues};
 use linux_network::*;
 use ping6_datacommon::*;
 
-// TODO: add correct signal handling
 quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
@@ -79,7 +78,14 @@ fn the_main() -> Result<()> {
     sock.setsockopt(SockOptLevel::IcmpV6, &SockOpt::IcmpV6Filter(&filter))?;
     debug!("set icmpv6 type filter");
 
+    setup_signal_handler()?;
+
     loop {
+        if signal_received() {
+            info!("interrupted");
+            break;
+        }
+
         let mut buf = vec![0; 65535]; // mtu unlikely to be higher
 
         let (buf, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
@@ -106,6 +112,8 @@ fn the_main() -> Result<()> {
             }
         }
     }
+
+    Ok(())
 }
 
 fn get_args<'a>() -> ArgMatches<'a> {

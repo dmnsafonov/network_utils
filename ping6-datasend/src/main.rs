@@ -38,7 +38,6 @@ use pnet_packet::Packet;
 use linux_network::*;
 use ping6_datacommon::*;
 
-// TODO: add correct signal handling
 quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
@@ -67,7 +66,14 @@ fn the_main() -> Result<()> {
     sock.bind(src)?;
     debug!("bound to address {}", src);
 
+    setup_signal_handler()?;
+
     for i in matches.values_of("messages").unwrap() {
+        if signal_received() {
+            info!("interrupted");
+            break;
+        }
+
         let b = i.as_bytes();
 
         let mut packet_descr = Icmpv6 {

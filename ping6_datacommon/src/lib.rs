@@ -1,7 +1,9 @@
 extern crate capabilities;
 extern crate crc16;
 #[macro_use] extern crate error_chain;
+extern crate libc;
 #[macro_use] extern crate log;
+extern crate nix;
 
 error_chain!(
     errors {
@@ -12,12 +14,16 @@ error_chain!(
 
     foreign_links {
         IoError(std::io::Error);
+        NixError(nix::Error);
     }
 );
 
 use std::net::*;
+use std::sync::atomic::*;
 
 use capabilities::*;
+use libc::c_int;
+use nix::sys::signal::*;
 
 // TODO: support link-local addresses
 pub fn make_socket_addr(addr: Ipv6Addr) -> SocketAddrV6 {
@@ -56,4 +62,31 @@ pub fn ping6_data_checksum<T>(payload: T) -> u16 where T: AsRef<[u8]> {
     crc_st.update(b);
 
     crc_st.get()
+}
+
+const SIGNAL_FLAG: AtomicBool = ATOMIC_BOOL_INIT;
+
+pub fn setup_signal_handler() -> Result<()> {
+    let sigact = SigAction::new(
+        SigHandler::Handler(signal_handler),
+        SaFlags::empty(),
+        SigSet::empty()
+    );
+
+    unsafe {
+        sigaction(Signal::SIGINT, &sigact)?;
+        sigaction(Signal::SIGQUIT, &sigact)?;
+        sigaction(Signal::SIGTERM, &sigact)?;
+    }
+
+    debug!("set up signal handlers");
+    Ok(())
+}
+
+extern "C" fn signal_handler(_: c_int) {
+    SIGNAL_FLAG.store(true, Ordering::Relaxed);
+}
+
+pub fn signal_received() -> bool {
+    SIGNAL_FLAG.swap(false, Ordering::Relaxed)
 }
