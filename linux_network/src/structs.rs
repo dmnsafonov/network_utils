@@ -69,11 +69,11 @@ pub struct icmp6_filter {
 
 impl icmp6_filter {
     pub fn new() -> icmp6_filter {
-        icmp6_filter { icmp6_filt: [0xff; 8] }
+        icmp6_filter { icmp6_filt: [0xffffffff; 8] }
     }
 
     pub fn new_pass() -> icmp6_filter {
-        icmp6_filter { icmp6_filt: [0x00; 8] }
+        icmp6_filter { icmp6_filt: [0; 8] }
     }
 
     pub fn pass(&mut self, icmp_type: IcmpV6Type) {
