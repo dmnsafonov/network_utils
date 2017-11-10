@@ -43,6 +43,7 @@ pub fn make_socket_addr<T>(addr_str: T, resolve: bool) -> Result<SocketAddrV6>
         addr_str,
         None,
         IPPROTO_ICMPV6,
+        0,
         match resolve {
             true => AddrInfoFlagSet::new(),
             false => AddrInfoFlags::NumericHost.into()
@@ -55,15 +56,6 @@ pub fn make_socket_addr<T>(addr_str: T, resolve: bool) -> Result<SocketAddrV6>
         0,
         sockaddr_in.sin6_scope_id
     ))
-}
-
-pub fn option_map_result<T,F,R,E>(x: Option<T>, f: F)
-        -> ::std::result::Result<Option<R>, E> where
-        F: FnOnce(T) -> ::std::result::Result<R,E> {
-    match x {
-        Some(y) => f(y).map(Some),
-        None => Ok(None)
-    }
 }
 
 pub fn gain_net_raw() -> Result<()> {

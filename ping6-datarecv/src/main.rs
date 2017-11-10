@@ -139,6 +139,15 @@ fn get_args<'a>() -> ArgMatches<'a> {
         ).get_matches()
 }
 
+pub fn option_map_result<T,F,R,E>(x: Option<T>, f: F)
+        -> ::std::result::Result<Option<R>, E> where
+        F: FnOnce(T) -> ::std::result::Result<R,E> {
+    match x {
+        Some(y) => f(y).map(Some),
+        None => Ok(None)
+    }
+}
+
 fn validate_icmpv6(
         packet: &Icmpv6Packet,
         src: Ipv6Addr,

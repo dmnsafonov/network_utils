@@ -130,6 +130,7 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
     addr_str: T,
     socktype: Option<SockType>,
     proto: c_int,
+    port: in_port_t,
     flags: AddrInfoFlagSet
 ) -> Result<sockaddr_in6> where T: AsRef<str> { unsafe {
     let mut ai: addrinfo = zeroed();
@@ -159,10 +160,11 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
     }
 
     assert_eq!(((*res).ai_addrlen) as usize, size_of::<sockaddr_in6>());
-    let sa = ::std::ptr::read(
+    let mut sa = ::std::ptr::read(
         transmute::<*mut sockaddr, *mut sockaddr_in6>((*res).ai_addr)
     );
     assert_eq!(sa.sin6_family, AF_INET6 as sa_family_t);
+    sa.sin6_port = port;
 
     freeaddrinfo(res);
 
