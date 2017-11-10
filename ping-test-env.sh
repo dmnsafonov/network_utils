@@ -20,11 +20,13 @@ elif [[ "$1" == "clean" ]]; then
     ip netns del pingdata-sender
     ip netns del pingdata-receiver
 elif [[ "$1" == "send" ]]; then
-    shift
-    ip netns exec pingdata-sender "$@"
+    user="$2"
+    shift 2
+    ip netns exec pingdata-sender su "$user" -c "$*"
 elif [[ "$1" == "recv" ]]; then
-    shift
-    ip netns exec pingdata-receiver "$@"
+    user="$2"
+    shift 2
+    ip netns exec pingdata-receiver su "$user" -c "$*"
 elif [[ "$1" == "permissions" ]]; then
     setcap 'cap_net_raw=p' ping6-datasend/target/debug/ping6-datasend
     setcap 'cap_net_raw=p' ping6-datarecv/target/debug/ping6-datarecv

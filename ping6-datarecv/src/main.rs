@@ -87,12 +87,25 @@ fn the_main() -> Result<()> {
 
         let mut buf = vec![0; 65535]; // mtu unlikely to be higher
 
-        let (buf, sockaddr) = sock.recvfrom(&mut buf, RecvFlagSet::new())?;
+        use linux_network::errors::ErrorKind::Interrupted;
+        let (buf, sockaddr) =
+            match sock.recvfrom(&mut buf, RecvFlagSet::new()) {
+                x@Ok(_) => x,
+                Err(e) => {
+                    if let Interrupted = *e.kind() {
+                        info!("interrupted");
+                        break;
+                    } else {
+                        Err(e)
+                    }
+                }
+            }?;
         let src = *sockaddr.ip();
         let packet = Icmpv6Packet::new(&buf).unwrap();
         let payload = packet.payload();
 
-        debug!("received packet, length = {} from {}", payload.len(), src);
+        debug!("received packet, payload size = {} from {}",
+            payload.len(), src);
 
         if !validate_icmpv6(&packet, src, bound_addr) {
             continue;

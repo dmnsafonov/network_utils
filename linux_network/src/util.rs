@@ -5,7 +5,12 @@ macro_rules! n1try {
     ( $e:expr ) => ({
         let ret = $e;
         if ret == -1 {
-            bail!(::std::io::Error::last_os_error())
+            let err = ::std::io::Error::last_os_error();
+            if err.raw_os_error().unwrap() as c_int == EINTR {
+                bail!(ErrorKind::Interrupted);
+            } else {
+                bail!(err);
+            }
         } else {
             ret
         }

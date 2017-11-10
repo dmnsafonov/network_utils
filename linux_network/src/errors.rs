@@ -12,6 +12,9 @@ error_chain!(
             description("interface name too long")
             display("interface name \"{}\" is too long", name)
         }
+        Interrupted {
+            description("system call was interrupted")
+        }
         NoInterface(name: String) {
             description("cannot find the requested interface")
             display("cannot find interface {}", name)
