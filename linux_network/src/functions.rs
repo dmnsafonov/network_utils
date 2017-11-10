@@ -4,6 +4,7 @@ use ::std::ptr::*;
 use ::std::os::unix::prelude::*;
 
 use ::libc::*;
+use ::nix::sys::socket::SockType;
 
 use ::numeric_enums::*;
 
@@ -127,12 +128,13 @@ pub fn get_interface_mtu<F,T>(fd: &F, ifname: T) -> Result<c_int> where
 
 pub fn make_sockaddr_in6_v6_dgram<T>(
     addr_str: T,
+    socktype: Option<SockType>,
     proto: c_int,
     flags: AddrInfoFlagSet
 ) -> Result<sockaddr_in6> where T: AsRef<str> { unsafe {
     let mut ai: addrinfo = zeroed();
     ai.ai_family = AF_INET6;
-    ai.ai_socktype = SOCK_DGRAM;
+    ai.ai_socktype = socktype.map(|x| x as c_int).unwrap_or(0);
     ai.ai_protocol = proto;
     ai.ai_flags = flags.get();
 
@@ -148,6 +150,7 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
         match err {
             EAI_SYSTEM => bail!(::std::io::Error::last_os_error()),
             _ => bail!(ErrorKind::AddrError(
+                    addr_str.as_ref().to_string(),
                     CStr::from_ptr(gai_strerror(err))
                     .to_string_lossy()
                     .into_owned()

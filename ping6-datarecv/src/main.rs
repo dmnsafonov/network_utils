@@ -28,7 +28,6 @@ error_chain!(
 );
 
 use std::net::*;
-use std::str::FromStr;
 
 use clap::*;
 use pnet_packet::icmpv6;
@@ -56,14 +55,14 @@ fn the_main() -> Result<()> {
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
-    let bound_addr = match matches.value_of("bind") {
-        Some(x) => Some(Ipv6Addr::from_str(x)?),
-        None => None
-    };
+    let bound_addr_str = matches.value_of("bind");
+    let bound_sockaddr = option_map_result(bound_addr_str,
+        |x| make_socket_addr(x, false))?;
+    let bound_addr = bound_sockaddr.map(|x| *x.ip());
 
-    if let Some(addr) = bound_addr {
-        sock.bind(make_socket_addr(addr))?;
-        info!("bound to {} address", addr);
+    if let Some(addr) = bound_sockaddr {
+        sock.bind(addr)?;
+        info!("bound to {} address", bound_addr_str.unwrap());
     }
     if let Some(ifname) = matches.value_of("bind-to-interface") {
         sock.setsockopt(

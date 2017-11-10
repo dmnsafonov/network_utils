@@ -408,5 +408,11 @@ macro_rules! _gen_flag_set_impl {
                 $name(self.0 & rhs.to_num())
             }
         }
+
+        impl ::std::convert::From<$t> for $name {
+            fn from(x: $t) -> Self {
+                $name::new().set(x)
+            }
+        }
     )
 }

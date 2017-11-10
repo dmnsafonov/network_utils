@@ -5,6 +5,8 @@ extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
 
+extern crate linux_network;
+
 error_chain!(
     errors {
         Priv {
@@ -17,18 +19,51 @@ error_chain!(
         IoError(std::io::Error);
         NixError(nix::Error);
     }
+
+    links {
+        LinuxNetwork (
+            linux_network::errors::Error,
+            linux_network::errors::ErrorKind
+        );
+    }
 );
 
 use std::net::*;
 use std::sync::atomic::*;
 
 use capabilities::*;
-use libc::c_int;
+use libc::{c_int, IPPROTO_ICMPV6};
 use nix::sys::signal::*;
 
-// TODO: support link-local addresses
-pub fn make_socket_addr(addr: Ipv6Addr) -> SocketAddrV6 {
-    SocketAddrV6::new(addr, 0, 0, 0)
+use linux_network::*;
+
+pub fn make_socket_addr<T>(addr_str: T, resolve: bool) -> Result<SocketAddrV6>
+        where T: AsRef<str> {
+    let sockaddr_in = make_sockaddr_in6_v6_dgram(
+        addr_str,
+        None,
+        IPPROTO_ICMPV6,
+        match resolve {
+            true => AddrInfoFlagSet::new(),
+            false => AddrInfoFlags::NumericHost.into()
+        }
+    )?;
+
+    Ok(SocketAddrV6::new(
+        sockaddr_in.sin6_addr.s6_addr.into(),
+        0,
+        0,
+        sockaddr_in.sin6_scope_id
+    ))
+}
+
+pub fn option_map_result<T,F,R,E>(x: Option<T>, f: F)
+        -> ::std::result::Result<Option<R>, E> where
+        F: FnOnce(T) -> ::std::result::Result<R,E> {
+    match x {
+        Some(y) => f(y).map(Some),
+        None => Ok(None)
+    }
 }
 
 pub fn gain_net_raw() -> Result<()> {

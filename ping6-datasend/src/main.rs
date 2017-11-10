@@ -27,7 +27,6 @@ error_chain!(
 );
 
 use std::net::*;
-use std::str::FromStr;
 
 use clap::*;
 use pnet_packet::icmpv6;
@@ -44,12 +43,14 @@ fn the_main() -> Result<()> {
 
     let matches = get_args();
 
-    let src_addr = Ipv6Addr::from_str(matches.value_of("source").unwrap())?;
-    let src = make_socket_addr(src_addr);
+    let src = make_socket_addr(matches.value_of("source").unwrap(), false)?;
+    let src_addr = *src.ip();
 
-    let dst_addr = Ipv6Addr::from_str(matches.value_of("destination")
-        .unwrap())?;
-    let dst = make_socket_addr(dst_addr);
+    let dst = make_socket_addr(
+        matches.value_of("destination").unwrap(),
+        true
+    )?;
+    let dst_addr = *dst.ip();
     info!("resolved destination address: {}", dst);
 
     gain_net_raw()?;
