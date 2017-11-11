@@ -29,6 +29,7 @@ error_chain!(
 );
 
 use std::io::prelude::*;
+use std::io::stdout;
 use std::net::*;
 
 use clap::*;
@@ -131,7 +132,7 @@ fn the_main() -> Result<()> {
                 write_binary(&payload[0..2], &payload[4..])?;
             }
 
-            payload_for_print = Some(&payload[2..]);
+            payload_for_print = Some(&payload[4..]);
         } else {
             payload_for_print = None;
         }
@@ -139,6 +140,7 @@ fn the_main() -> Result<()> {
         if let Some(payload_for_print) = payload_for_print {
             let str_payload = String::from_utf8_lossy(payload_for_print);
             if binary {
+                stdout().flush()?;
                 info!("received message from {}: {}", src, str_payload);
             } else {
                 println!("received message from {}: {}", src, str_payload);
@@ -238,7 +240,7 @@ fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
 }
 
 fn write_binary(len: &[u8], payload: &[u8]) -> Result<()> {
-    let mut out = std::io::stdout();
+    let mut out = stdout();
     out.write(len)?;
     out.write(payload)?;
     Ok(())
