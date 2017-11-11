@@ -84,17 +84,16 @@ fn the_main() -> Result<()> {
 
     setup_signal_handler()?;
 
+    // ipv6 payload length is 2-byte
+    let mut raw_buf = vec![0; std::u16::MAX as usize];
     loop {
         if signal_received() {
             info!("interrupted");
             break;
         }
 
-        // ipv6 payload length is 2-byte
-        let mut buf = vec![0; std::u16::MAX as usize];
-
         let (buf, sockaddr) =
-            match sock.recvfrom(&mut buf, RecvFlagSet::new()) {
+            match sock.recvfrom(&mut raw_buf, RecvFlagSet::new()) {
                 x@Ok(_) => x,
                 Err(e) => {
                     if let Interrupted = *e.kind() {
