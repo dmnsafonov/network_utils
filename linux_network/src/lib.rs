@@ -30,6 +30,8 @@ pub use self::functions::*;
 pub use self::socket::*;
 pub use self::structs::*;
 
+pub use self::errors::ErrorKind::Interrupted;
+
 pub use numeric_enums::*;
 
 pub use pnet_packet::ipv6::Ipv6;

@@ -93,14 +93,12 @@ fn the_main() -> Result<()> {
         // ipv6 payload length is 2-byte
         let mut buf = vec![0; std::u16::MAX as usize];
 
-        use linux_network::errors::ErrorKind::Interrupted;
         let (buf, sockaddr) =
             match sock.recvfrom(&mut buf, RecvFlagSet::new()) {
                 x@Ok(_) => x,
                 Err(e) => {
                     if let Interrupted = *e.kind() {
-                        info!("interrupted");
-                        break;
+                        continue;
                     } else {
                         Err(e)
                     }
@@ -114,7 +112,8 @@ fn the_main() -> Result<()> {
             payload.len(), src);
 
         if !validate_icmpv6(&packet, src, bound_addr) {
-            continue;
+            info!("interrupted");
+            break;
         }
 
         let payload_for_print;

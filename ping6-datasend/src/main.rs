@@ -18,6 +18,7 @@ error_chain!(
 
     foreign_links {
         AddrParseError(std::net::AddrParseError);
+        IoError(std::io::Error);
         LogInit(log::SetLoggerError);
     }
 
@@ -78,13 +79,11 @@ fn the_main() -> Result<()> {
 
     setup_signal_handler()?;
 
-    for i in matches.values_of_os("messages").unwrap() {
+    let mut process_message = |i: &[u8]| -> Result<bool> {
         if signal_received() {
             info!("interrupted");
-            break;
+            return Ok(false);
         }
-
-        let b = i.as_bytes();
 
         let mut packet_descr = Icmpv6 {
             icmpv6_type: Icmpv6Types::EchoRequest,
@@ -94,13 +93,39 @@ fn the_main() -> Result<()> {
         };
 
         packet_descr.payload = match raw {
-            true => b.into(),
-            false => checked_payload(b)?
+            true => i.into(),
+            false => checked_payload(i)?
         };
 
         let packet = make_packet(&packet_descr, src_addr, dst_addr);
-        sock.sendto(packet.packet(), dst, SendFlagSet::new())?;
-        info!("message \"{}\" sent", i.to_string_lossy());
+        match sock.sendto(packet.packet(), dst, SendFlagSet::new()) {
+            Ok(_) => (),
+            Err(e) => {
+                if let Interrupted = *e.kind() {
+                    info!("interrupted");
+                    return Ok(false);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+        info!("message \"{}\" sent", String::from_utf8_lossy(i));
+
+        Ok(true)
+    };
+
+    if matches.is_present("use-stdin") {
+        for i in StdinBytesIterator::new() {
+            if !process_message(i?)? {
+                break;
+            }
+        }
+    } else {
+        for i in matches.values_of_os("messages").unwrap() {
+            if !process_message(i.as_bytes())? {
+                break;
+            }
+        }
     }
 
     Ok(())
@@ -127,11 +152,60 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .help("Messages destination")
         ).arg(Arg::with_name("messages")
             .required(true)
+            .conflicts_with("use-stdin")
             .value_name("MESSAGES")
             .multiple(true)
             .index(3)
             .help("The messages to send, one argument for a packet")
+        ).arg(Arg::with_name("use-stdin")
+            .required(true)
+            .conflicts_with("messages")
+            .long("use-stdin")
+            .short("c")
+            .help("Instead of messages on the command-line, read from stdin \
+                (each successful read is a message)")
         ).get_matches()
+}
+
+struct StdinBytesIterator<'a> {
+    buf: Vec<u8>,
+    _phantom: std::marker::PhantomData<&'a [u8]>
+}
+
+impl<'a> StdinBytesIterator<'a> {
+    fn new() -> StdinBytesIterator<'a> {
+        // maximum ipv6 payload length
+        let size = std::u16::MAX as usize;
+        let mut buf = Vec::with_capacity(size);
+        buf.resize(size, 0);
+        StdinBytesIterator {
+            buf: buf,
+            _phantom: Default::default()
+        }
+    }
+}
+
+impl<'a> Iterator for StdinBytesIterator<'a> {
+    type Item = Result<&'a [u8]>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use std::io::prelude::*;
+        use std::io;
+
+        let mut tin = io::stdin();
+
+        let len = match tin.read(&mut self.buf) {
+            Ok(0) => return None,
+            Ok(x) => x,
+            Err(e) => return Some(Err(e.into()))
+        };
+
+        let ret = unsafe { std::slice::from_raw_parts(
+            self.buf.as_ptr(),
+            len
+        ) };
+        Some(Ok(ret))
+    }
 }
 
 fn checked_payload<T>(payload: T) -> Result<Vec<u8>> where T: AsRef<[u8]> {
