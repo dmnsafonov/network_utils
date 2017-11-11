@@ -12,6 +12,7 @@ extern crate ping6_datacommon;
 error_chain!(
     foreign_links {
         AddrParseError(std::net::AddrParseError);
+        IoError(std::io::Error);
         LogInit(::log::SetLoggerError);
     }
 
@@ -27,6 +28,7 @@ error_chain!(
     }
 );
 
+use std::io::prelude::*;
 use std::net::*;
 
 use clap::*;
@@ -43,6 +45,8 @@ fn the_main() -> Result<()> {
     env_logger::init()?;
 
     let matches = get_args();
+    let raw = matches.is_present("raw");
+    let binary = matches.is_present("binary");
 
     gain_net_raw()?;
     let mut sock = IpV6RawSocket::new(
@@ -85,7 +89,8 @@ fn the_main() -> Result<()> {
             break;
         }
 
-        let mut buf = vec![0; 65535]; // mtu unlikely to be higher
+        // ipv6 payload length is 2-byte
+        let mut buf = vec![0; std::u16::MAX as usize];
 
         use linux_network::errors::ErrorKind::Interrupted;
         let (buf, sockaddr) =
@@ -111,16 +116,32 @@ fn the_main() -> Result<()> {
             continue;
         }
 
-        if matches.is_present("raw") {
-            println!("received message from {}: {}",
-                src,
-                String::from_utf8_lossy(payload));
+        let payload_for_print;
+        if raw {
+            if binary {
+                write_binary(
+                    &u16_to_bytes_be(payload.len() as u16),
+                    payload
+                )?;
+            }
+
+            payload_for_print = Some(payload);
+        } else if validate_payload(payload) {
+            if binary {
+                write_binary(&payload[0..2], &payload[4..])?;
+            }
+
+            payload_for_print = Some(&payload[2..]);
         } else {
-            if validate_payload(payload) {
-                println!("received message from {}: {}",
-                    src,
-                    String::from_utf8_lossy(&payload[4..])
-                );
+            payload_for_print = None;
+        }
+
+        if let Some(payload_for_print) = payload_for_print {
+            let str_payload = String::from_utf8_lossy(payload_for_print);
+            if binary {
+                info!("received message from {}: {}", src, str_payload);
+            } else {
+                println!("received message from {}: {}", src, str_payload);
             }
         }
     }
@@ -138,17 +159,23 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .short("-b")
             .takes_value(true)
             .value_name("ADDRESS")
-            .help("Bind to an address")
+            .help("Binds to an address")
         ).arg(Arg::with_name("bind-to-interface")
             .long("bind-to-interface")
             .short("I")
             .takes_value(true)
             .value_name("INTERFACE")
-            .help("Bind to an interface")
+            .help("Binds to an interface")
         ).arg(Arg::with_name("raw")
             .long("raw")
             .short("r")
-            .help("Show all received packets' payload")
+            .help("Shows all received packets' payload")
+        ).arg(Arg::with_name("binary")
+            .long("binary")
+            .short("B")
+            .help("Outputs only the messages' contents, preceded by \
+                2-byte-BE length; otherwise messages are converted to \
+                unicode, filtering any non-unicode data")
         ).get_matches()
 }
 
@@ -208,4 +235,11 @@ fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     }
 
     return true;
+}
+
+fn write_binary(len: &[u8], payload: &[u8]) -> Result<()> {
+    let mut out = std::io::stdout();
+    out.write(len)?;
+    out.write(payload)?;
+    Ok(())
 }

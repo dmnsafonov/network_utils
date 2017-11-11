@@ -9,6 +9,13 @@ extern crate linux_network;
 extern crate ping6_datacommon;
 
 error_chain!(
+    errors {
+        PayloadTooBig(size: usize) {
+            description("packet payload is too big")
+            display("packet payload size {} is too big", size)
+        }
+    }
+
     foreign_links {
         AddrParseError(std::net::AddrParseError);
         LogInit(log::SetLoggerError);
@@ -27,6 +34,7 @@ error_chain!(
 );
 
 use std::net::*;
+use std::os::unix::prelude::*;
 
 use clap::*;
 use pnet_packet::icmpv6;
@@ -42,6 +50,7 @@ fn the_main() -> Result<()> {
     env_logger::init()?;
 
     let matches = get_args();
+    let raw = matches.is_present("raw");
 
     let src = make_socket_addr(matches.value_of("source").unwrap(), false)?;
     let src_addr = *src.ip();
@@ -69,7 +78,7 @@ fn the_main() -> Result<()> {
 
     setup_signal_handler()?;
 
-    for i in matches.values_of("messages").unwrap() {
+    for i in matches.values_of_os("messages").unwrap() {
         if signal_received() {
             info!("interrupted");
             break;
@@ -84,14 +93,14 @@ fn the_main() -> Result<()> {
             payload: vec![]
         };
 
-        packet_descr.payload = match matches.is_present("raw") {
+        packet_descr.payload = match raw {
             true => b.into(),
-            false => checked_payload(b)
+            false => checked_payload(b)?
         };
 
         let packet = make_packet(&packet_descr, src_addr, dst_addr);
         sock.sendto(packet.packet(), dst, SendFlagSet::new())?;
-        info!("message \"{}\" sent", i);
+        info!("message \"{}\" sent", i.to_string_lossy());
     }
 
     Ok(())
@@ -125,21 +134,21 @@ fn get_args<'a>() -> ArgMatches<'a> {
         ).get_matches()
 }
 
-fn checked_payload<T>(payload: T) -> Vec<u8> where T: AsRef<[u8]> {
+fn checked_payload<T>(payload: T) -> Result<Vec<u8>> where T: AsRef<[u8]> {
     let b = payload.as_ref();
     let len = b.len();
-    assert!(len <= std::u16::MAX as usize);
+    if len > std::u16::MAX as usize {
+        bail!(ErrorKind::PayloadTooBig(len));
+    }
 
     let crc = ping6_data_checksum(b);
 
     let mut ret = Vec::with_capacity(len + 4);
-    ret.push(((len & 0xff00) >> 8) as u8);
-    ret.push((len & 0xff) as u8);
-    ret.push(((crc & 0xff00) >> 8) as u8);
-    ret.push((crc & 0xff) as u8);
+    ret.extend_from_slice(&u16_to_bytes_be(len as u16));
+    ret.extend_from_slice(&u16_to_bytes_be(crc));
     ret.extend_from_slice(b);
 
-    ret
+    Ok(ret)
 }
 
 fn make_packet(descr: &Icmpv6, src: Ipv6Addr, dst: Ipv6Addr) -> Icmpv6Packet {

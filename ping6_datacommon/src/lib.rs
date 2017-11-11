@@ -118,3 +118,10 @@ extern "C" fn signal_handler(_: c_int) {
 pub fn signal_received() -> bool {
     SIGNAL_FLAG.swap(false, Ordering::Relaxed)
 }
+
+pub fn u16_to_bytes_be(x: u16) -> [u8; 2] {
+    [
+        ((x & 0xff00) >> 8) as u8,
+        (x & 0xff) as u8
+    ]
+}
