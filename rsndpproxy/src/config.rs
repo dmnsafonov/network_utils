@@ -9,8 +9,8 @@ use ::serde::de::Visitor;
 
 use super::errors::{Error, ErrorKind, Result, ResultExt};
 
-const DEFAULT_CONFIG_PATH: &str = "/etc/rsndppd.conf";
-const DEFAULT_PID_PATH: &str = "/run/rsndppd.pid";
+const DEFAULT_CONFIG_PATH: &str = "/etc/rsndpproxy.conf";
+const DEFAULT_PID_PATH: &str = "/run/rsndpproxy.pid";
 
 #[allow(non_snake_case)]
 fn DEFAULT_MAX_QUEUED() -> usize { 42 }
