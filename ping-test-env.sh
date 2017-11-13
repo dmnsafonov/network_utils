@@ -28,6 +28,8 @@ elif [[ "$1" == "recv" ]]; then
     shift 2
     ip netns exec pingdata-receiver su "$user" -c "$*"
 elif [[ "$1" == "permissions" ]]; then
+    chown root: ping6-datasend/target/debug/ping6-datasend
+    chown root: ping6-datarecv/target/debug/ping6-datarecv
     setcap 'cap_net_raw=p' ping6-datasend/target/debug/ping6-datasend
     setcap 'cap_net_raw=p' ping6-datarecv/target/debug/ping6-datarecv
 else
