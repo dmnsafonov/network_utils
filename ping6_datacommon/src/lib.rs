@@ -1,9 +1,9 @@
 extern crate capabilities;
-extern crate crc16;
 #[macro_use] extern crate error_chain;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
+extern crate seahash;
 
 extern crate linux_network;
 
@@ -79,17 +79,13 @@ pub fn drop_caps() -> Result<()> {
 }
 
 pub fn ping6_data_checksum<T>(payload: T) -> u16 where T: AsRef<[u8]> {
+    use std::hash::Hasher;
+    use seahash::*;
     let b = payload.as_ref();
-    let len = b.len();
-
-    let mut crc_st = crc16::State::<crc16::CCITT_FALSE>::new();
-    crc_st.update(&[
-        ((len & 0xff00) >> 8) as u8,
-        (len & 0xff) as u8
-    ]);
-    crc_st.update(b);
-
-    crc_st.get()
+    let mut hasher = SeaHasher::new();
+    hasher.write(&u16_to_bytes_be(b.len() as u16));
+    hasher.write(b);
+    (hasher.finish() & 0xffff) as u16
 }
 
 const SIGNAL_FLAG: AtomicBool = ATOMIC_BOOL_INIT;
