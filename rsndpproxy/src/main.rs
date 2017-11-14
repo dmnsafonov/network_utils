@@ -29,6 +29,7 @@ use std::process::exit;
 use std::os::unix::prelude::*;
 use std::rc::*;
 
+use log::LogLevel::*;
 use nix::Errno;
 use nix::libc;
 use nix::sys::signal::*;
@@ -101,14 +102,16 @@ fn setup_logging(config: &Config) -> Result<()> {
 fn the_main(config: &Config) -> Result<()> {
     info!("{} version {} started", crate_name!(), crate_version!());
 
-    debug!("verbose logging on");
-    debug!("configuration read from {}",
-        config.config_file.to_string_lossy());
-    debug!("received configuration:");
-    for i in toml::to_string(&config)?.lines() {
-        debug!("\t{}", i);
+    if log_enabled!(Debug) {
+        debug!("verbose logging on");
+        debug!("configuration read from {}",
+            config.config_file.to_string_lossy());
+        debug!("received configuration:");
+        for i in toml::to_string(&config)?.lines() {
+            debug!("\t{}", i);
+        }
+        debug!("daemonize is {}", if config.daemonize {"on"} else {"off"});
     }
-    debug!("daemonize is {}", if config.daemonize {"on"} else {"off"});
 
     if get_effective_uid() != 0 {
         error!("need to be started as root");
