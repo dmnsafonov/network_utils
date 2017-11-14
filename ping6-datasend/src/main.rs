@@ -215,11 +215,11 @@ fn checked_payload<T>(payload: T) -> Result<Vec<u8>> where T: AsRef<[u8]> {
         bail!(ErrorKind::PayloadTooBig(len));
     }
 
-    let crc = ping6_data_checksum(b);
+    let checksum = ping6_data_checksum(b);
 
     let mut ret = Vec::with_capacity(len + 4);
+    ret.extend_from_slice(&u16_to_bytes_be(checksum));
     ret.extend_from_slice(&u16_to_bytes_be(len as u16));
-    ret.extend_from_slice(&u16_to_bytes_be(crc));
     ret.extend_from_slice(b);
 
     Ok(ret)

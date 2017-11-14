@@ -1,5 +1,4 @@
 #[macro_use] extern crate clap;
-extern crate crc16;
 extern crate env_logger;
 #[macro_use] extern crate error_chain;
 extern crate libc;
@@ -220,18 +219,18 @@ fn validate_icmpv6(
 fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     let payload = payload_arg.as_ref();
 
-    let len = ((payload[0] as u16) << 8) | (payload[1] as u16);
-    let packet_crc = ((payload[2] as u16) << 8) | (payload[3] as u16);
+    let packet_checksum = ((payload[0] as u16) << 8) | (payload[1] as u16);
+    let len = ((payload[2] as u16) << 8) | (payload[3] as u16);
 
     if len != (payload.len() - 4) as u16 {
         debug!("wrong encapsulated packet length: {}, dropping", len);
         return false;
     }
 
-    let crc = ping6_data_checksum(&payload[4..]);
+    let checksum = ping6_data_checksum(&payload[4..]);
 
-    if packet_crc != crc {
-        debug!("wrong crc, dropping");
+    if packet_checksum != checksum {
+        debug!("wrong checksum, dropping");
         return false;
     }
 
