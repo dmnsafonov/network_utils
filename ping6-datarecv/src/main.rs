@@ -97,7 +97,8 @@ fn the_main() -> Result<()> {
                 x@Ok(_) => x,
                 Err(e) => {
                     if let Interrupted = *e.kind() {
-                        continue;
+                        info!("interrupted");
+                        break;
                     } else {
                         Err(e)
                     }
