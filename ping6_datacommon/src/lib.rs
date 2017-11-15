@@ -88,7 +88,7 @@ pub fn ping6_data_checksum<T>(payload: T) -> u16 where T: AsRef<[u8]> {
     (hasher.finish() & 0xffff) as u16
 }
 
-const SIGNAL_FLAG: AtomicBool = ATOMIC_BOOL_INIT;
+static SIGNAL_FLAG: AtomicBool = ATOMIC_BOOL_INIT;
 
 pub fn setup_signal_handler() -> Result<()> {
     let sigact = SigAction::new(
