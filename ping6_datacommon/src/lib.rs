@@ -1,6 +1,5 @@
 extern crate capabilities;
 #[macro_use] extern crate error_chain;
-extern crate libc;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate seahash;
@@ -33,6 +32,7 @@ use std::sync::atomic::*;
 
 use capabilities::*;
 use libc::{c_int, IPPROTO_ICMPV6};
+use nix::libc;
 use nix::sys::signal::*;
 
 use linux_network::*;
