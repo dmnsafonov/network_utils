@@ -74,6 +74,14 @@ fn the_main() -> Result<()> {
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
+    if let Some(ifname) = matches.value_of("bind-to-interface") {
+        sock.setsockopt(
+            SockOptLevel::Socket,
+            &SockOpt::BindToDevice(ifname)
+        )?;
+        info!("bound to {} interface", ifname);
+    }
+
     setup_signal_handler()?;
 
     let mut process_message = |i: &[u8]| -> Result<bool> {
@@ -154,6 +162,12 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .multiple(true)
             .index(3)
             .help("The messages to send, one argument for a packet")
+        ).arg(Arg::with_name("bind-to-interface")
+            .short("I")
+            .long("bind-to-interface")
+            .takes_value(true)
+            .value_name("INTERFACE")
+            .help("Binds to an interface")
         ).arg(Arg::with_name("use-stdin")
             .required(true)
             .conflicts_with("messages")
