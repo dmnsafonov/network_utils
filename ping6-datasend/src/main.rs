@@ -74,9 +74,6 @@ fn the_main() -> Result<()> {
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
-    sock.bind(src)?;
-    debug!("bound to address {}", src);
-
     setup_signal_handler()?;
 
     let mut process_message = |i: &[u8]| -> Result<bool> {
