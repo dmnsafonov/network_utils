@@ -175,7 +175,7 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .short("B")
             .help("Outputs only the messages' contents, preceded by \
                 2-byte-BE length; otherwise messages are converted to \
-                unicode, filtering any non-unicode data")
+                unicode, filtering out any non-unicode data")
         ).get_matches()
 }
 
