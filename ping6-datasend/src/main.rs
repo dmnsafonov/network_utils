@@ -14,6 +14,11 @@ error_chain!(
             description("packet payload is too big")
             display("packet payload size {} is too big", size)
         }
+
+        WrongLength(len: usize, exp: usize) {
+            description("message is smaller than the length specified")
+            display("message of length {} expected, {} bytes read", exp, len)
+        }
     }
 
     foreign_links {
@@ -174,7 +179,7 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .long("use-stdin")
             .short("c")
             .help("Instead of messages on the command-line, read from stdin \
-                (each successful read is a message)")
+                (prepend each message with 16-bit BE length)")
         ).get_matches()
 }
 
@@ -186,9 +191,7 @@ struct StdinBytesIterator<'a> {
 impl<'a> StdinBytesIterator<'a> {
     fn new() -> StdinBytesIterator<'a> {
         // maximum ipv6 payload length
-        let size = std::u16::MAX as usize;
-        let mut buf = Vec::with_capacity(size);
-        buf.resize(size, 0);
+        let buf = vec![0; std::u16::MAX as usize];
         StdinBytesIterator {
             buf: buf,
             _phantom: Default::default()
@@ -205,9 +208,17 @@ impl<'a> Iterator for StdinBytesIterator<'a> {
 
         let mut tin = io::stdin();
 
-        let len = match tin.read(&mut self.buf) {
+        let mut len_buf = [0; 2];
+        match tin.read(&mut len_buf) {
             Ok(0) => return None,
-            Ok(x) => x,
+            Err(e) => return Some(Err(e.into())),
+            _ => ()
+        };
+        let len = ((len_buf[0] as usize) << 8) | (len_buf[1] as usize);
+
+        match tin.read(&mut self.buf[..len]) {
+            Ok(x) if x == len => (),
+            Ok(x) => return Some(Err(ErrorKind::WrongLength(x, len).into())),
             Err(e) => return Some(Err(e.into()))
         };
 
