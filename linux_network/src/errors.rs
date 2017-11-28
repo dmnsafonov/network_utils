@@ -29,6 +29,7 @@ error_chain!(
         IoError(::std::io::Error);
         NixError(::nix::Error);
         NullInString(::std::ffi::NulError);
+        Seccomp(::seccomp::SeccompError) #[cfg(feature = "seccomp")];
     }
 );
 

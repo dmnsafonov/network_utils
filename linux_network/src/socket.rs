@@ -300,11 +300,36 @@ pub trait SocketCommon where
         set_interface_flags(self as &AsRawFd, name, flags)?;
 
         Ok(prev)
+    #[cfg(feature = "seccomp")]
+    fn allow_sending(&self, ctx: &mut ::seccomp::Context) -> Result<()> {
+        allow_syscall(ctx, self, SYS_sendto)
+    }
+
+    #[cfg(feature = "seccomp")]
+    fn allow_receiving(&self, ctx: &mut ::seccomp::Context) -> Result<()> {
+        allow_syscall(ctx, self, SYS_recvfrom)
     }
 }
 
 impl SocketCommon for IpV6RawSocket {}
 impl SocketCommon for IpV6PacketSocket {}
+
+#[cfg(feature = "seccomp")]
+fn allow_syscall<T>(ctx: &mut ::seccomp::Context, fd: &T, syscall: c_long)
+        -> Result<()> where T: AsRawFd {
+    use ::seccomp::*;
+    ctx.add_rule(
+        Rule::new(syscall as usize,
+            Compare::arg(0)
+                .using(Op::Eq)
+                .with(fd.as_raw_fd() as u64)
+                .build()
+                .unwrap(),
+            Action::Allow
+        )
+    )?;
+    Ok(())
+}
 
 unsafe fn as_sockaddr<T>(x: &T) -> &sockaddr {
     transmute::<&T, &sockaddr>(x)

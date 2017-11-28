@@ -3,6 +3,7 @@ extern crate interfaces;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate pnet_packet;
+#[cfg(feature = "seccomp")] extern crate seccomp;
 
 #[macro_use] extern crate numeric_enums;
 
