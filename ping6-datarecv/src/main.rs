@@ -119,37 +119,55 @@ fn the_main() -> Result<()> {
             continue;
         }
 
-        let payload_for_print;
-        if raw {
-            if binary {
-                write_binary(
-                    &u16_to_bytes_be(payload.len() as u16),
-                    payload
-                )?;
-            }
-
-            payload_for_print = Some(payload);
-        } else if validate_payload(payload) {
-            if binary {
-                write_binary(&payload[0..2], &payload[4..])?;
-            }
-
-            payload_for_print = Some(&payload[4..]);
+        if binary {
+            binary_print(payload, src, raw)?;
         } else {
-            payload_for_print = None;
-        }
-
-        if let Some(payload_for_print) = payload_for_print {
-            let str_payload = String::from_utf8_lossy(payload_for_print);
-            if binary {
-                stdout().flush()?;
-                info!("received message from {}: {}", src, str_payload);
-            } else {
-                println!("received message from {}: {}", src, str_payload);
-            }
+            regular_print(payload, src, raw)?;
         }
     }
 
+    Ok(())
+}
+
+fn binary_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
+    let payload_for_print;
+    if raw {
+        write_binary(
+            &u16_to_bytes_be(payload.len() as u16),
+            payload
+        )?;
+        payload_for_print = Some(payload);
+    } else if validate_payload(payload) {
+        let real_payload = &payload[4..];
+        write_binary(&payload[0..2], real_payload)?;
+        payload_for_print = Some(real_payload);
+    } else {
+        payload_for_print = None;
+    }
+
+    if let Some(payload_for_print) = payload_for_print {
+        let str_payload = String::from_utf8_lossy(payload_for_print);
+        info!("received message from {}: {}", src, str_payload);
+        stdout().flush()?;
+    }
+
+    Ok(())
+}
+
+fn regular_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
+    let payload_for_print = match raw {
+        true => Some(payload),
+        false => {
+            match validate_payload(payload) {
+                true => Some(&payload[4..]),
+                false => None
+            }
+        }
+    };
+    if let Some(payload_for_print) = payload_for_print {
+        let str_payload = String::from_utf8_lossy(payload_for_print);
+        println!("received message from {}: {}", src, str_payload);
+    }
     Ok(())
 }
 
