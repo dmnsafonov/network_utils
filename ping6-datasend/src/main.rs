@@ -4,6 +4,7 @@ extern crate env_logger;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate pnet_packet;
+extern crate seccomp;
 
 extern crate linux_network;
 extern crate ping6_datacommon;
@@ -25,6 +26,7 @@ error_chain!(
         AddrParseError(std::net::AddrParseError);
         IoError(std::io::Error);
         LogInit(log::SetLoggerError);
+        Seccomp(seccomp::SeccompError);
     }
 
     links {
@@ -55,19 +57,6 @@ quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
 
-    let matches = get_args();
-    let raw = matches.is_present("raw");
-
-    let src = make_socket_addr(matches.value_of("source").unwrap(), false)?;
-    let src_addr = *src.ip();
-
-    let dst = make_socket_addr(
-        matches.value_of("destination").unwrap(),
-        true
-    )?;
-    let dst_addr = *dst.ip();
-    info!("resolved destination address: {}", dst);
-
     gain_net_raw()?;
     let mut sock = IpV6RawSocket::new(
         libc::IPPROTO_ICMPV6,
@@ -79,6 +68,20 @@ fn the_main() -> Result<()> {
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
+    let matches = get_args();
+    let raw = matches.is_present("raw");
+    let use_stdin = matches.is_present("use-stdin");
+
+    let src = make_socket_addr(matches.value_of("source").unwrap(), false)?;
+    let src_addr = *src.ip();
+
+    let dst = make_socket_addr(
+        matches.value_of("destination").unwrap(),
+        true
+    )?;
+    let dst_addr = *dst.ip();
+    info!("resolved destination address: {}", dst);
+
     if let Some(ifname) = matches.value_of("bind-to-interface") {
         sock.setsockopt(
             SockOptLevel::Socket,
@@ -88,6 +91,8 @@ fn the_main() -> Result<()> {
     }
 
     setup_signal_handler()?;
+
+    setup_seccomp(&sock, use_stdin)?;
 
     let mut process_message = |i: &[u8]| -> Result<bool> {
         if signal_received() {
@@ -124,7 +129,7 @@ fn the_main() -> Result<()> {
         Ok(true)
     };
 
-    if matches.is_present("use-stdin") {
+    if use_stdin {
         for i in StdinBytesIterator::new() {
             if !process_message(i?)? {
                 break;
@@ -181,6 +186,18 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .help("Instead of messages on the command-line, read from stdin \
                 (prepend each message with 16-bit BE length)")
         ).get_matches()
+}
+
+fn setup_seccomp<T>(sock: &T, use_stdin: bool)
+        -> Result<()> where T: SocketCommon {
+    let mut ctx = allow_defaults()?;
+    allow_console_out(&mut ctx, StdoutUse::No)?;
+    if use_stdin {
+        allow_console_in(&mut ctx)?;
+    }
+    sock.allow_sending(&mut ctx)?;
+    ctx.load()?;
+    Ok(())
 }
 
 struct StdinBytesIterator<'a> {

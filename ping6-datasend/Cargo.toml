@@ -7,8 +7,12 @@ authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 clap = "^2.26.2"
 env_logger = "^0.4.3"
 error-chain = "^0.11.0"
-linux_network = { path = "../linux_network" }
 libc = "^0.2.33"
 log = "^0.3.8"
 ping6_datacommon = { path = "../ping6_datacommon" }
 pnet_packet = "^0.20.0"
+seccomp = "^0.1.1"
+
+[dependencies.linux_network]
+features = ["seccomp"]
+path = "../linux_network"

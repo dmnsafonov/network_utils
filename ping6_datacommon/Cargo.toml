@@ -10,3 +10,4 @@ linux_network = { path = "../linux_network" }
 log = "^0.3.8"
 nix = "^0.9.0"
 seahash = "^3.0.5"
+seccomp = "^0.1.1"

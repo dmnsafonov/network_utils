@@ -3,6 +3,7 @@ extern crate capabilities;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate seahash;
+extern crate seccomp;
 
 extern crate linux_network;
 
@@ -17,6 +18,7 @@ error_chain!(
     foreign_links {
         IoError(std::io::Error);
         NixError(nix::Error);
+        Seccomp(seccomp::SeccompError);
     }
 
     links {
@@ -28,12 +30,14 @@ error_chain!(
 );
 
 use std::net::*;
+use std::os::unix::prelude::*;
 use std::sync::atomic::*;
 
 use capabilities::*;
-use libc::{c_int, IPPROTO_ICMPV6};
+use libc::{c_int, c_long, IPPROTO_ICMPV6};
 use nix::libc;
 use nix::sys::signal::*;
+use seccomp::*;
 
 use linux_network::*;
 
@@ -120,4 +124,79 @@ pub fn u16_to_bytes_be(x: u16) -> [u8; 2] {
         ((x & 0xff00) >> 8) as u8,
         (x & 0xff) as u8
     ]
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum StdoutUse {
+    Yes,
+    No
+}
+
+pub fn allow_defaults() -> Result<Context> {
+    let mut ctx = Context::default(Action::Kill)?;
+    allow_syscall(&mut ctx, libc::SYS_close)?;
+    allow_syscall(&mut ctx, libc::SYS_exit)?;
+    allow_syscall(&mut ctx, libc::SYS_sigaltstack)?;
+    allow_syscall(&mut ctx, libc::SYS_munmap)?;
+    allow_syscall(&mut ctx, libc::SYS_exit_group)?;
+    Ok(ctx)
+}
+
+fn allow_syscall(ctx: &mut Context, syscall: c_long) -> Result<()> {
+    ctx.add_rule(
+        Rule::new(
+            syscall as usize,
+            Compare::arg(0)
+                .using(Op::Ge)
+                .with(0)
+                .build()
+                .unwrap(),
+            Action::Allow
+        )
+    )?;
+    Ok(())
+}
+
+pub fn allow_console_out(ctx: &mut Context, out: StdoutUse) -> Result<()> {
+    if let StdoutUse::Yes = out {
+        allow_write_on(ctx, libc::STDOUT_FILENO)?;
+    }
+    allow_write_on(ctx, libc::STDERR_FILENO)?;
+    Ok(())
+}
+
+pub fn allow_console_in(ctx: &mut Context) -> Result<()> {
+    allow_fd_syscall(ctx, libc::STDIN_FILENO, libc::SYS_read)?;
+    allow_fd_syscall(ctx, libc::STDIN_FILENO, libc::SYS_readv)?;
+    allow_fd_syscall(ctx, libc::STDIN_FILENO, libc::SYS_preadv)?;
+    allow_fd_syscall(ctx, libc::STDIN_FILENO, libc::SYS_preadv2)?;
+    allow_fd_syscall(ctx, libc::STDIN_FILENO, libc::SYS_pread64)?;
+    Ok(())
+}
+
+fn allow_write_on(ctx: &mut Context, fd: RawFd) -> Result<()> {
+    allow_fd_syscall(ctx, fd, libc::SYS_write)?;
+    allow_fd_syscall(ctx, fd, libc::SYS_writev)?;
+    allow_fd_syscall(ctx, fd, libc::SYS_pwritev)?;
+    allow_fd_syscall(ctx, fd, libc::SYS_pwritev2)?;
+    allow_fd_syscall(ctx, fd, libc::SYS_pwrite64)?;
+    allow_fd_syscall(ctx, fd, libc::SYS_fsync)?;
+    allow_fd_syscall(ctx, fd, libc::SYS_fdatasync)?;
+    Ok(())
+}
+
+fn allow_fd_syscall(ctx: &mut Context, fd: RawFd, syscall: c_long)
+        -> Result<()> {
+    ctx.add_rule(
+        Rule::new(
+            syscall as usize,
+            Compare::arg(0)
+                .using(Op::Eq)
+                .with(fd as u64)
+                .build()
+                .unwrap(),
+            Action::Allow
+        )
+    )?;
+    Ok(())
 }
