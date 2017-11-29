@@ -117,8 +117,8 @@ fn the_main() -> Result<()> {
             Ok(_) => (),
             Err(e) => {
                 if let Interrupted = *e.kind() {
-                    info!("interrupted");
-                    return Ok(false);
+                    info!("system call interrupted");
+                    return Ok(true);
                 } else {
                     return Err(e.into());
                 }
