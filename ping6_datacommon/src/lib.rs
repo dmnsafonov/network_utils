@@ -139,6 +139,8 @@ pub fn allow_defaults() -> Result<Context> {
     allow_syscall(&mut ctx, libc::SYS_sigaltstack)?;
     allow_syscall(&mut ctx, libc::SYS_munmap)?;
     allow_syscall(&mut ctx, libc::SYS_exit_group)?;
+    allow_syscall(&mut ctx, libc::SYS_rt_sigreturn)?;
+    allow_syscall(&mut ctx, libc::SYS_futex)?;
     Ok(ctx)
 }
 

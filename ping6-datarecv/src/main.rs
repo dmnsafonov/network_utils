@@ -4,6 +4,7 @@ extern crate env_logger;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate pnet_packet;
+extern crate seccomp;
 
 extern crate linux_network;
 extern crate ping6_datacommon;
@@ -13,6 +14,7 @@ error_chain!(
         AddrParseError(std::net::AddrParseError);
         IoError(std::io::Error);
         LogInit(::log::SetLoggerError);
+        Seccomp(seccomp::SeccompError);
     }
 
     links {
@@ -44,10 +46,6 @@ quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
 
-    let matches = get_args();
-    let raw = matches.is_present("raw");
-    let binary = matches.is_present("binary");
-
     gain_net_raw()?;
     let mut sock = IpV6RawSocket::new(
         ::libc::IPPROTO_ICMPV6,
@@ -58,6 +56,10 @@ fn the_main() -> Result<()> {
     drop_caps()?;
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
+
+    let matches = get_args();
+    let raw = matches.is_present("raw");
+    let binary = matches.is_present("binary");
 
     let bound_addr_str = matches.value_of("bind");
     let bound_sockaddr = option_map_result(bound_addr_str,
@@ -83,6 +85,8 @@ fn the_main() -> Result<()> {
 
     setup_signal_handler()?;
 
+    setup_seccomp(&sock, StdoutUse::Yes)?;
+
     // ipv6 payload length is 2-byte
     let mut raw_buf = vec![0; std::u16::MAX as usize];
     loop {
@@ -96,8 +100,8 @@ fn the_main() -> Result<()> {
                 x@Ok(_) => x,
                 Err(e) => {
                     if let Interrupted = *e.kind() {
-                        info!("interrupted");
-                        break;
+                        debug!("system call interrupted");
+                        continue;
                     } else {
                         Err(e)
                     }
@@ -111,8 +115,8 @@ fn the_main() -> Result<()> {
             payload.len(), src);
 
         if !validate_icmpv6(&packet, src, bound_addr) {
-            info!("interrupted");
-            break;
+            info!("invalid icmpv6 packet, dropping");
+            continue;
         }
 
         let payload_for_print;
@@ -179,6 +183,15 @@ fn get_args<'a>() -> ArgMatches<'a> {
         ).get_matches()
 }
 
+fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
+        -> Result<()> where T: SocketCommon {
+    let mut ctx = allow_defaults()?;
+    allow_console_out(&mut ctx, use_stdout)?;
+    sock.allow_receiving(&mut ctx)?;
+    ctx.load()?;
+    Ok(())
+}
+
 pub fn option_map_result<T,F,R,E>(x: Option<T>, f: F)
         -> ::std::result::Result<Option<R>, E> where
         F: FnOnce(T) -> ::std::result::Result<R,E> {
@@ -198,7 +211,7 @@ fn validate_icmpv6(
     if let Some(dest_addr) = dst {
         let cm = icmpv6::checksum(&packet, src, dest_addr);
         if icmp.checksum != cm {
-            info!("wrong icmp checksum {}, correct is {}, dropping",
+            info!("wrong icmp checksum {}, correct is {}",
                 icmp.checksum,
                 cm
             );
@@ -207,7 +220,7 @@ fn validate_icmpv6(
     }
 
     if icmp.icmpv6_code != Icmpv6Codes::NoCode {
-        info!("nonzero code {} in echo request, dropping",
+        info!("nonzero code {} in echo request",
             icmp.icmpv6_code.to_primitive_values().0
         );
         return false;
