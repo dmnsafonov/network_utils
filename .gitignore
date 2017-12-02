@@ -2,3 +2,7 @@
 */target/
 **/*.rs.bk
 */work/
+bin/
+first_task/
+second_task/
+final_task/
