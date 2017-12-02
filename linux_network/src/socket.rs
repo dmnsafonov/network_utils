@@ -300,6 +300,8 @@ pub trait SocketCommon where
         set_interface_flags(self as &AsRawFd, name, flags)?;
 
         Ok(prev)
+    }
+
     #[cfg(feature = "seccomp")]
     fn allow_sending(&self, ctx: &mut ::seccomp::Context) -> Result<()> {
         allow_syscall(ctx, self, SYS_sendto)
