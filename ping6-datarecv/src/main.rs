@@ -46,6 +46,8 @@ quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
 
+    let matches = get_args();
+
     gain_net_raw()?;
     let mut sock = IpV6RawSocket::new(
         ::libc::IPPROTO_ICMPV6,
@@ -53,11 +55,18 @@ fn the_main() -> Result<()> {
     )?;
     debug!("raw socket created");
 
+    if let Some(ifname) = matches.value_of("bind-to-interface") {
+        sock.setsockopt(
+            SockOptLevel::Socket,
+            &SockOpt::BindToDevice(ifname)
+        )?;
+        info!("bound to {} interface", ifname);
+    }
+
     drop_caps()?;
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
-    let matches = get_args();
     let raw = matches.is_present("raw");
     let binary = matches.is_present("binary");
 
@@ -69,13 +78,6 @@ fn the_main() -> Result<()> {
     if let Some(addr) = bound_sockaddr {
         sock.bind(addr)?;
         info!("bound to {} address", bound_addr_str.unwrap());
-    }
-    if let Some(ifname) = matches.value_of("bind-to-interface") {
-        sock.setsockopt(
-            SockOptLevel::Socket,
-            &SockOpt::BindToDevice(ifname)
-        )?;
-        info!("bound to {} interface", ifname);
     }
 
     let mut filter = icmp6_filter::new();

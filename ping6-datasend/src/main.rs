@@ -57,6 +57,8 @@ quick_main!(the_main);
 fn the_main() -> Result<()> {
     env_logger::init()?;
 
+    let matches = get_args();
+
     gain_net_raw()?;
     let mut sock = IpV6RawSocket::new(
         libc::IPPROTO_ICMPV6,
@@ -64,11 +66,18 @@ fn the_main() -> Result<()> {
     )?;
     debug!("raw socket created");
 
+    if let Some(ifname) = matches.value_of("bind-to-interface") {
+        sock.setsockopt(
+            SockOptLevel::Socket,
+            &SockOpt::BindToDevice(ifname)
+        )?;
+        info!("bound to {} interface", ifname);
+    }
+
     drop_caps()?;
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
-    let matches = get_args();
     let raw = matches.is_present("raw");
     let use_stdin = matches.is_present("use-stdin");
 
@@ -81,14 +90,6 @@ fn the_main() -> Result<()> {
     )?;
     let dst_addr = *dst.ip();
     info!("resolved destination address: {}", dst);
-
-    if let Some(ifname) = matches.value_of("bind-to-interface") {
-        sock.setsockopt(
-            SockOptLevel::Socket,
-            &SockOpt::BindToDevice(ifname)
-        )?;
-        info!("bound to {} interface", ifname);
-    }
 
     setup_signal_handler()?;
 
