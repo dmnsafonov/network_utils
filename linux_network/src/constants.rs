@@ -29,8 +29,6 @@ pub mod raw {
     pub const ND_NEIGHBOR_ADVERT: uint8_t = 136;
     pub const ND_REDIRECT: uint8_t = 137;
 
-    pub const IFNAMSIZ: size_t = 16;
-
     pub const SIOCGIFFLAGS: c_ulong = 0x8913;
     pub const SIOCSIFFLAGS: c_ulong = 0x8914;
     pub const SIOCGIFINDEX: c_ulong = 0x8933;

@@ -12,7 +12,6 @@ use ::numeric_enums::*;
 
 use ::*;
 use ::errors::{Error, ErrorKind, Result, ResultExt};
-use ::raw::*;
 use ::util::*;
 
 pub use ::nix::sys::socket::SockFlag;

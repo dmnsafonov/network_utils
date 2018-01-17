@@ -9,7 +9,6 @@ use ::*;
 
 pub mod raw {
     use super::*;
-    use ::constants::raw::*;
 
     #[repr(C)]
     pub struct ifreq {
