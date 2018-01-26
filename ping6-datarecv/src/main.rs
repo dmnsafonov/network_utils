@@ -42,49 +42,16 @@ use pnet_packet::{FromPacket, Packet, PrimitiveValues};
 use linux_network::*;
 use ping6_datacommon::*;
 
+struct Config {
+    bind_address: Option<String>,
+    bind_interface: Option<String>,
+    raw: bool,
+    binary: bool
+}
+
 quick_main!(the_main);
 fn the_main() -> Result<()> {
-    env_logger::init()?;
-
-    let matches = get_args();
-
-    gain_net_raw()?;
-    let mut sock = IpV6RawSocket::new(
-        IpProto::IcmpV6.to_num(),
-        SockFlag::empty()
-    )?;
-    debug!("raw socket created");
-
-    if let Some(ifname) = matches.value_of("bind-to-interface") {
-        sock.setsockopt(&SockOpts::BindToDevice::new(&ifname))?;
-        info!("bound to {} interface", ifname);
-    }
-
-    drop_caps()?;
-    set_no_new_privs()?;
-    debug!("PR_SET_NO_NEW_PRIVS set");
-
-    let raw = matches.is_present("raw");
-    let binary = matches.is_present("binary");
-
-    let bound_addr_str = matches.value_of("bind");
-    let bound_sockaddr = option_map_result(bound_addr_str,
-        |x| make_socket_addr(x, false))?;
-    let bound_addr = bound_sockaddr.map(|x| *x.ip());
-
-    if let Some(addr) = bound_sockaddr {
-        sock.bind(addr)?;
-        info!("bound to {} address", bound_addr_str.unwrap());
-    }
-
-    let mut filter = icmp6_filter::new();
-    filter.pass(IcmpV6Type::EchoRequest);
-    sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
-    debug!("set icmpv6 type filter");
-
-    setup_signal_handler()?;
-
-    setup_seccomp(&sock, StdoutUse::Yes)?;
+    let (config, bound_addr, mut sock) = init()?;
 
     // ipv6 payload length is 2-byte
     let mut raw_buf = vec![0; std::u16::MAX as usize];
@@ -118,10 +85,10 @@ fn the_main() -> Result<()> {
             continue;
         }
 
-        if binary {
-            binary_print(payload, src, raw)?;
+        if config.binary {
+            binary_print(payload, src, config.raw)?;
         } else {
-            regular_print(payload, src, raw)?;
+            regular_print(payload, src, config.raw)?;
         }
     }
 
@@ -168,6 +135,60 @@ fn regular_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
         println!("received message from {}: {}", src, str_payload);
     }
     Ok(())
+}
+
+fn init() -> Result<(Config, Option<Ipv6Addr>, IpV6RawSocket)> {
+    env_logger::init()?;
+
+    let config = get_config();
+
+    gain_net_raw()?;
+    let mut sock = IpV6RawSocket::new(
+        IpProto::IcmpV6.to_num(),
+        SockFlag::empty()
+    )?;
+    debug!("raw socket created");
+
+    if let Some(ref ifname) = config.bind_interface {
+        sock.setsockopt(&SockOpts::BindToDevice::new(&ifname))?;
+        info!("bound to {} interface", ifname);
+    }
+
+    drop_caps()?;
+    set_no_new_privs()?;
+    debug!("PR_SET_NO_NEW_PRIVS set");
+
+    let bound_addr = if let Some(ref addr) = config.bind_address {
+        let bound_sockaddr = make_socket_addr(addr, false)?;
+        sock.bind(bound_sockaddr)?;
+        info!("bound to {} address", addr);
+
+        Some(*bound_sockaddr.ip())
+    } else {
+        None
+    };
+
+    let mut filter = icmp6_filter::new();
+    filter.pass(IcmpV6Type::EchoRequest);
+    sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
+    debug!("set icmpv6 type filter");
+
+    setup_signal_handler()?;
+
+    setup_seccomp(&sock, StdoutUse::Yes)?;
+
+    Ok((config, bound_addr, sock))
+}
+
+fn get_config() -> Config {
+    let matches = get_args();
+    Config {
+        bind_address: matches.value_of("bind").map(str::to_string),
+        bind_interface: matches.value_of("bind-to-interface")
+            .map(str::to_string),
+        raw: matches.is_present("raw"),
+        binary: matches.is_present("binary")
+    }
 }
 
 fn get_args<'a>() -> ArgMatches<'a> {
