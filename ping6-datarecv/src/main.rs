@@ -95,48 +95,6 @@ fn the_main() -> Result<()> {
     Ok(())
 }
 
-fn binary_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
-    let payload_for_print;
-    if raw {
-        write_binary(
-            &u16_to_bytes_be(payload.len() as u16),
-            payload
-        )?;
-        payload_for_print = Some(payload);
-    } else if validate_payload(payload) {
-        let real_payload = &payload[4..];
-        write_binary(&payload[0..2], real_payload)?;
-        payload_for_print = Some(real_payload);
-    } else {
-        payload_for_print = None;
-    }
-
-    if let Some(payload_for_print) = payload_for_print {
-        let str_payload = String::from_utf8_lossy(payload_for_print);
-        info!("received message from {}: {}", src, str_payload);
-        stdout().flush()?;
-    }
-
-    Ok(())
-}
-
-fn regular_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
-    let payload_for_print = match raw {
-        true => Some(payload),
-        false => {
-            match validate_payload(payload) {
-                true => Some(&payload[4..]),
-                false => None
-            }
-        }
-    };
-    if let Some(payload_for_print) = payload_for_print {
-        let str_payload = String::from_utf8_lossy(payload_for_print);
-        println!("received message from {}: {}", src, str_payload);
-    }
-    Ok(())
-}
-
 fn init() -> Result<(Config, Option<Ipv6Addr>, IpV6RawSocket)> {
     env_logger::init()?;
 
@@ -230,15 +188,6 @@ fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
     Ok(())
 }
 
-pub fn option_map_result<T,F,R,E>(x: Option<T>, f: F)
-        -> ::std::result::Result<Option<R>, E> where
-        F: FnOnce(T) -> ::std::result::Result<R,E> {
-    match x {
-        Some(y) => f(y).map(Some),
-        None => Ok(None)
-    }
-}
-
 fn validate_icmpv6(
         packet: &Icmpv6Packet,
         src: Ipv6Addr,
@@ -288,9 +237,51 @@ fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     return true;
 }
 
+fn binary_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
+    let payload_for_print;
+    if raw {
+        write_binary(
+            &u16_to_bytes_be(payload.len() as u16),
+            payload
+        )?;
+        payload_for_print = Some(payload);
+    } else if validate_payload(payload) {
+        let real_payload = &payload[4..];
+        write_binary(&payload[0..2], real_payload)?;
+        payload_for_print = Some(real_payload);
+    } else {
+        payload_for_print = None;
+    }
+
+    if let Some(payload_for_print) = payload_for_print {
+        let str_payload = String::from_utf8_lossy(payload_for_print);
+        info!("received message from {}: {}", src, str_payload);
+        stdout().flush()?;
+    }
+
+    Ok(())
+}
+
 fn write_binary(len: &[u8], payload: &[u8]) -> Result<()> {
     let mut out = stdout();
     out.write(len)?;
     out.write(payload)?;
+    Ok(())
+}
+
+fn regular_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
+    let payload_for_print = match raw {
+        true => Some(payload),
+        false => {
+            match validate_payload(payload) {
+                true => Some(&payload[4..]),
+                false => None
+            }
+        }
+    };
+    if let Some(payload_for_print) = payload_for_print {
+        let str_payload = String::from_utf8_lossy(payload_for_print);
+        println!("received message from {}: {}", src, str_payload);
+    }
     Ok(())
 }
