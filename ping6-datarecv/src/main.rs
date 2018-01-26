@@ -56,10 +56,7 @@ fn the_main() -> Result<()> {
     debug!("raw socket created");
 
     if let Some(ifname) = matches.value_of("bind-to-interface") {
-        sock.setsockopt(
-            SockOptLevel::Socket,
-            &SockOpt::BindToDevice(ifname)
-        )?;
+        sock.setsockopt(&SockOpts::BindToDevice::new(&ifname))?;
         info!("bound to {} interface", ifname);
     }
 
@@ -82,7 +79,7 @@ fn the_main() -> Result<()> {
 
     let mut filter = icmp6_filter::new();
     filter.pass(IcmpV6Type::EchoRequest);
-    sock.setsockopt(SockOptLevel::IcmpV6, &SockOpt::IcmpV6Filter(&filter))?;
+    sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
     debug!("set icmpv6 type filter");
 
     setup_signal_handler()?;

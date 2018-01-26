@@ -67,10 +67,7 @@ fn the_main() -> Result<()> {
     debug!("raw socket created");
 
     if let Some(ifname) = matches.value_of("bind-to-interface") {
-        sock.setsockopt(
-            SockOptLevel::Socket,
-            &SockOpt::BindToDevice(ifname)
-        )?;
+        sock.setsockopt(&SockOpts::BindToDevice::new(&ifname))?;
         info!("bound to {} interface", ifname);
     }
 

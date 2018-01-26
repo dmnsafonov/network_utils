@@ -166,14 +166,14 @@ gen_enum!(pub SockOptLevel: c_int;
 );
 
 // not exhaustive
-gen_enum_arg_ref!(pub SockOpt: c_int;
-    (IP_HDRINCL => IpHdrIncl(bool)),
-    (ICMPV6_FILTER => IcmpV6Filter(ref icmp6_filter)),
-    (SO_BINDTODEVICE => BindToDevice(ref str)),
-    (SO_DONTROUTE => DontRoute(bool)),
-    (IPV6_V6ONLY => V6Only(bool)),
-    (SO_ATTACH_FILTER => AttachFilter(ref BpfProg)),
-    (SO_LOCK_FILTER => LockFilter(bool))
+gen_enum!(pub SockOpt: c_int;
+    (IP_HDRINCL => IpHdrIncl),
+    (ICMPV6_FILTER => IcmpV6Filter),
+    (SO_BINDTODEVICE => BindToDevice),
+    (SO_DONTROUTE => DontRoute),
+    (IPV6_V6ONLY => V6Only),
+    (SO_ATTACH_FILTER => AttachFilter),
+    (SO_LOCK_FILTER => LockFilter)
 );
 
 gen_enum!(pub IcmpV6Type: uint8_t;

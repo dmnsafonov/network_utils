@@ -7,6 +7,12 @@ pub struct BpfProg {
     pub fprog: sock_fprog
 }
 
+impl BpfProg {
+    pub fn get(&self) -> &sock_fprog {
+        &self.fprog
+    }
+}
+
 impl Debug for BpfProg {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "{:?}", self._filters)

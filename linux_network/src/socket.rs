@@ -227,60 +227,10 @@ impl AsRawFd for IpV6PacketSocket {
 
 pub trait SocketCommon where
         Self: AsRawFd + Sized {
-    fn setsockopt(&mut self, level: SockOptLevel, opt: &SockOpt)
-            -> Result<()> { unsafe {
-        let cint_arg: c_int;
-        let cstring_arg: CString;
-        let arg: *const c_void;
-        let size: socklen_t;
-
-        macro_rules! bool_opt {
-            ( $flag:ident ) => ({
-                cint_arg = $flag as c_int;
-                arg = ref_to_cvoid(&cint_arg);
-                size = size_of_val(&cint_arg) as socklen_t;
-            })
-        }
-
-        macro_rules! struct_opt {
-            ( $struct_ref:ident ) => ({
-                arg = ref_to_cvoid($struct_ref);
-                size = size_of_val($struct_ref) as socklen_t;
-            })
-        }
-
-        macro_rules! string_opt {
-            ( $str:ident ) => ({
-                cstring_arg = CString::new($str)?;
-                arg = cstring_arg.as_ptr() as *const c_void;
-                size = ($str.len() + 1) as socklen_t;
-
-                if size + 1 > IFNAMSIZ as socklen_t {
-                    bail!(ErrorKind::IfNameTooLong($str.to_string()));
-                }
-            })
-        }
-
-        match opt {
-            &SockOpt::IpHdrIncl(f) => bool_opt!(f),
-            &SockOpt::IcmpV6Filter(filter) => struct_opt!(filter),
-            &SockOpt::BindToDevice(str) => string_opt!(str),
-            &SockOpt::DontRoute(f) => bool_opt!(f),
-            &SockOpt::V6Only(f) => bool_opt!(f),
-            &SockOpt::AttachFilter(filter) => struct_opt!(filter),
-            &SockOpt::LockFilter(f) => bool_opt!(f)
-        };
-
-        n1try!(::libc::setsockopt(
-            self.as_raw_fd(),
-            level.to_num(),
-            opt.to_num(),
-            arg,
-            size
-        ));
-
-       Ok(())
-    }}
+    fn setsockopt<'a, T: SetSockOpt<'a>>(&mut self, opt: &'a T)
+            -> Result<()> {
+        opt.set(&*self)
+    }
 
     fn set_allmulti<T>(&mut self, allmulti: bool, ifname: T)
             -> Result<bool>
@@ -314,6 +264,112 @@ pub trait SocketCommon where
 
 impl SocketCommon for IpV6RawSocket {}
 impl SocketCommon for IpV6PacketSocket {}
+
+pub trait SetSockOpt<'a> where Self: 'a {
+    type Val: ?Sized;
+    fn new(val: &'a Self::Val) -> Self;
+    fn set<T: SocketCommon>(&self, fd: &T) -> Result<()>;
+}
+
+#[allow(non_snake_case)]
+pub mod SockOpts {
+    use super::*;
+    use ::raw::sock_fprog;
+
+    pub trait ToSetSockOptArg<'a> where Self: 'a {
+        type Owner;
+        unsafe fn to_set_sock_opt_arg(&self)
+            -> Result<(Self::Owner, *const c_void, socklen_t)>;
+    }
+
+    impl<'a> ToSetSockOptArg<'a> for bool {
+        type Owner = Box<c_int>;
+
+        unsafe fn to_set_sock_opt_arg(&self)
+                -> Result<(Box<c_int>, *const c_void, socklen_t)> {
+            let ptr = Box::into_raw(Box::new(if *self {1} else {0}));
+            Ok((
+                Box::from_raw(ptr),
+                ptr as *const c_void,
+                size_of::<c_int>() as socklen_t
+            ))
+        }
+    }
+
+    impl<'a> ToSetSockOptArg<'a> for str {
+        type Owner = CString;
+
+        unsafe fn to_set_sock_opt_arg(&self)
+                -> Result<(CString, *const c_void, socklen_t)> {
+            let owner = CString::new(self)?;
+            let ptr = owner.as_ptr() as *const c_void;
+            let len = self.len() as socklen_t + 1;
+            Ok((owner, ptr, len))
+        }
+    }
+
+    macro_rules! gen_sock_opt {
+        ($name:ident, $opt:expr, $level:expr, $typ:ty) => (
+            pub struct $name<'a> {
+                val: &'a $typ
+            }
+
+            impl<'a> SetSockOpt<'a> for $name<'a> {
+                type Val = $typ;
+
+                fn new(val: &'a $typ) -> $name<'a> {
+                    $name {
+                        val: val
+                    }
+                }
+
+                fn set<T: SocketCommon>(&self, fd: &T)
+                        -> Result<()> { unsafe {
+                    let (_, ptr, len) = self.val.to_set_sock_opt_arg()?;
+                    n1try!(::libc::setsockopt(
+                        fd.as_raw_fd(),
+                        $level.to_num(),
+                        $opt.to_num(),
+                        ptr,
+                        len
+                    ));
+                    Ok(())
+                }}
+            }
+        )
+    }
+
+    macro_rules! gen_sock_opt_any_sized {
+        ($name:ident, $opt:expr, $level:expr, $typ:ty) => (
+            impl<'a> ToSetSockOptArg<'a> for $typ {
+                type Owner = &'a $typ;
+
+                unsafe fn to_set_sock_opt_arg(&self)
+                        -> Result<(&'a $typ, *const c_void, socklen_t)> {
+                    Ok((
+                        (self as *const $typ).as_ref().unwrap(),
+                        self as *const $typ as *const c_void,
+                        size_of::<$typ>() as socklen_t
+                    ))
+                }
+            }
+
+            gen_sock_opt!($name, $opt, $level, $typ);
+        )
+    }
+
+    gen_sock_opt!(IpHdrIncl, SockOpt::IpHdrIncl, SockOptLevel::IpV6, bool);
+    gen_sock_opt_any_sized!(IcmpV6Filter, SockOpt::IcmpV6Filter,
+        SockOptLevel::IcmpV6, icmp6_filter);
+    gen_sock_opt!(BindToDevice, SockOpt::BindToDevice, SockOptLevel::Socket,
+        str);
+    gen_sock_opt!(DontRoute, SockOpt::DontRoute, SockOptLevel::Socket, bool);
+    gen_sock_opt!(V6Only, SockOpt::V6Only, SockOptLevel::IpV6, bool);
+    gen_sock_opt_any_sized!(AttachFilter, SockOpt::AttachFilter,
+        SockOptLevel::Socket, sock_fprog);
+    gen_sock_opt!(LockFilter, SockOpt::LockFilter, SockOptLevel::Socket,
+        bool);
+}
 
 #[cfg(feature = "seccomp")]
 fn allow_syscall<T>(ctx: &mut ::seccomp::Context, fd: &T, syscall: c_long)

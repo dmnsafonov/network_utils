@@ -52,8 +52,8 @@ impl<'a> Server<'a> {
             bpf_stmt!(RET | K, 0);
         );
 
-        self.sock.setsockopt(SockOptLevel::Socket, &SockOpt::AttachFilter(&filter))?;
-        self.sock.setsockopt(SockOptLevel::Socket, &SockOpt::LockFilter(true))?;
+        self.sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))?;
+        self.sock.setsockopt(&SockOpts::LockFilter::new(&true))?;
 
         Ok(())
     }
