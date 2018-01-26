@@ -61,7 +61,7 @@ fn the_main() -> Result<()> {
 
     gain_net_raw()?;
     let mut sock = IpV6RawSocket::new(
-        libc::IPPROTO_ICMPV6,
+        IpProto::IcmpV6.to_num(),
         SockFlag::empty()
     )?;
     debug!("raw socket created");

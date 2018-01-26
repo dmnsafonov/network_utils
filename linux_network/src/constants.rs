@@ -153,6 +153,12 @@ gen_enum!(pub FileOpenFlags: c_int;
 gen_flag_set!(pub FileOpenFlagSet, FileOpenFlags: c_int);
 
 // not exhaustive
+gen_enum!(pub IpProto: c_int;
+    (IPPROTO_IPV6 => IpV6),
+    (IPPROTO_ICMPV6 => IcmpV6)
+);
+
+// not exhaustive
 gen_enum!(pub SockOptLevel: c_int;
     (SOL_SOCKET => Socket),
     (IPPROTO_IPV6 => IpV6),
