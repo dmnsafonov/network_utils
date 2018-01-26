@@ -41,6 +41,7 @@ error_chain!(
     }
 );
 
+use std::ffi::*;
 use std::net::*;
 use std::os::unix::prelude::*;
 
@@ -53,44 +54,17 @@ use pnet_packet::Packet;
 use linux_network::*;
 use ping6_datacommon::*;
 
+struct Config {
+    source: String,
+    destination: String,
+    bind_interface: Option<String>,
+    raw: bool,
+    inline_messages: Vec<OsString>
+}
+
 quick_main!(the_main);
 fn the_main() -> Result<()> {
-    env_logger::init()?;
-
-    let matches = get_args();
-
-    gain_net_raw()?;
-    let mut sock = IpV6RawSocket::new(
-        IpProto::IcmpV6.to_num(),
-        SockFlag::empty()
-    )?;
-    debug!("raw socket created");
-
-    if let Some(ifname) = matches.value_of("bind-to-interface") {
-        sock.setsockopt(&SockOpts::BindToDevice::new(&ifname))?;
-        info!("bound to {} interface", ifname);
-    }
-
-    drop_caps()?;
-    set_no_new_privs()?;
-    debug!("PR_SET_NO_NEW_PRIVS set");
-
-    let raw = matches.is_present("raw");
-    let use_stdin = matches.is_present("use-stdin");
-
-    let src = make_socket_addr(matches.value_of("source").unwrap(), false)?;
-    let src_addr = *src.ip();
-
-    let dst = make_socket_addr(
-        matches.value_of("destination").unwrap(),
-        true
-    )?;
-    let dst_addr = *dst.ip();
-    info!("resolved destination address: {}", dst);
-
-    setup_signal_handler()?;
-
-    setup_seccomp(&sock, use_stdin)?;
+    let (config, src, dst, mut sock) = init()?;
 
     let mut process_message = |i: &[u8]| -> Result<bool> {
         if signal_received() {
@@ -105,12 +79,12 @@ fn the_main() -> Result<()> {
             payload: vec![]
         };
 
-        packet_descr.payload = match raw {
+        packet_descr.payload = match config.raw {
             true => i.into(),
-            false => checked_payload(i)?
+            false => form_checked_payload(i)?
         };
 
-        let packet = make_packet(&packet_descr, src_addr, dst_addr);
+        let packet = make_packet(&packet_descr, *src.ip(), *dst.ip());
         match sock.sendto(packet.packet(), dst, SendFlagSet::new()) {
             Ok(_) => (),
             Err(e) => {
@@ -127,21 +101,72 @@ fn the_main() -> Result<()> {
         Ok(true)
     };
 
-    if use_stdin {
-        for i in StdinBytesIterator::new() {
-            if !process_message(i?)? {
+    if config.inline_messages.len() > 0 {
+        for i in &config.inline_messages {
+            if !process_message(i.as_bytes())? {
                 break;
             }
         }
     } else {
-        for i in matches.values_of_os("messages").unwrap() {
-            if !process_message(i.as_bytes())? {
+        for i in StdinBytesIterator::new() {
+            if !process_message(i?)? {
                 break;
             }
         }
     }
 
     Ok(())
+}
+
+fn init() -> Result<(Config, SocketAddrV6, SocketAddrV6, IpV6RawSocket)> {
+    let config = get_config();
+
+    env_logger::init()?;
+
+    gain_net_raw()?;
+    let mut sock = IpV6RawSocket::new(
+        IpProto::IcmpV6.to_num(),
+        SockFlag::empty()
+    )?;
+    debug!("raw socket created");
+
+    if let Some(ref ifname) = config.bind_interface {
+        sock.setsockopt(&SockOpts::BindToDevice::new(&ifname))?;
+        info!("bound to {} interface", ifname);
+    }
+
+    drop_caps()?;
+    set_no_new_privs()?;
+    debug!("PR_SET_NO_NEW_PRIVS set");
+
+    let src = make_socket_addr(&config.source, false)?;
+
+    let dst = make_socket_addr(&config.destination, true)?;
+    info!("resolved destination address: {}", dst);
+
+    setup_signal_handler()?;
+
+    setup_seccomp(&sock, config.inline_messages.len() == 0)?;
+
+    Ok((config, src, dst, sock))
+}
+
+fn get_config() -> Config {
+    let matches = get_args();
+
+    let messages = match matches.values_of_os("messages") {
+        Some(messages) => messages.map(OsStr::to_os_string).collect(),
+        None => Vec::new()
+    };
+
+    Config {
+        source: matches.value_of("source").unwrap().to_string(),
+        destination: matches.value_of("destination").unwrap().to_string(),
+        bind_interface: matches.value_of("bind-to-interface")
+            .map(str::to_string),
+        raw: matches.is_present("raw"),
+        inline_messages: messages
+    }
 }
 
 fn get_args<'a>() -> ArgMatches<'a> {
@@ -245,7 +270,7 @@ impl<'a> Iterator for StdinBytesIterator<'a> {
     }
 }
 
-fn checked_payload<T>(payload: T) -> Result<Vec<u8>> where T: AsRef<[u8]> {
+fn form_checked_payload<T>(payload: T) -> Result<Vec<u8>> where T: AsRef<[u8]> {
     let b = payload.as_ref();
     let len = b.len();
     if len > std::u16::MAX as usize {
