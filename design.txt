@@ -1,18 +1,37 @@
 Datagram format is:
 2-byte checksum | 2-byte length | payload
 
-Stream format is:
+Stream format for the client is:
 2-byte checksum | flag byte | 0-byte | 2-byte sequence number | payload
 2 bytes is enough to have timely acks for transmitting 1280-byte packets
 on 10Gbit link with 2-second ping which is highly unlikely for an icmp tunnel
 anyway.
 
+Stream format for the server is:
+2-byte checksum | flag byte | 0-byte | 2-byte starting sequence number
+    | 2-byte ending sequence number | payload
+
 flags are: S | A | F | 0..
 The connection establishing sequence is the standard SYN -> SYN+ACK -> ACK.
 The connection is simplex, except for the first SYN+ACK, because we
 cannot receive much more packets from the server than are sent by the client.
-So, the termination sequence is simply FIN -> FIN+ACK -> ACK.
+So, the termination sequence is simply FIN[+ACK] -> FIN+ACK -> ACK.
 The first SYN+ACK can carry a simple message that fits in one packet.
+
+To acknowledge a block of packets from the first received to seqno, the ACK
+packet must contain two equivalent seqno numbers.  To acknowledge a block
+of packets, one must set the starting end ending seqno's.  If the ending seqno
+is less that the starting seqno, or the block up to 2^16-1 seqno
+is acknowledged, it is interpreted as wraparound of the sequence numbers.
+To signal acknowledgement of receipt of more that 2^16-1 packets, one must
+acknowledge blocks of 2^16-2 (2^16-1) packets like mentioned in that clause.
+
+All packets MUST have a valid seqno.  Packets, otherwise valid, containing
+a wrong seqno MUST be discarded.
+
 The connection termination may be requested by the server with a FIN packet,
-followed by a FIN+ACK from the client.
-All flagged packets MUST have a valid seqno.
+followed by a FIN+ACK from the client.  If the server initiated termination
+contains the ACK flag, than the sequence numbers must be valid newly
+acknowledged seqnos; otherwise the seqno must be the seqno of the last packet
+of the block [first_packet, seqno] of packets, receipt of which
+was acknowledged.
