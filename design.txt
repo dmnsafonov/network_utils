@@ -1,0 +1,18 @@
+Datagram format is:
+2-byte checksum | 2-byte length | payload
+
+Stream format is:
+2-byte checksum | flag byte | 0-byte | 2-byte sequence number | payload
+2 bytes is enough to have timely acks for transmitting 1280-byte packets
+on 10Gbit link with 2-second ping which is highly unlikely for an icmp tunnel
+anyway.
+
+flags are: S | A | F | 0..
+The connection establishing sequence is the standard SYN -> SYN+ACK -> ACK.
+The connection is simplex, except for the first SYN+ACK, because we
+cannot receive much more packets from the server than are sent by the client.
+So, the termination sequence is simply FIN -> FIN+ACK -> ACK.
+The first SYN+ACK can carry a simple message that fits in one packet.
+The connection termination may be requested by the server with a FIN packet,
+followed by a FIN+ACK from the client.
+All flagged packets MUST have a valid seqno.
