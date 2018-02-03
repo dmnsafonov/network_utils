@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "linux_network",
+    "numeric_enums",
+    "ping6-datarecv",
+    "ping6-datasend",
+    "ping6_datacommon",
+    "rsndpproxy"
+]
