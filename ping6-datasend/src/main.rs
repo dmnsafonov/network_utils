@@ -1,5 +1,8 @@
 #[macro_use] extern crate clap;
 extern crate env_logger;
+#[macro_use] extern crate enum_extract;
+#[macro_use] extern crate enum_kinds_macros;
+extern crate enum_kinds_traits;
 #[macro_use] extern crate error_chain;
 extern crate libc;
 #[macro_use] extern crate log;
@@ -46,6 +49,7 @@ use std::net::*;
 use std::os::unix::prelude::*;
 
 use clap::*;
+use enum_kinds_traits::ToKind;
 use pnet_packet::icmpv6;
 use pnet_packet::icmpv6::*;
 use pnet_packet::icmpv6::ndp::Icmpv6Codes;
@@ -58,67 +62,36 @@ struct Config {
     source: String,
     destination: String,
     bind_interface: Option<String>,
+    mode: ModeConfig
+}
+
+#[derive(EnumKind)]
+#[enum_kind_name(ModeConfigKind)]
+enum ModeConfig {
+    Datagram(DatagramConfig),
+    Stream(StreamConfig)
+}
+
+struct DatagramConfig {
     raw: bool,
     inline_messages: Vec<OsString>
 }
 
+struct StreamConfig;
+
+type InitState = (Config, SocketAddrV6, SocketAddrV6, IpV6RawSocket);
+
 quick_main!(the_main);
 fn the_main() -> Result<()> {
-    let (config, src, dst, mut sock) = init()?;
+    let state = init()?;
 
-    let mut process_message = |i: &[u8]| -> Result<bool> {
-        if signal_received() {
-            info!("interrupted");
-            return Ok(false);
-        }
-
-        let mut packet_descr = Icmpv6 {
-            icmpv6_type: Icmpv6Types::EchoRequest,
-            icmpv6_code: Icmpv6Codes::NoCode,
-            checksum: 0,
-            payload: vec![]
-        };
-
-        packet_descr.payload = match config.raw {
-            true => i.into(),
-            false => form_checked_payload(i)?
-        };
-
-        let packet = make_packet(&packet_descr, *src.ip(), *dst.ip());
-        match sock.sendto(packet.packet(), dst, SendFlagSet::new()) {
-            Ok(_) => (),
-            Err(e) => {
-                if let Interrupted = *e.kind() {
-                    info!("system call interrupted");
-                    return Ok(true);
-                } else {
-                    return Err(e.into());
-                }
-            }
-        }
-        info!("message \"{}\" sent", String::from_utf8_lossy(i));
-
-        Ok(true)
-    };
-
-    if config.inline_messages.len() > 0 {
-        for i in &config.inline_messages {
-            if !process_message(i.as_bytes())? {
-                break;
-            }
-        }
-    } else {
-        for i in StdinBytesIterator::new() {
-            if !process_message(i?)? {
-                break;
-            }
-        }
+    match state.0.mode.kind() {
+        ModeConfigKind::Datagram => datagram_mode(state),
+        ModeConfigKind::Stream => stream_mode(state)
     }
-
-    Ok(())
 }
 
-fn init() -> Result<(Config, SocketAddrV6, SocketAddrV6, IpV6RawSocket)> {
+fn init() -> Result<InitState> {
     let config = get_config();
 
     env_logger::init()?;
@@ -146,7 +119,12 @@ fn init() -> Result<(Config, SocketAddrV6, SocketAddrV6, IpV6RawSocket)> {
 
     setup_signal_handler()?;
 
-    setup_seccomp(&sock, config.inline_messages.len() == 0)?;
+    let use_stdin = if let ModeConfig::Datagram(ref datagram_conf) = config.mode {
+        datagram_conf.inline_messages.len() == 0
+    } else {
+        false
+    };
+    setup_seccomp(&sock, use_stdin)?;
 
     Ok((config, src, dst, sock))
 }
@@ -164,8 +142,14 @@ fn get_config() -> Config {
         destination: matches.value_of("destination").unwrap().to_string(),
         bind_interface: matches.value_of("bind-to-interface")
             .map(str::to_string),
-        raw: matches.is_present("raw"),
-        inline_messages: messages
+        mode: if matches.is_present("stream") {
+                ModeConfig::Stream(StreamConfig)
+            } else {
+                ModeConfig::Datagram(DatagramConfig {
+                    raw: matches.is_present("raw"),
+                    inline_messages: messages
+                })
+            }
     }
 }
 
@@ -178,6 +162,7 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .long("raw")
             .short("r")
             .help("Forms raw packets without payload identification")
+            .conflicts_with("stream")
         ).arg(Arg::with_name("source")
             .required(true)
             .value_name("SOURCE_ADDRESS")
@@ -208,6 +193,12 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .short("c")
             .help("Instead of messages on the command-line, read from stdin \
                 (prepend each message with 16-bit BE length)")
+        ).arg(Arg::with_name("stream")
+            .long("stream")
+            .short("s")
+            .help("Sets stream mode on: messages are to be read as \
+                a continuous stream from stdin")
+            .requires("use-stdin")
         ).get_matches()
 }
 
@@ -221,6 +212,69 @@ fn setup_seccomp<T>(sock: &T, use_stdin: bool)
     sock.allow_sending(&mut ctx)?;
     ctx.load()?;
     Ok(())
+}
+
+fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
+    let_extract!(ModeConfig::Datagram(datagram_conf), config.mode,
+        unreachable!());
+
+    let mut process_message = |i: &[u8]| -> Result<bool> {
+        if signal_received() {
+            info!("interrupted");
+            return Ok(false);
+        }
+
+        let mut packet_descr = Icmpv6 {
+            icmpv6_type: Icmpv6Types::EchoRequest,
+            icmpv6_code: Icmpv6Codes::NoCode,
+            checksum: 0,
+            payload: vec![]
+        };
+
+        packet_descr.payload = match datagram_conf.raw {
+            true => i.into(),
+            false => form_checked_payload(i)?
+        };
+
+        let packet = make_packet(&packet_descr, *src.ip(), *dst.ip());
+        match sock.sendto(packet.packet(), dst, SendFlagSet::new()) {
+            Ok(_) => (),
+            Err(e) => {
+                if let Interrupted = *e.kind() {
+                    info!("system call interrupted");
+                    return Ok(true);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+        info!("message \"{}\" sent", String::from_utf8_lossy(i));
+
+        Ok(true)
+    };
+
+    if datagram_conf.inline_messages.len() > 0 {
+        for i in &datagram_conf.inline_messages {
+            if !process_message(i.as_bytes())? {
+                break;
+            }
+        }
+    } else {
+        for i in StdinBytesIterator::new() {
+            if !process_message(i?)? {
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn stream_mode((config, src, dst, mut sock): InitState) -> Result<()> {
+    let_extract!(ModeConfig::Datagram(_stream_conf), config.mode,
+        unreachable!());
+
+    unimplemented!()
 }
 
 struct StdinBytesIterator<'a> {

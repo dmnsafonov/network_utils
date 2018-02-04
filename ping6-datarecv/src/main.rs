@@ -1,5 +1,6 @@
 #[macro_use] extern crate clap;
 extern crate env_logger;
+#[macro_use] extern crate enum_extract;
 #[macro_use] extern crate enum_kinds_macros;
 extern crate enum_kinds_traits;
 #[macro_use] extern crate error_chain;
@@ -130,15 +131,15 @@ fn get_config() -> Config {
         bind_interface: matches.value_of("bind-to-interface")
             .map(str::to_string),
         mode: if matches.is_present("stream") {
-            ModeConfig::Stream(StreamConfig {
-                message: matches.value_of_os("message")
-                    .map(OsStr::to_os_string)
-            })
-        } else {
-            ModeConfig::Datagram(DatagramConfig {
-                raw: matches.is_present("raw"),
-                binary: matches.is_present("binary")
-            })
+                ModeConfig::Stream(StreamConfig {
+                    message: matches.value_of_os("message")
+                        .map(OsStr::to_os_string)
+                })
+            } else {
+                ModeConfig::Datagram(DatagramConfig {
+                    raw: matches.is_present("raw"),
+                    binary: matches.is_present("binary")
+                })
         }
     }
 }
@@ -197,10 +198,8 @@ fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
 }
 
 fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
-    let datagram_conf = match config.mode {
-        ModeConfig::Datagram(x) => x,
-        _ => unreachable!()
-    };
+    let_extract!(ModeConfig::Datagram(datagram_conf), config.mode,
+        unreachable!());
 
     // ipv6 payload length is 2-byte
     let mut raw_buf = vec![0; std::u16::MAX as usize];
@@ -245,6 +244,9 @@ fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 }
 
 fn stream_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
+    let_extract!(ModeConfig::Stream(stream_conf), config.mode,
+        unreachable!());
+
     unimplemented!()
 }
 
