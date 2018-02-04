@@ -170,3 +170,30 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
 
     Ok(sa)
 }}
+
+fn get_fd_flags<F>(fd: &F)
+        -> Result<FileOpenFlagSet> where F: AsRawFd + ?Sized { unsafe {
+    Ok(
+        FileOpenFlagSet::from_num(
+            n1try!(
+                fcntl(fd.as_raw_fd(), F_GETFL)
+            )
+        )
+    )
+}}
+
+fn set_fd_flags<F>(fd: &F, flags: FileOpenFlagSet)
+        -> Result<()> where F: AsRawFd + ?Sized { unsafe {
+    n1try!(fcntl(fd.as_raw_fd(), F_SETFL, flags.get()));
+    Ok(())
+}}
+
+pub fn set_fd_nonblock<F>(fd: &F)
+        -> Result<()> where F: AsRawFd + ?Sized {
+    let flags = get_fd_flags(fd)?;
+    let new_flags = flags | FileOpenFlags::Nonblock;
+    if flags != new_flags {
+        set_fd_flags(fd, flags | FileOpenFlags::Nonblock)?;
+    }
+    Ok(())
+}
