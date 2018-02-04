@@ -1,4 +1,5 @@
 #[macro_use] extern crate error_chain;
+#[cfg(feature = "futures")] extern crate futures as ext_futures;
 extern crate interfaces;
 #[macro_use] extern crate log;
 extern crate nix;
@@ -20,6 +21,11 @@ pub mod raw {
     pub use constants::raw::*;
     pub use functions::raw::*;
     pub use structs::raw::*;
+}
+
+#[cfg(feature = "futures")]
+pub mod futures {
+    pub use socket::futures::*;
 }
 
 use nix::libc;

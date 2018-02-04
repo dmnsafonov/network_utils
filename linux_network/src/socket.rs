@@ -184,8 +184,8 @@ impl IpV6PacketSocket {
             &mut self,
             packet: &Ipv6,
             dest: Option<MacAddr>,
-            flags: SendFlagSet)
-                -> Result<size_t> { unsafe {
+            flags: SendFlagSet
+    ) -> Result<size_t> { unsafe {
         let len = Ipv6Packet::packet_size(&packet);
         let mut buf = MutableIpv6Packet::owned(
             vec![0; len]).unwrap();
@@ -387,6 +387,106 @@ fn allow_syscall<T>(ctx: &mut ::seccomp::Context, fd: &T, syscall: c_long)
         )
     )?;
     Ok(())
+}
+
+#[cfg(feature = "futures")]
+pub mod futures {
+    use super::*;
+
+    use ::ext_futures::prelude::*;
+
+    #[must_use = "futures do nothing unless polled"]
+    pub struct ResultInterruptFuture<T>(Option<Result<T>>);
+
+    impl<T> ResultInterruptFuture<T> {
+        fn new(r: Result<T>) -> ResultInterruptFuture<T> {
+            ResultInterruptFuture(Some(r))
+        }
+    }
+
+    impl<T> Future for ResultInterruptFuture<T> {
+        type Item = T;
+        type Error = Error;
+
+        fn poll(&mut self) -> Poll<T,Error> {
+            match self.0.take().expect("cannot poll Result twice") {
+                Err(e) => {
+                    if let Interrupted = *e.kind() {
+                        Ok(Async::NotReady)
+                    } else {
+                        Err(e)
+                    }
+                },
+                Ok(x) => Ok(Async::Ready(x))
+            }
+        }
+    }
+
+    pub struct IpV6RawSocketAdapter(IpV6RawSocket);
+
+    impl IpV6RawSocketAdapter {
+        pub fn new(inner: IpV6RawSocket) -> Result<IpV6RawSocketAdapter> {
+            set_fd_nonblock(&inner)?;
+            Ok(IpV6RawSocketAdapter(inner))
+        }
+
+        pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> {
+            self.0.bind(addr)
+        }
+
+        pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlagSet)
+                -> ResultInterruptFuture<(&'a mut [u8], SocketAddrV6)> {
+            ResultInterruptFuture::new(self.0.recvfrom(buf, flags))
+        }
+
+        pub fn sendto(
+            &mut self,
+            buf: &[u8],
+            addr: SocketAddrV6,
+            flags: SendFlagSet
+        ) -> ResultInterruptFuture<size_t> {
+            ResultInterruptFuture::new(self.0.sendto(buf, addr, flags))
+        }
+    }
+
+    impl AsRawFd for IpV6RawSocketAdapter {
+        fn as_raw_fd(&self) -> RawFd {
+            self.0.as_raw_fd()
+        }
+    }
+
+    pub struct IpV6PacketSocketAdapter(IpV6PacketSocket);
+
+    impl IpV6PacketSocketAdapter {
+        pub fn new(inner: IpV6PacketSocket)
+                -> Result<IpV6PacketSocketAdapter> {
+            set_fd_nonblock(&inner)?;
+            Ok(IpV6PacketSocketAdapter(inner))
+        }
+
+        pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
+                -> ResultInterruptFuture<(Ipv6, MacAddr)> {
+            ResultInterruptFuture::new(self.0.recvpacket(maxsize, flags))
+        }
+
+        pub fn sendpacket(
+            &mut self,
+            packet: &Ipv6,
+            dest: Option<MacAddr>,
+            flags: SendFlagSet
+        ) -> ResultInterruptFuture<size_t> {
+            ResultInterruptFuture::new(self.0.sendpacket(packet, dest, flags))
+        }
+    }
+
+    impl AsRawFd for IpV6PacketSocketAdapter {
+        fn as_raw_fd(&self) -> RawFd {
+            self.0.as_raw_fd()
+        }
+    }
+
+    impl SocketCommon for IpV6RawSocketAdapter {}
+    impl SocketCommon for IpV6PacketSocketAdapter {}
 }
 
 unsafe fn as_sockaddr<T>(x: &T) -> &sockaddr {
