@@ -1,5 +1,7 @@
 #[macro_use] extern crate clap;
 extern crate env_logger;
+#[macro_use] extern crate enum_kinds_macros;
+extern crate enum_kinds_traits;
 #[macro_use] extern crate error_chain;
 extern crate libc;
 #[macro_use] extern crate log;
@@ -29,11 +31,13 @@ error_chain!(
     }
 );
 
+use std::ffi::*;
 use std::io::prelude::*;
 use std::io::stdout;
 use std::net::*;
 
 use clap::*;
+use enum_kinds_traits::ToKind;
 use pnet_packet::icmpv6;
 use pnet_packet::icmpv6::*;
 use pnet_packet::icmpv6::ndp::Icmpv6Codes;
@@ -45,57 +49,38 @@ use ping6_datacommon::*;
 struct Config {
     bind_address: Option<String>,
     bind_interface: Option<String>,
+    mode: ModeConfig
+}
+
+#[derive(EnumKind)]
+#[enum_kind_name(ModeConfigKind)]
+enum ModeConfig {
+    Datagram(DatagramConfig),
+    Stream(StreamConfig)
+}
+
+struct DatagramConfig {
     raw: bool,
     binary: bool
 }
 
-quick_main!(the_main);
-fn the_main() -> Result<()> {
-    let (config, bound_addr, mut sock) = init()?;
-
-    // ipv6 payload length is 2-byte
-    let mut raw_buf = vec![0; std::u16::MAX as usize];
-    loop {
-        if signal_received() {
-            info!("interrupted");
-            break;
-        }
-
-        let (buf, sockaddr) =
-            match sock.recvfrom(&mut raw_buf, RecvFlagSet::new()) {
-                x@Ok(_) => x,
-                Err(e) => {
-                    if let Interrupted = *e.kind() {
-                        debug!("system call interrupted");
-                        continue;
-                    } else {
-                        Err(e)
-                    }
-                }
-            }?;
-        let src = *sockaddr.ip();
-        let packet = Icmpv6Packet::new(&buf).unwrap();
-        let payload = packet.payload();
-
-        debug!("received packet, payload size = {} from {}",
-            payload.len(), src);
-
-        if !validate_icmpv6(&packet, src, bound_addr) {
-            info!("invalid icmpv6 packet, dropping");
-            continue;
-        }
-
-        if config.binary {
-            binary_print(payload, src, config.raw)?;
-        } else {
-            regular_print(payload, src, config.raw)?;
-        }
-    }
-
-    Ok(())
+struct StreamConfig {
+    message: Option<OsString>
 }
 
-fn init() -> Result<(Config, Option<Ipv6Addr>, IpV6RawSocket)> {
+type InitState = (Config, Option<Ipv6Addr>, IpV6RawSocket);
+
+quick_main!(the_main);
+fn the_main() -> Result<()> {
+    let state = init()?;
+
+    match state.0.mode.kind() {
+        ModeConfigKind::Datagram => datagram_mode(state),
+        ModeConfigKind::Stream => stream_mode(state)
+    }
+}
+
+fn init() -> Result<InitState> {
     env_logger::init()?;
 
     let config = get_config();
@@ -144,8 +129,17 @@ fn get_config() -> Config {
         bind_address: matches.value_of("bind").map(str::to_string),
         bind_interface: matches.value_of("bind-to-interface")
             .map(str::to_string),
-        raw: matches.is_present("raw"),
-        binary: matches.is_present("binary")
+        mode: if matches.is_present("stream") {
+            ModeConfig::Stream(StreamConfig {
+                message: matches.value_of_os("message")
+                    .map(OsStr::to_os_string)
+            })
+        } else {
+            ModeConfig::Datagram(DatagramConfig {
+                raw: matches.is_present("raw"),
+                binary: matches.is_present("binary")
+            })
+        }
     }
 }
 
@@ -170,12 +164,26 @@ fn get_args<'a>() -> ArgMatches<'a> {
             .long("raw")
             .short("r")
             .help("Shows all received packets' payload")
+            .conflicts_with("stream")
         ).arg(Arg::with_name("binary")
             .long("binary")
             .short("B")
             .help("Outputs only the messages' contents, preceded by \
                 2-byte-BE length; otherwise messages are converted to \
                 unicode, filtering out any non-unicode data")
+            .conflicts_with("stream")
+        ).arg(Arg::with_name("stream")
+            .long("stream")
+            .short("s")
+            .help("Sets stream mode on: message contents are written as \
+                a continuous stream to stdout")
+        ).arg(Arg::with_name("message")
+            .long("message")
+            .short("m")
+            .help("Send a short (fitting in a single packet) message \
+                to the sender simulteneously with accepting connection \
+                in stream mode")
+            .requires("stream")
         ).get_matches()
 }
 
@@ -186,6 +194,58 @@ fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
     sock.allow_receiving(&mut ctx)?;
     ctx.load()?;
     Ok(())
+}
+
+fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
+    let datagram_conf = match config.mode {
+        ModeConfig::Datagram(x) => x,
+        _ => unreachable!()
+    };
+
+    // ipv6 payload length is 2-byte
+    let mut raw_buf = vec![0; std::u16::MAX as usize];
+    loop {
+        if signal_received() {
+            info!("interrupted");
+            break;
+        }
+
+        let (buf, sockaddr) =
+            match sock.recvfrom(&mut raw_buf, RecvFlagSet::new()) {
+                x@Ok(_) => x,
+                Err(e) => {
+                    if let Interrupted = *e.kind() {
+                        debug!("system call interrupted");
+                        continue;
+                    } else {
+                        Err(e)
+                    }
+                }
+            }?;
+        let src = *sockaddr.ip();
+        let packet = Icmpv6Packet::new(&buf).unwrap();
+        let payload = packet.payload();
+
+        debug!("received packet, payload size = {} from {}",
+            payload.len(), src);
+
+        if !validate_icmpv6(&packet, src, bound_addr) {
+            info!("invalid icmpv6 packet, dropping");
+            continue;
+        }
+
+        if datagram_conf.binary {
+            binary_print(payload, src, datagram_conf.raw)?;
+        } else {
+            regular_print(payload, src, datagram_conf.raw)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn stream_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
+    unimplemented!()
 }
 
 fn validate_icmpv6(

@@ -6,13 +6,17 @@ authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 [dependencies]
 clap = "^2.26.2"
 env_logger = "^0.4.3"
+enum-kinds-macros = "^0.1.1"
+enum-kinds-traits = "^0.1.0"
 error-chain = "^0.11.0"
 libc = "^0.2.33"
 log = "^0.3.8"
 ping6_datacommon = { path = "../ping6_datacommon" }
 pnet_packet = "^0.20.0"
 seccomp = "^0.1.1"
+state_machine_future = "^0.1.5"
+tokio-core = "^0.1.12"
 
 [dependencies.linux_network]
-features = ["seccomp"]
+features = ["futures", "seccomp"]
 path = "../linux_network"
