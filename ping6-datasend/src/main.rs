@@ -215,8 +215,8 @@ fn setup_seccomp<T>(sock: &T, use_stdin: bool)
 }
 
 fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
-    let_extract!(ModeConfig::Datagram(datagram_conf), config.mode,
-        unreachable!());
+    let datagram_conf = extract!(ModeConfig::Datagram(_), config.mode)
+        .unwrap();
 
     let mut process_message = |i: &[u8]| -> Result<bool> {
         if signal_received() {
@@ -271,8 +271,7 @@ fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
 }
 
 fn stream_mode((config, src, dst, mut sock): InitState) -> Result<()> {
-    let_extract!(ModeConfig::Datagram(_stream_conf), config.mode,
-        unreachable!());
+    let _stream_conf = extract!(ModeConfig::Stream(_), config.mode).unwrap();
 
     unimplemented!()
 }

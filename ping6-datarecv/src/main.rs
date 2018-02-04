@@ -198,8 +198,8 @@ fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
 }
 
 fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
-    let_extract!(ModeConfig::Datagram(datagram_conf), config.mode,
-        unreachable!());
+    let datagram_conf = extract!(ModeConfig::Datagram(_), config.mode)
+        .unwrap();
 
     // ipv6 payload length is 2-byte
     let mut raw_buf = vec![0; std::u16::MAX as usize];
@@ -244,8 +244,7 @@ fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 }
 
 fn stream_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
-    let_extract!(ModeConfig::Stream(stream_conf), config.mode,
-        unreachable!());
+    let stream_conf = extract!(ModeConfig::Stream(_), config.mode).unwrap();
 
     unimplemented!()
 }
