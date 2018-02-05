@@ -12,32 +12,13 @@ extern crate seccomp;
 extern crate linux_network;
 extern crate ping6_datacommon;
 
-error_chain!(
-    foreign_links {
-        AddrParseError(std::net::AddrParseError);
-        IoError(std::io::Error);
-        LogInit(::log::SetLoggerError);
-        Seccomp(seccomp::SeccompError);
-    }
+mod config;
+mod errors;
 
-    links {
-        LinuxNetwork (
-            linux_network::errors::Error,
-            linux_network::errors::ErrorKind
-        );
-        Ping6DataCommon (
-            ping6_datacommon::Error,
-            ping6_datacommon::ErrorKind
-        );
-    }
-);
-
-use std::ffi::*;
 use std::io::prelude::*;
 use std::io::stdout;
 use std::net::*;
 
-use clap::*;
 use enum_kinds_traits::ToKind;
 use pnet_packet::icmpv6;
 use pnet_packet::icmpv6::*;
@@ -47,27 +28,8 @@ use pnet_packet::{FromPacket, Packet, PrimitiveValues};
 use linux_network::*;
 use ping6_datacommon::*;
 
-struct Config {
-    bind_address: Option<String>,
-    bind_interface: Option<String>,
-    mode: ModeConfig
-}
-
-#[derive(EnumKind)]
-#[enum_kind_name(ModeConfigKind)]
-enum ModeConfig {
-    Datagram(DatagramConfig),
-    Stream(StreamConfig)
-}
-
-struct DatagramConfig {
-    raw: bool,
-    binary: bool
-}
-
-struct StreamConfig {
-    message: Option<OsString>
-}
+use config::*;
+use errors::Result;
 
 type InitState = (Config, Option<Ipv6Addr>, IpV6RawSocket);
 
@@ -122,70 +84,6 @@ fn init() -> Result<InitState> {
     setup_seccomp(&sock, StdoutUse::Yes)?;
 
     Ok((config, bound_addr, sock))
-}
-
-fn get_config() -> Config {
-    let matches = get_args();
-    Config {
-        bind_address: matches.value_of("bind").map(str::to_string),
-        bind_interface: matches.value_of("bind-to-interface")
-            .map(str::to_string),
-        mode: if matches.is_present("stream") {
-                ModeConfig::Stream(StreamConfig {
-                    message: matches.value_of_os("message")
-                        .map(OsStr::to_os_string)
-                })
-            } else {
-                ModeConfig::Datagram(DatagramConfig {
-                    raw: matches.is_present("raw"),
-                    binary: matches.is_present("binary")
-                })
-        }
-    }
-}
-
-fn get_args<'a>() -> ArgMatches<'a> {
-    App::new(crate_name!())
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
-        .arg(Arg::with_name("bind")
-            .long("bind")
-            .short("-b")
-            .takes_value(true)
-            .value_name("ADDRESS")
-            .help("Binds to an address")
-        ).arg(Arg::with_name("bind-to-interface")
-            .long("bind-to-interface")
-            .short("I")
-            .takes_value(true)
-            .value_name("INTERFACE")
-            .help("Binds to an interface")
-        ).arg(Arg::with_name("raw")
-            .long("raw")
-            .short("r")
-            .help("Shows all received packets' payload")
-            .conflicts_with("stream")
-        ).arg(Arg::with_name("binary")
-            .long("binary")
-            .short("B")
-            .help("Outputs only the messages' contents, preceded by \
-                2-byte-BE length; otherwise messages are converted to \
-                unicode, filtering out any non-unicode data")
-            .conflicts_with("stream")
-        ).arg(Arg::with_name("stream")
-            .long("stream")
-            .short("s")
-            .help("Sets stream mode on: message contents are written as \
-                a continuous stream to stdout")
-        ).arg(Arg::with_name("message")
-            .long("message")
-            .short("m")
-            .help("Send a short (fitting in a single packet) message \
-                to the sender simulteneously with accepting connection \
-                in stream mode")
-            .requires("stream")
-        ).get_matches()
 }
 
 fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
