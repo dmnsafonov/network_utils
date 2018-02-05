@@ -329,7 +329,7 @@ impl<'a> AsRawFd for StdinBytesIterator<'a> {
 
 struct StdinBytesFuture<'a> {
     iter: &'a mut StdinBytesIterator<'a>,
-    old_nonblock: bool
+    drop_nonblock: bool
 }
 
 impl<'a> StdinBytesFuture<'a> {
@@ -338,14 +338,16 @@ impl<'a> StdinBytesFuture<'a> {
         let old = set_fd_nonblock(iter, true)?;
         Ok(StdinBytesFuture {
             iter: iter,
-            old_nonblock: old
+            drop_nonblock: !old
         })
     }
 }
 
 impl<'a> Drop for StdinBytesFuture<'a> {
     fn drop(&mut self) {
-        set_fd_nonblock(self.iter, self.old_nonblock).unwrap();
+        if self.drop_nonblock {
+            set_fd_nonblock(self.iter, false).unwrap();
+        }
     }
 }
 
