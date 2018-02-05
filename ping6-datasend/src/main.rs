@@ -11,7 +11,7 @@ extern crate owning_ref;
 extern crate pnet_packet;
 extern crate seccomp;
 
-#[macro_use] extern crate linux_network;
+extern crate linux_network;
 extern crate ping6_datacommon;
 
 error_chain!(
