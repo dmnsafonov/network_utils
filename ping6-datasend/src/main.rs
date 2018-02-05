@@ -4,8 +4,10 @@ extern crate env_logger;
 #[macro_use] extern crate enum_kinds_macros;
 extern crate enum_kinds_traits;
 #[macro_use] extern crate error_chain;
+extern crate futures;
 extern crate libc;
 #[macro_use] extern crate log;
+extern crate owning_ref;
 extern crate pnet_packet;
 extern crate seccomp;
 
@@ -45,11 +47,15 @@ error_chain!(
 );
 
 use std::ffi::*;
+use std::io;
+use std::io::prelude::*;
 use std::net::*;
 use std::os::unix::prelude::*;
 
 use clap::*;
 use enum_kinds_traits::ToKind;
+use futures::prelude::*;
+use owning_ref::*;
 use pnet_packet::icmpv6;
 use pnet_packet::icmpv6::*;
 use pnet_packet::icmpv6::ndp::Icmpv6Codes;
@@ -261,7 +267,7 @@ fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
         }
     } else {
         for i in StdinBytesIterator::new() {
-            if !process_message(i?)? {
+            if !process_message(&(*i?))? {
                 break;
             }
         }
@@ -277,49 +283,78 @@ fn stream_mode((config, src, dst, mut sock): InitState) -> Result<()> {
 }
 
 struct StdinBytesIterator<'a> {
-    buf: Vec<u8>,
-    _phantom: std::marker::PhantomData<&'a [u8]>
+    tin: io::StdinLock<'a>,
+    tin_glue: Box<io::Stdin>
 }
 
 impl<'a> StdinBytesIterator<'a> {
     fn new() -> StdinBytesIterator<'a> {
-        // maximum ipv6 payload length
-        let buf = vec![0; std::u16::MAX as usize];
+        let glue = Box::new(io::stdin());
         StdinBytesIterator {
-            buf: buf,
-            _phantom: Default::default()
+            tin: unsafe { (glue.as_ref() as *const io::Stdin).as_ref().unwrap().lock() },
+            tin_glue: glue,
         }
     }
 }
 
 impl<'a> Iterator for StdinBytesIterator<'a> {
-    type Item = Result<&'a [u8]>;
+    type Item = Result<OwningRef<Vec<u8>, [u8]>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use std::io::prelude::*;
-        use std::io;
-
-        let mut tin = io::stdin();
-
         let mut len_buf = [0; 2];
-        match tin.read(&mut len_buf) {
+        match self.tin.read(&mut len_buf) {
             Ok(0) => return None,
             Err(e) => return Some(Err(e.into())),
             _ => ()
         };
         let len = ((len_buf[0] as usize) << 8) | (len_buf[1] as usize);
 
-        match tin.read(&mut self.buf[..len]) {
+        let mut buf = vec![0; std::u16::MAX as usize];
+        match self.tin.read(&mut buf[..len]) {
             Ok(x) if x == len => (),
             Ok(x) => return Some(Err(ErrorKind::WrongLength(x, len).into())),
             Err(e) => return Some(Err(e.into()))
         };
 
-        let ret = unsafe { std::slice::from_raw_parts(
-            self.buf.as_ptr(),
-            len
-        ) };
+        let ret = VecRef::new(buf).map(|v| &v[..len]);
         Some(Ok(ret))
+    }
+}
+
+impl<'a> AsRawFd for StdinBytesIterator<'a> {
+    fn as_raw_fd(&self) -> RawFd {
+        io::stdin().as_raw_fd()
+    }
+}
+
+struct StdinBytesFuture<'a> {
+    iter: StdinBytesIterator<'a>,
+    old_nonblock: bool
+}
+
+impl<'a> StdinBytesFuture<'a> {
+    fn new() -> Result<StdinBytesFuture<'a>> {
+        let iter = StdinBytesIterator::new();
+        set_fd_nonblock(&iter, true)?;
+        Ok(StdinBytesFuture {
+            iter: StdinBytesIterator::new(),
+            old_nonblock: get_fd_nonblock(&iter)?
+        })
+    }
+}
+
+impl<'a> Drop for StdinBytesFuture<'a> {
+    fn drop(&mut self) {
+        set_fd_nonblock(&self.iter, self.old_nonblock).unwrap()
+    }
+}
+
+impl<'a> Future for StdinBytesFuture<'a> {
+    type Item = Result<&'a [u8]>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Result<&'a [u8]>, Error> {
+        unimplemented!()
     }
 }
 

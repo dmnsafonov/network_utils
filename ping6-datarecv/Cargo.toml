@@ -10,6 +10,7 @@ enum_extract = "^0.1.1"
 enum-kinds-macros = "^0.1.1"
 enum-kinds-traits = "^0.1.0"
 error-chain = "^0.11.0"
+futures = "^0.1.18"
 libc = "^0.2.33"
 log = "^0.3.8"
 ping6_datacommon = { path = "../ping6_datacommon" }

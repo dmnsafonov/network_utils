@@ -426,7 +426,7 @@ pub mod futures {
 
     impl IpV6RawSocketAdapter {
         pub fn new(inner: IpV6RawSocket) -> Result<IpV6RawSocketAdapter> {
-            set_fd_nonblock(&inner)?;
+            set_fd_nonblock(&inner, true)?;
             Ok(IpV6RawSocketAdapter(inner))
         }
 
@@ -460,7 +460,7 @@ pub mod futures {
     impl IpV6PacketSocketAdapter {
         pub fn new(inner: IpV6PacketSocket)
                 -> Result<IpV6PacketSocketAdapter> {
-            set_fd_nonblock(&inner)?;
+            set_fd_nonblock(&inner, true)?;
             Ok(IpV6PacketSocketAdapter(inner))
         }
 

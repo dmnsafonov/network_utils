@@ -188,12 +188,19 @@ fn set_fd_flags<F>(fd: &F, flags: FileOpenFlagSet)
     Ok(())
 }}
 
-pub fn set_fd_nonblock<F>(fd: &F)
+pub fn get_fd_nonblock<F>(fd: &F) -> Result<bool> where F: AsRawFd + ?Sized {
+    Ok(get_fd_flags(fd)?.test(FileOpenFlags::Nonblock))
+}
+
+pub fn set_fd_nonblock<F>(fd: &F, nonblock: bool)
         -> Result<()> where F: AsRawFd + ?Sized {
     let flags = get_fd_flags(fd)?;
-    let new_flags = flags | FileOpenFlags::Nonblock;
+    let new_flags = match nonblock {
+        true => flags | FileOpenFlags::Nonblock,
+        false => flags & FileOpenFlags::Nonblock
+    };
     if flags != new_flags {
-        set_fd_flags(fd, flags | FileOpenFlags::Nonblock)?;
+        set_fd_flags(fd, new_flags)?;
     }
     Ok(())
 }
