@@ -329,6 +329,7 @@ impl<'a> AsRawFd for StdinBytesIterator<'a> {
 
 struct StdinBytesFuture<'a> {
     iter: &'a mut StdinBytesIterator<'a>,
+    pending: bool,
     drop_nonblock: bool
 }
 
@@ -338,6 +339,7 @@ impl<'a> StdinBytesFuture<'a> {
         let old = set_fd_nonblock(iter, true)?;
         Ok(StdinBytesFuture {
             iter: iter,
+            pending: true,
             drop_nonblock: !old
         })
     }
@@ -352,11 +354,23 @@ impl<'a> Drop for StdinBytesFuture<'a> {
 }
 
 impl<'a> Future for StdinBytesFuture<'a> {
-    type Item = Result<&'a [u8]>;
+    type Item = OwningRef<Vec<u8>, [u8]>;
     type Error = Error;
 
-    fn poll(&mut self) -> Poll<Result<&'a [u8]>, Error> {
-        unimplemented!()
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        assert!(self.pending);
+        let res = self.iter.next().unwrap_or(Ok(OwningRef::new(Vec::new())));
+        match res {
+            Err(Error(ErrorKind::IoError(e), magic)) => {
+                if let io::ErrorKind::WouldBlock = e.kind() {
+                    Ok(Async::NotReady)
+                } else {
+                    bail!(Error(ErrorKind::IoError(e), magic))
+                }
+            },
+            Err(e) => Err(e),
+            Ok(x) => Ok(Async::Ready(x))
+        }
     }
 }
 
