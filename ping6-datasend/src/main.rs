@@ -11,7 +11,7 @@ extern crate owning_ref;
 extern crate pnet_packet;
 extern crate seccomp;
 
-extern crate linux_network;
+#[macro_use] extern crate linux_network;
 extern crate ping6_datacommon;
 
 error_chain!(
@@ -328,24 +328,24 @@ impl<'a> AsRawFd for StdinBytesIterator<'a> {
 }
 
 struct StdinBytesFuture<'a> {
-    iter: StdinBytesIterator<'a>,
+    iter: &'a mut StdinBytesIterator<'a>,
     old_nonblock: bool
 }
 
 impl<'a> StdinBytesFuture<'a> {
-    fn new() -> Result<StdinBytesFuture<'a>> {
-        let iter = StdinBytesIterator::new();
-        set_fd_nonblock(&iter, true)?;
+    fn new(iter: &'a mut StdinBytesIterator<'a>)
+            -> Result<StdinBytesFuture<'a>> {
+        let old = set_fd_nonblock(iter, true)?;
         Ok(StdinBytesFuture {
-            iter: StdinBytesIterator::new(),
-            old_nonblock: get_fd_nonblock(&iter)?
+            iter: iter,
+            old_nonblock: old
         })
     }
 }
 
 impl<'a> Drop for StdinBytesFuture<'a> {
     fn drop(&mut self) {
-        set_fd_nonblock(&self.iter, self.old_nonblock).unwrap()
+        set_fd_nonblock(self.iter, self.old_nonblock).unwrap();
     }
 }
 

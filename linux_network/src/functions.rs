@@ -193,7 +193,7 @@ pub fn get_fd_nonblock<F>(fd: &F) -> Result<bool> where F: AsRawFd + ?Sized {
 }
 
 pub fn set_fd_nonblock<F>(fd: &F, nonblock: bool)
-        -> Result<()> where F: AsRawFd + ?Sized {
+        -> Result<bool> where F: AsRawFd + ?Sized {
     let flags = get_fd_flags(fd)?;
     let new_flags = match nonblock {
         true => flags | FileOpenFlags::Nonblock,
@@ -202,5 +202,5 @@ pub fn set_fd_nonblock<F>(fd: &F, nonblock: bool)
     if flags != new_flags {
         set_fd_flags(fd, new_flags)?;
     }
-    Ok(())
+    Ok(flags.test(FileOpenFlags::Nonblock))
 }

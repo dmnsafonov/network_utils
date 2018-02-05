@@ -395,21 +395,6 @@ pub mod futures {
 
     use ::ext_futures::prelude::*;
 
-    macro_rules! try_async {
-        ($e:expr) => (
-            match $e {
-                Err(e) => {
-                    if let Interrupted = *e.kind() {
-                        return Ok(Async::NotReady)
-                    } else {
-                        return Err(e)
-                    }
-                },
-                Ok(x) => Ok(Async::Ready(x))
-            }
-        )
-    }
-
     pub struct IpV6RawSocketAdapter(IpV6RawSocket);
 
     pub struct IpV6RawSocketRecvfromFuture<'a>(

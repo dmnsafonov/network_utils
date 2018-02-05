@@ -36,8 +36,9 @@ pub use self::constants::*;
 pub use self::functions::*;
 pub use self::socket::*;
 pub use self::structs::*;
+use self::util::check_for_eagain;
 
-pub use self::errors::ErrorKind::Interrupted;
+pub use self::errors::ErrorKind::{Again, Interrupted};
 
 pub use numeric_enums::*;
 

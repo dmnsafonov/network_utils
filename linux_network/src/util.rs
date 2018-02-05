@@ -1,13 +1,21 @@
 use ::std::net::Ipv6Addr;
 use ::libc::*;
 
+#[inline]
+pub fn check_for_eagain(x: c_int) -> bool {
+    x == EAGAIN || x == EWOULDBLOCK
+}
+
 macro_rules! n1try {
     ( $e:expr ) => ({
         let ret = $e;
         if ret == -1 {
             let err = ::std::io::Error::last_os_error();
-            if err.raw_os_error().unwrap() as c_int == EINTR {
+            let oserr =  err.raw_os_error().unwrap() as c_int;
+            if oserr == EINTR {
                 bail!(ErrorKind::Interrupted);
+            } else if check_for_eagain(oserr) {
+                bail!(ErrorKind::Again);
             } else {
                 bail!(err);
             }
@@ -15,6 +23,21 @@ macro_rules! n1try {
             ret
         }
     })
+}
+
+#[cfg(feature = "futures")]
+macro_rules! try_async {
+    ($e:expr) => (
+        match $e {
+            Err(e) => {
+                match *e.kind() {
+                    Again => return Ok(Async::NotReady),
+                    _ => return Err(e)
+                }
+            },
+            Ok(x) => Ok(Async::Ready(x))
+        }
+    )
 }
 
 pub unsafe fn ref_to_cvoid<T: ?Sized>(x: &T) -> *const c_void {

@@ -1,5 +1,8 @@
 error_chain!(
     errors {
+        Again {
+            description("system call would block")
+        }
         AddrError(addr: String, explanation: String) {
             description("error getting address info")
             display("error getting address {} info: {}", addr, explanation)
