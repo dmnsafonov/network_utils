@@ -358,7 +358,8 @@ impl<'a> Future for StdinBytesFuture<'a> {
     }
 }
 
-fn form_checked_payload<T>(payload: T) -> Result<Vec<u8>> where T: AsRef<[u8]> {
+fn form_checked_payload<T>(payload: T)
+        -> Result<Vec<u8>> where T: AsRef<[u8]> {
     let b = payload.as_ref();
     let len = b.len();
     if len > std::u16::MAX as usize {
