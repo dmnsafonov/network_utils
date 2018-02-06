@@ -48,8 +48,8 @@ use linux_network::*;
 
 gen_boolean_enum!(pub Resolve);
 
-pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve) -> Result<SocketAddrV6>
-        where T: AsRef<str> {
+pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve)
+        -> Result<SocketAddrV6> where T: AsRef<str> {
     let sockaddr_in = make_sockaddr_in6_v6_dgram(
         addr_str,
         None,

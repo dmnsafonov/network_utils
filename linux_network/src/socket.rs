@@ -407,8 +407,11 @@ pub mod futures {
     }
 
     impl<'a> IpV6RawSocketRecvfromFuture<'a> {
-        fn new(sock: &'a mut IpV6RawSocket, buf: &'a mut [u8], flags: RecvFlagSet)
-                -> IpV6RawSocketRecvfromFuture<'a> {
+        fn new(
+            sock: &'a mut IpV6RawSocket,
+            buf: &'a mut [u8],
+            flags: RecvFlagSet
+        ) -> IpV6RawSocketRecvfromFuture<'a> {
             IpV6RawSocketRecvfromFuture(
                 Some(IpV6RawSocketRecvfromFutureState {
                     sock: sock,

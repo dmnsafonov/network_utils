@@ -54,7 +54,7 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 
         if datagram_conf.binary {
             binary_print(stdout_locked.as_mut().unwrap(), payload, src,
-                datagram_conf.raw)?;
+                datagram_conf.raw.into())?;
         } else {
             regular_print(payload, src, datagram_conf.raw.into())?;
         }
@@ -88,10 +88,10 @@ fn binary_print(
     out: &mut io::StdoutLock,
     payload: &[u8],
     src: Ipv6Addr,
-    raw: bool
+    raw: Raw
 ) -> Result<()> {
     let payload_for_print;
-    if raw {
+    if raw.into() {
         write_binary(
             out,
             &u16_to_bytes_be(payload.len() as u16),
