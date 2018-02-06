@@ -3,7 +3,6 @@ use ::std::io::prelude::*;
 use ::std::os::unix::prelude::*;
 
 use ::futures::prelude::*;
-use ::owning_ref::*;
 
 use ::ping6_datacommon::*;
 use ::linux_network::*;
@@ -23,7 +22,7 @@ impl<'a> StdinBytesIterator<'a> {
 }
 
 impl<'a> Iterator for StdinBytesIterator<'a> {
-    type Item = Result<OwningRef<Vec<u8>, [u8]>>;
+    type Item = Result<Vec<u8>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut len_buf = [0; 2];
@@ -34,15 +33,14 @@ impl<'a> Iterator for StdinBytesIterator<'a> {
         };
         let len = ((len_buf[0] as usize) << 8) | (len_buf[1] as usize);
 
-        let mut buf = vec![0; ::std::u16::MAX as usize];
+        let mut buf = vec![0; len];
         match self.tin.read(&mut buf[..len]) {
             Ok(x) if x == len => (),
             Ok(x) => return Some(Err(ErrorKind::WrongLength(x, len).into())),
             Err(e) => return Some(Err(e.into()))
         };
 
-        let ret = VecRef::new(buf).map(|v| &v[..len]);
-        Some(Ok(ret))
+        Some(Ok(buf))
     }
 }
 
@@ -79,12 +77,12 @@ impl<'a> Drop for StdinBytesFuture<'a> {
 }
 
 impl<'a> Future for StdinBytesFuture<'a> {
-    type Item = OwningRef<Vec<u8>, [u8]>;
+    type Item = Vec<u8>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         assert!(self.pending);
-        let res = self.iter.next().unwrap_or(Ok(OwningRef::new(Vec::new())));
+        let res = self.iter.next().unwrap_or(Ok(Vec::new()));
         match res {
             Err(Error(ErrorKind::IoError(e), magic)) => {
                 if let io::ErrorKind::WouldBlock = e.kind() {
