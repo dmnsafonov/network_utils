@@ -2,6 +2,7 @@ extern crate capabilities;
 #[macro_use] extern crate error_chain;
 #[macro_use] extern crate log;
 extern crate nix;
+extern crate owning_ref;
 extern crate seahash;
 extern crate seccomp;
 
@@ -29,6 +30,8 @@ error_chain!(
     }
 );
 
+use std::cell::RefCell;
+use std::io;
 use std::net::*;
 use std::os::unix::prelude::*;
 use std::sync::atomic::*;
@@ -37,6 +40,7 @@ use capabilities::*;
 use libc::{c_int, c_long, IPPROTO_ICMPV6};
 use nix::libc;
 use nix::sys::signal::*;
+use owning_ref::OwningHandle;
 use seccomp::*;
 
 use linux_network::*;
@@ -208,4 +212,40 @@ fn allow_fd_syscall(ctx: &mut Context, fd: RawFd, syscall: c_long)
         )
     )?;
     Ok(())
+}
+
+pub trait LockableIo<'a> {
+    type LockType;
+    fn movable_lock(&'a mut self) -> Self::LockType;
+}
+
+impl<'a> LockableIo<'a> for io::Stdin {
+    type LockType = io::StdinLock<'a>;
+    fn movable_lock(&'a mut self) -> Self::LockType {
+        io::Stdin::lock(self)
+    }
+}
+
+impl<'a> LockableIo<'a> for io::Stdout {
+    type LockType = io::StdoutLock<'a>;
+    fn movable_lock(&'a mut self) -> Self::LockType {
+        io::Stdout::lock(self)
+    }
+}
+
+pub type MovableIoLock<'a, T> = OwningHandle<
+    Box<RefCell<T>>,
+    Box<<T as LockableIo<'a>>::LockType>
+>;
+
+pub fn movable_io_lock<'a, T>(io: T)
+        -> MovableIoLock<'a, T> where T: 'a + LockableIo<'a> {
+    OwningHandle::new_with_fn(
+        Box::new(RefCell::new(io)),
+        |cellptr| { unsafe {
+            let cellref = cellptr.as_ref().unwrap();
+            let ioref = cellref.as_ptr().as_mut().unwrap();
+            Box::new(ioref.movable_lock())
+        }}
+    )
 }

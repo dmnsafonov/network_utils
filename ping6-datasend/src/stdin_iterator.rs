@@ -5,21 +5,19 @@ use ::std::os::unix::prelude::*;
 use ::futures::prelude::*;
 use ::owning_ref::*;
 
+use ::ping6_datacommon::*;
 use ::linux_network::*;
 
-use ::errors::*;
+use ::errors::{Error, ErrorKind, Result};
 
 pub struct StdinBytesIterator<'a> {
-    tin: io::StdinLock<'a>,
-    tin_glue: Box<io::Stdin>
+    tin: MovableIoLock<'a, io::Stdin>
 }
 
 impl<'a> StdinBytesIterator<'a> {
     pub fn new() -> StdinBytesIterator<'a> {
-        let glue = Box::new(io::stdin());
         StdinBytesIterator {
-            tin: unsafe { (glue.as_ref() as *const io::Stdin).as_ref().unwrap().lock() },
-            tin_glue: glue,
+            tin: movable_io_lock(io::stdin())
         }
     }
 }
