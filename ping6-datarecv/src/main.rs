@@ -65,7 +65,7 @@ fn init() -> Result<InitState> {
     debug!("PR_SET_NO_NEW_PRIVS set");
 
     let bound_addr = if let Some(ref addr) = config.bind_address {
-        let bound_sockaddr = make_socket_addr(addr, false)?;
+        let bound_sockaddr = make_socket_addr(addr, Resolve::Yes)?;
         sock.bind(bound_sockaddr)?;
         info!("bound to {} address", addr);
 

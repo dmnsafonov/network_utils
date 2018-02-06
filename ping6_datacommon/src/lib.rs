@@ -41,7 +41,12 @@ use seccomp::*;
 
 use linux_network::*;
 
-pub fn make_socket_addr<T>(addr_str: T, resolve: bool) -> Result<SocketAddrV6>
+pub enum Resolve {
+    Yes,
+    No
+}
+
+pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve) -> Result<SocketAddrV6>
         where T: AsRef<str> {
     let sockaddr_in = make_sockaddr_in6_v6_dgram(
         addr_str,
@@ -49,8 +54,8 @@ pub fn make_socket_addr<T>(addr_str: T, resolve: bool) -> Result<SocketAddrV6>
         IPPROTO_ICMPV6,
         0,
         match resolve {
-            true => AddrInfoFlagSet::new(),
-            false => AddrInfoFlags::NumericHost.into()
+            Resolve::Yes => AddrInfoFlagSet::new(),
+            Resolve::No => AddrInfoFlags::NumericHost.into()
         }
     )?;
 

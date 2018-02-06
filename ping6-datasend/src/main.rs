@@ -64,9 +64,9 @@ fn init() -> Result<InitState> {
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
-    let src = make_socket_addr(&config.source, false)?;
+    let src = make_socket_addr(&config.source, Resolve::No)?;
 
-    let dst = make_socket_addr(&config.destination, true)?;
+    let dst = make_socket_addr(&config.destination, Resolve::Yes)?;
     info!("resolved destination address: {}", dst);
 
     setup_signal_handler()?;
