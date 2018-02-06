@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "boolean_enums",
     "linux_network",
     "numeric_enums",
     "ping6-datarecv",

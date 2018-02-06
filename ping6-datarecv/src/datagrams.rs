@@ -56,7 +56,7 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
             binary_print(stdout_locked.as_mut().unwrap(), payload, src,
                 datagram_conf.raw)?;
         } else {
-            regular_print(payload, src, datagram_conf.raw)?;
+            regular_print(payload, src, datagram_conf.raw.into())?;
         }
     }
 
@@ -115,10 +115,12 @@ fn binary_print(
     Ok(())
 }
 
-fn regular_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
+gen_boolean_enum!(Raw);
+
+fn regular_print(payload: &[u8], src: Ipv6Addr, raw: Raw) -> Result<()> {
     let payload_for_print = match raw {
-        true => Some(payload),
-        false => {
+        Raw::Yes => Some(payload),
+        Raw::No => {
             match validate_payload(payload) {
                 true => Some(&payload[4..]),
                 false => None

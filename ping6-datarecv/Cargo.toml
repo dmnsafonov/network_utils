@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 
 [dependencies]
+boolean_enums = { path = "../boolean_enums" }
 clap = "^2.26.2"
 env_logger = "^0.4.3"
 enum_extract = "^0.1.1"

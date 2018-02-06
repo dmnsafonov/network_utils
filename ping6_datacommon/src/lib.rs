@@ -6,6 +6,7 @@ extern crate owning_ref;
 extern crate seahash;
 extern crate seccomp;
 
+#[macro_use] extern crate boolean_enums;
 extern crate linux_network;
 
 error_chain!(
@@ -45,10 +46,7 @@ use seccomp::*;
 
 use linux_network::*;
 
-pub enum Resolve {
-    Yes,
-    No
-}
+gen_boolean_enum!(pub Resolve);
 
 pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve) -> Result<SocketAddrV6>
         where T: AsRef<str> {
@@ -135,11 +133,7 @@ pub fn u16_to_bytes_be(x: u16) -> [u8; 2] {
     ]
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum StdoutUse {
-    Yes,
-    No
-}
+gen_boolean_enum!(pub StdoutUse);
 
 pub fn allow_defaults() -> Result<Context> {
     let mut ctx = Context::default(Action::Kill)?;

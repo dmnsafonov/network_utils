@@ -9,6 +9,7 @@ extern crate libc;
 extern crate pnet_packet;
 extern crate seccomp;
 
+#[macro_use] extern crate boolean_enums;
 extern crate linux_network;
 extern crate ping6_datacommon;
 
