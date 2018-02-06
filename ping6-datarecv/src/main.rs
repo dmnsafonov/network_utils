@@ -13,25 +13,21 @@ extern crate linux_network;
 extern crate ping6_datacommon;
 
 mod config;
+mod datagrams;
 mod errors;
-
-use std::io::prelude::*;
-use std::io::stdout;
-use std::net::*;
+mod stream;
+mod util;
 
 use enum_kinds_traits::ToKind;
-use pnet_packet::icmpv6;
-use pnet_packet::icmpv6::*;
-use pnet_packet::icmpv6::ndp::Icmpv6Codes;
-use pnet_packet::{FromPacket, Packet, PrimitiveValues};
 
 use linux_network::*;
 use ping6_datacommon::*;
 
 use config::*;
+use datagrams::datagram_mode;
 use errors::Result;
-
-type InitState = (Config, Option<Ipv6Addr>, IpV6RawSocket);
+use stream::stream_mode;
+use util::InitState;
 
 quick_main!(the_main);
 fn the_main() -> Result<()> {
@@ -92,155 +88,5 @@ fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
     allow_console_out(&mut ctx, use_stdout)?;
     sock.allow_receiving(&mut ctx)?;
     ctx.load()?;
-    Ok(())
-}
-
-fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
-    let datagram_conf = extract!(ModeConfig::Datagram(_), config.mode)
-        .unwrap();
-
-    // ipv6 payload length is 2-byte
-    let mut raw_buf = vec![0; std::u16::MAX as usize];
-    loop {
-        if signal_received() {
-            info!("interrupted");
-            break;
-        }
-
-        let (buf, sockaddr) =
-            match sock.recvfrom(&mut raw_buf, RecvFlagSet::new()) {
-                x@Ok(_) => x,
-                Err(e) => {
-                    if let Interrupted = *e.kind() {
-                        debug!("system call interrupted");
-                        continue;
-                    } else {
-                        Err(e)
-                    }
-                }
-            }?;
-        let src = *sockaddr.ip();
-        let packet = Icmpv6Packet::new(&buf).unwrap();
-        let payload = packet.payload();
-
-        debug!("received packet, payload size = {} from {}",
-            payload.len(), src);
-
-        if !validate_icmpv6(&packet, src, bound_addr) {
-            info!("invalid icmpv6 packet, dropping");
-            continue;
-        }
-
-        if datagram_conf.binary {
-            binary_print(payload, src, datagram_conf.raw)?;
-        } else {
-            regular_print(payload, src, datagram_conf.raw)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn stream_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
-    let stream_conf = extract!(ModeConfig::Stream(_), config.mode).unwrap();
-
-    unimplemented!()
-}
-
-fn validate_icmpv6(
-        packet: &Icmpv6Packet,
-        src: Ipv6Addr,
-        dst: Option<Ipv6Addr>) -> bool {
-    let icmp = packet.from_packet();
-    assert_eq!(icmp.icmpv6_type, Icmpv6Types::EchoRequest);
-
-    if let Some(dest_addr) = dst {
-        let cm = icmpv6::checksum(&packet, src, dest_addr);
-        if icmp.checksum != cm {
-            info!("wrong icmp checksum {}, correct is {}",
-                icmp.checksum,
-                cm
-            );
-            return false;
-        }
-    }
-
-    if icmp.icmpv6_code != Icmpv6Codes::NoCode {
-        info!("nonzero code {} in echo request",
-            icmp.icmpv6_code.to_primitive_values().0
-        );
-        return false;
-    }
-
-    return true;
-}
-
-fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
-    let payload = payload_arg.as_ref();
-
-    let packet_checksum = ((payload[0] as u16) << 8) | (payload[1] as u16);
-    let len = ((payload[2] as u16) << 8) | (payload[3] as u16);
-
-    if len != (payload.len() - 4) as u16 {
-        debug!("wrong encapsulated packet length: {}, dropping", len);
-        return false;
-    }
-
-    let checksum = ping6_data_checksum(&payload[4..]);
-
-    if packet_checksum != checksum {
-        debug!("wrong checksum, dropping");
-        return false;
-    }
-
-    return true;
-}
-
-fn binary_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
-    let payload_for_print;
-    if raw {
-        write_binary(
-            &u16_to_bytes_be(payload.len() as u16),
-            payload
-        )?;
-        payload_for_print = Some(payload);
-    } else if validate_payload(payload) {
-        let real_payload = &payload[4..];
-        write_binary(&payload[0..2], real_payload)?;
-        payload_for_print = Some(real_payload);
-    } else {
-        payload_for_print = None;
-    }
-
-    if let Some(payload_for_print) = payload_for_print {
-        let str_payload = String::from_utf8_lossy(payload_for_print);
-        info!("received message from {}: {}", src, str_payload);
-        stdout().flush()?;
-    }
-
-    Ok(())
-}
-
-fn write_binary(len: &[u8], payload: &[u8]) -> Result<()> {
-    let mut out = stdout();
-    out.write(len)?;
-    out.write(payload)?;
-    Ok(())
-}
-
-fn regular_print(payload: &[u8], src: Ipv6Addr, raw: bool) -> Result<()> {
-    let payload_for_print = match raw {
-        true => Some(payload),
-        false => {
-            match validate_payload(payload) {
-                true => Some(&payload[4..]),
-                false => None
-            }
-        }
-    };
-    if let Some(payload_for_print) = payload_for_print {
-        let str_payload = String::from_utf8_lossy(payload_for_print);
-        println!("received message from {}: {}", src, str_payload);
-    }
     Ok(())
 }
