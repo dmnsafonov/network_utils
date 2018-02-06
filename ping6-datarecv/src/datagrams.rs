@@ -53,7 +53,8 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
         }
 
         if datagram_conf.binary {
-            binary_print(stdout_locked.as_mut().unwrap(), payload, src, datagram_conf.raw)?;
+            binary_print(stdout_locked.as_mut().unwrap(), payload, src,
+                datagram_conf.raw)?;
         } else {
             regular_print(payload, src, datagram_conf.raw)?;
         }
