@@ -403,31 +403,7 @@ pub mod futures {
     use ::mio::unix::EventedFd;
     use ::tokio_core::reactor::*;
 
-    impl Evented for IpV6RawSocket {
-        fn register(
-            &self,
-            poll: &mio::Poll,
-            token: Token,
-            interest: Ready,
-            opts: PollOpt
-        ) -> io::Result<()> {
-            EventedFd(&self.0).register(poll, token, interest, opts)
-        }
-
-        fn reregister(
-            &self,
-            poll: &mio::Poll,
-            token: Token,
-            interest: Ready,
-            opts: PollOpt
-        ) -> io::Result<()> {
-            EventedFd(&self.0).reregister(poll, token, interest, opts)
-        }
-
-        fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
-            EventedFd(&self.0).deregister(poll)
-        }
-    }
+    gen_evented_eventedfd!(IpV6RawSocket);
 
     pub struct IpV6RawSocketAdapter(PollEvented<IpV6RawSocket>);
 
@@ -595,31 +571,7 @@ pub mod futures {
         }
     }
 
-    impl Evented for IpV6PacketSocket {
-        fn register(
-            &self,
-            poll: &mio::Poll,
-            token: Token,
-            interest: Ready,
-            opts: PollOpt
-        ) -> io::Result<()> {
-            EventedFd(&self.fd).register(poll, token, interest, opts)
-        }
-
-        fn reregister(
-            &self,
-            poll: &mio::Poll,
-            token: Token,
-            interest: Ready,
-            opts: PollOpt
-        ) -> io::Result<()> {
-            EventedFd(&self.fd).reregister(poll, token, interest, opts)
-        }
-
-        fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
-            EventedFd(&self.fd).deregister(poll)
-        }
-    }
+    gen_evented_eventedfd!(IpV6PacketSocket);
 
     pub struct IpV6PacketSocketAdapter(PollEvented<IpV6PacketSocket>);
 

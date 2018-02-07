@@ -63,34 +63,13 @@ impl<'a> Read for StdinLockWrapper<'a> {
     }
 }
 
-impl<'a> Evented for StdinLockWrapper<'a> {
-    fn register(
-        &self,
-        poll: &mio::Poll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt
-    ) -> io::Result<()> {
-        EventedFd(&io::stdin().as_raw_fd())
-            .register(poll, token, interest, opts)
-    }
-
-    fn reregister(
-        &self,
-        poll: &mio::Poll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt
-    ) -> io::Result<()> {
-        EventedFd(&io::stdin().as_raw_fd())
-            .register(poll, token, interest, opts)
-    }
-
-    fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
-        EventedFd(&io::stdin().as_raw_fd())
-            .deregister(poll)
+impl<'a> AsRawFd for StdinLockWrapper<'a> {
+    fn as_raw_fd(&self) -> RawFd {
+        io::stdin().as_raw_fd()
     }
 }
+
+gen_evented_eventedfd_lifetimed!(StdinLockWrapper<'gen_lifetime>);
 
 pub struct StdinBytesReader<'a> {
     stdin: PollEvented<StdinLockWrapper<'a>>,

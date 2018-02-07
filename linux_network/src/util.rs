@@ -67,3 +67,72 @@ pub fn log_if_err<T,E>(x: ::std::result::Result<T,E>)
         error!("{}", e.display_chain());
     }
 }
+
+#[macro_export]
+macro_rules! gen_evented_eventedfd {
+    ($name:ident) => (
+        impl Evented for $name {
+            fn register(
+                &self,
+                poll: &mio::Poll,
+                token: Token,
+                interest: Ready,
+                opts: PollOpt
+            ) -> io::Result<()> {
+                EventedFd(&self.as_raw_fd())
+                    .register(poll, token, interest, opts)
+            }
+
+            fn reregister(
+                &self,
+                poll: &mio::Poll,
+                token: Token,
+                interest: Ready,
+                opts: PollOpt
+            ) -> io::Result<()> {
+                EventedFd(&self.as_raw_fd())
+                    .reregister(poll, token, interest, opts)
+            }
+
+            fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
+                EventedFd(&self.as_raw_fd())
+                    .deregister(poll)
+            }
+        }
+    )
+}
+
+#[macro_export]
+macro_rules! gen_evented_eventedfd_lifetimed {
+    ($name:ty) => (
+        impl<'gen_lifetime> Evented
+                for $name {
+            fn register(
+                &self,
+                poll: &mio::Poll,
+                token: Token,
+                interest: Ready,
+                opts: PollOpt
+            ) -> io::Result<()> {
+                EventedFd(&self.as_raw_fd())
+                    .register(poll, token, interest, opts)
+            }
+
+            fn reregister(
+                &self,
+                poll: &mio::Poll,
+                token: Token,
+                interest: Ready,
+                opts: PollOpt
+            ) -> io::Result<()> {
+                EventedFd(&self.as_raw_fd())
+                    .reregister(poll, token, interest, opts)
+            }
+
+            fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
+                EventedFd(&self.as_raw_fd())
+                    .deregister(poll)
+            }
+        }
+    )
+}
