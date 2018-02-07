@@ -2,7 +2,13 @@ use ::std::io;
 use ::std::io::prelude::*;
 use ::std::os::unix::prelude::*;
 
+use ::futures;
 use ::futures::prelude::*;
+use ::mio;
+use ::mio::*;
+use ::mio::event::Evented;
+use ::mio::unix::EventedFd;
+use ::tokio_core::reactor::*;
 
 use ::ping6_datacommon::*;
 use ::linux_network::*;
@@ -46,53 +52,74 @@ impl<'a> Iterator for StdinBytesIterator<'a> {
 
 impl<'a> AsRawFd for StdinBytesIterator<'a> {
     fn as_raw_fd(&self) -> RawFd {
+        // safe, because it essencially returns STDIN_FILENO without locking
         io::stdin().as_raw_fd()
     }
 }
 
-pub struct StdinBytesFuture<'a> {
-    iter: &'a mut StdinBytesIterator<'a>,
-    pending: bool,
+struct StdinLockWrapper<'a>(io::StdinLock<'a>);
+
+impl<'a> Read for StdinLockWrapper<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl<'a> Evented for StdinLockWrapper<'a> {
+    fn register(
+        &self,
+        poll: &mio::Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt
+    ) -> io::Result<()> {
+        EventedFd(&io::stdin().as_raw_fd())
+            .register(poll, token, interest, opts)
+    }
+
+    fn reregister(
+        &self,
+        poll: &mio::Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt
+    ) -> io::Result<()> {
+        EventedFd(&io::stdin().as_raw_fd())
+            .register(poll, token, interest, opts)
+    }
+
+    fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
+        EventedFd(&io::stdin().as_raw_fd())
+            .deregister(poll)
+    }
+}
+
+pub struct StdinBytesReader<'a> {
+    stdin: PollEvented<StdinLockWrapper<'a>>,
     drop_nonblock: bool
 }
 
-impl<'a> StdinBytesFuture<'a> {
-    pub fn new(iter: &'a mut StdinBytesIterator<'a>)
-            -> Result<StdinBytesFuture<'a>> {
-        let old = set_fd_nonblock(iter, true)?;
-        Ok(StdinBytesFuture {
-            iter: iter,
-            pending: true,
+impl<'a> StdinBytesReader<'a> {
+    pub fn new(handle: &Handle, stdin: io::StdinLock<'a>)
+            -> Result<StdinBytesReader<'a>> {
+        let old = set_fd_nonblock(&io::stdin(), true)?;
+        Ok(StdinBytesReader {
+            stdin: PollEvented::new(StdinLockWrapper(stdin), handle)?,
             drop_nonblock: !old
         })
     }
 }
 
-impl<'a> Drop for StdinBytesFuture<'a> {
-    fn drop(&mut self) {
-        if self.drop_nonblock {
-            set_fd_nonblock(self.iter, false).unwrap();
-        }
+impl<'a> Read for StdinBytesReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.stdin.get_mut().read(buf)
     }
 }
 
-impl<'a> Future for StdinBytesFuture<'a> {
-    type Item = Vec<u8>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        assert!(self.pending);
-        let res = self.iter.next().unwrap_or(Ok(Vec::new()));
-        match res {
-            Err(Error(ErrorKind::IoError(e), magic)) => {
-                if let io::ErrorKind::WouldBlock = e.kind() {
-                    Ok(Async::NotReady)
-                } else {
-                    bail!(Error(ErrorKind::IoError(e), magic))
-                }
-            },
-            Err(e) => Err(e),
-            Ok(x) => Ok(Async::Ready(x))
+impl<'a> Drop for StdinBytesReader<'a> {
+    fn drop(&mut self) {
+        if self.drop_nonblock {
+            set_fd_nonblock(&io::stdin(), false).unwrap();
         }
     }
 }

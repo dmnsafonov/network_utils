@@ -7,6 +7,7 @@ extern crate enum_kinds_traits;
 extern crate futures;
 extern crate libc;
 #[macro_use] extern crate log;
+extern crate mio;
 extern crate pnet_packet;
 extern crate seccomp;
 extern crate tokio_core;

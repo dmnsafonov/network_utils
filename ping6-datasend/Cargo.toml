@@ -13,6 +13,7 @@ error-chain = "^0.11.0"
 futures = "^0.1.18"
 libc = "^0.2.33"
 log = "^0.3.8"
+mio = "^0.6.12"
 ping6_datacommon = { path = "../ping6_datacommon" }
 pnet_packet = "^0.20.0"
 seccomp = "^0.1.1"
