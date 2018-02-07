@@ -2,8 +2,6 @@ use ::std::io;
 use ::std::io::prelude::*;
 use ::std::os::unix::prelude::*;
 
-use ::futures;
-use ::futures::prelude::*;
 use ::mio;
 use ::mio::*;
 use ::mio::event::Evented;
@@ -13,7 +11,7 @@ use ::tokio_core::reactor::*;
 use ::ping6_datacommon::*;
 use ::linux_network::*;
 
-use ::errors::{Error, ErrorKind, Result};
+use ::errors::{ErrorKind, Result};
 
 pub struct StdinBytesIterator<'a> {
     tin: MovableIoLock<'a, io::Stdin>
@@ -102,7 +100,7 @@ pub struct StdinBytesReader<'a> {
 impl<'a> StdinBytesReader<'a> {
     pub fn new(handle: &Handle, stdin: io::StdinLock<'a>)
             -> Result<StdinBytesReader<'a>> {
-        let old = set_fd_nonblock(&io::stdin(), true)?;
+        let old = set_fd_nonblock(&io::stdin(), Nonblock::Yes)?;
         Ok(StdinBytesReader {
             stdin: PollEvented::new(StdinLockWrapper(stdin), handle)?,
             drop_nonblock: !old
@@ -119,7 +117,7 @@ impl<'a> Read for StdinBytesReader<'a> {
 impl<'a> Drop for StdinBytesReader<'a> {
     fn drop(&mut self) {
         if self.drop_nonblock {
-            set_fd_nonblock(&io::stdin(), false).unwrap();
+            set_fd_nonblock(&io::stdin(), Nonblock::No).unwrap();
         }
     }
 }

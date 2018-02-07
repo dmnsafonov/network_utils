@@ -389,26 +389,137 @@ fn allow_syscall<T>(ctx: &mut ::seccomp::Context, fd: &T, syscall: c_long)
     Ok(())
 }
 
-#[cfg(feature = "futures")]
+#[cfg(feature = "async")]
 pub mod futures {
     use super::*;
 
-    use ::ext_futures::prelude::*;
+    use ::std::io;
 
-    pub struct IpV6RawSocketAdapter(IpV6RawSocket);
+    use ::ext_futures as futures;
+    use ::ext_futures::prelude::*;
+    use ::mio;
+    use ::mio::*;
+    use ::mio::event::Evented;
+    use ::mio::unix::EventedFd;
+    use ::tokio_core::reactor::*;
+
+    impl Evented for IpV6RawSocket {
+        fn register(
+            &self,
+            poll: &mio::Poll,
+            token: Token,
+            interest: Ready,
+            opts: PollOpt
+        ) -> io::Result<()> {
+            EventedFd(&self.0).register(poll, token, interest, opts)
+        }
+
+        fn reregister(
+            &self,
+            poll: &mio::Poll,
+            token: Token,
+            interest: Ready,
+            opts: PollOpt
+        ) -> io::Result<()> {
+            EventedFd(&self.0).reregister(poll, token, interest, opts)
+        }
+
+        fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
+            EventedFd(&self.0).deregister(poll)
+        }
+    }
+
+    pub struct IpV6RawSocketAdapter(PollEvented<IpV6RawSocket>);
+
+    impl IpV6RawSocketAdapter {
+        pub fn new(handle: &Handle, inner: IpV6RawSocket)
+                -> Result<IpV6RawSocketAdapter> {
+            set_fd_nonblock(&inner, Nonblock::Yes)?;
+            Ok(IpV6RawSocketAdapter(PollEvented::new(inner, handle)?))
+        }
+
+        pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> {
+            self.0.get_mut().bind(addr)
+        }
+
+        pub fn recvfrom_direct<'a>(
+            &mut self,
+            buf: &'a mut [u8],
+            flags: RecvFlagSet
+        ) -> Result<(&'a mut [u8], SocketAddrV6)> {
+            if let Async::NotReady = self.0.poll_read() {
+                bail!(Again);
+            }
+
+            match self.0.get_mut().recvfrom(buf, flags) {
+                Err(e) => {
+                    if let Again = *e.kind() {
+                        self.0.need_read();
+                    }
+                    Err(e)
+                },
+                Ok(x) => Ok(x)
+            }
+        }
+
+        pub fn sendto_direct(
+            &mut self,
+            buf: &[u8],
+            addr: SocketAddrV6,
+            flags: SendFlagSet
+        ) -> Result<size_t> {
+            if let Async::NotReady = self.0.poll_write() {
+                bail!(Again);
+            }
+
+            match self.0.get_mut().sendto(buf, addr, flags) {
+                Err(e) => {
+                    if let Again = *e.kind() {
+                        self.0.need_write();
+                    }
+                    Err(e)
+                },
+                Ok(x) => Ok(x)
+            }
+        }
+
+        pub fn recvfrom<'a>(
+            &'a mut self,
+            buf: &'a mut [u8],
+            flags: RecvFlagSet
+        ) -> IpV6RawSocketRecvfromFuture {
+            IpV6RawSocketRecvfromFuture::new(self, buf, flags)
+        }
+
+        pub fn sendto<'a>(
+            &'a mut self,
+            buf: &'a [u8],
+            addr: SocketAddrV6,
+            flags: SendFlagSet
+        ) -> IpV6RawSocketSendtoFuture {
+            IpV6RawSocketSendtoFuture::new(self, buf, addr, flags)
+        }
+    }
+
+    impl AsRawFd for IpV6RawSocketAdapter {
+        fn as_raw_fd(&self) -> RawFd {
+            self.0.get_ref().as_raw_fd()
+        }
+    }
 
     pub struct IpV6RawSocketRecvfromFuture<'a>(
         Option<IpV6RawSocketRecvfromFutureState<'a>>
     );
+
     struct IpV6RawSocketRecvfromFutureState<'a> {
-        sock: &'a mut IpV6RawSocket,
+        sock: &'a mut IpV6RawSocketAdapter,
         buf: &'a mut [u8],
         flags: RecvFlagSet
     }
 
     impl<'a> IpV6RawSocketRecvfromFuture<'a> {
         fn new(
-            sock: &'a mut IpV6RawSocket,
+            sock: &'a mut IpV6RawSocketAdapter,
             buf: &'a mut [u8],
             flags: RecvFlagSet
         ) -> IpV6RawSocketRecvfromFuture<'a> {
@@ -426,7 +537,7 @@ pub mod futures {
         type Item = (&'a mut [u8], SocketAddrV6);
         type Error = Error;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
             let state_pre = self.0.as_mut().map(
                 |x| unsafe {
                     (x as *mut IpV6RawSocketRecvfromFutureState).as_mut()
@@ -434,15 +545,16 @@ pub mod futures {
                 }
             );
             let state = state_pre.expect("pending recvfrom future");
-            try_async!(state.sock.recvfrom(&mut state.buf, state.flags))
+            try_async!(state.sock.recvfrom_direct(&mut state.buf, state.flags))
         }
     }
 
     pub struct IpV6RawSocketSendtoFuture<'a>(
         Option<IpV6RawSocketSendtoFutureState<'a>>
     );
+
     struct IpV6RawSocketSendtoFutureState<'a> {
-        sock: &'a mut IpV6RawSocket,
+        sock: &'a mut IpV6RawSocketAdapter,
         buf: &'a [u8],
         addr: SocketAddrV6,
         flags: SendFlagSet
@@ -450,7 +562,7 @@ pub mod futures {
 
     impl<'a> IpV6RawSocketSendtoFuture<'a> {
         fn new(
-            sock: &'a mut IpV6RawSocket,
+            sock: &'a mut IpV6RawSocketAdapter,
             buf: &'a [u8],
             addr: SocketAddrV6,
             flags: SendFlagSet
@@ -470,7 +582,7 @@ pub mod futures {
         type Item = size_t;
         type Error = Error;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
             let state_pre = self.0.as_mut().map(
                 |x| unsafe {
                     (x as *mut IpV6RawSocketSendtoFutureState).as_mut()
@@ -478,59 +590,122 @@ pub mod futures {
                 }
             );
             let state = state_pre.expect("pending sendto future");
-            try_async!(state.sock.sendto(&mut state.buf, state.addr,
+            try_async!(state.sock.sendto_direct(&mut state.buf, state.addr,
                 state.flags))
         }
     }
 
-    impl IpV6RawSocketAdapter {
-        pub fn new(inner: IpV6RawSocket) -> Result<IpV6RawSocketAdapter> {
-            set_fd_nonblock(&inner, true)?;
-            Ok(IpV6RawSocketAdapter(inner))
+    impl Evented for IpV6PacketSocket {
+        fn register(
+            &self,
+            poll: &mio::Poll,
+            token: Token,
+            interest: Ready,
+            opts: PollOpt
+        ) -> io::Result<()> {
+            EventedFd(&self.fd).register(poll, token, interest, opts)
         }
 
-        pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> {
-            self.0.bind(addr)
+        fn reregister(
+            &self,
+            poll: &mio::Poll,
+            token: Token,
+            interest: Ready,
+            opts: PollOpt
+        ) -> io::Result<()> {
+            EventedFd(&self.fd).reregister(poll, token, interest, opts)
         }
 
-        pub fn recvfrom<'a>(
-            &'a mut self,
-            buf: &'a mut [u8],
+        fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
+            EventedFd(&self.fd).deregister(poll)
+        }
+    }
+
+    pub struct IpV6PacketSocketAdapter(PollEvented<IpV6PacketSocket>);
+
+    impl IpV6PacketSocketAdapter {
+        pub fn new(handle: &Handle, inner: IpV6PacketSocket)
+                -> Result<IpV6PacketSocketAdapter> {
+            set_fd_nonblock(&inner, Nonblock::Yes)?;
+            Ok(IpV6PacketSocketAdapter(PollEvented::new(inner, handle)?))
+        }
+
+        pub fn recvpacket_direct(
+            &mut self,
+            maxsize: size_t,
             flags: RecvFlagSet
-        ) -> IpV6RawSocketRecvfromFuture {
-            IpV6RawSocketRecvfromFuture::new(&mut self.0, buf, flags)
+        ) -> Result<(Ipv6, MacAddr)> {
+            if let Async::NotReady = self.0.poll_read() {
+                bail!(Again);
+            }
+
+            match self.0.get_mut().recvpacket(maxsize, flags) {
+                Err(e) => {
+                    if let Again = *e.kind() {
+                        self.0.need_read();
+                    }
+                    Err(e)
+                },
+                Ok(x) => Ok(x)
+            }
         }
 
-        pub fn sendto<'a>(
+        pub fn sendpacket_direct<'a>(
             &'a mut self,
-            buf: &'a [u8],
-            addr: SocketAddrV6,
+            packet: &'a Ipv6,
+            dest: Option<MacAddr>,
             flags: SendFlagSet
-        ) -> IpV6RawSocketSendtoFuture {
-            IpV6RawSocketSendtoFuture::new(&mut self.0, buf, addr, flags)
+        ) -> Result<size_t> {
+            if let Async::NotReady = self.0.poll_write() {
+                bail!(Again);
+            }
+
+            match self.0.get_mut().sendpacket(packet, dest, flags) {
+                Err(e) => {
+                    if let Again = *e.kind() {
+                        self.0.need_write();
+                    }
+                    Err(e)
+                },
+                Ok(x) => Ok(x)
+            }
+        }
+
+        pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
+                -> IpV6PacketSocketRecvpacketFuture {
+            IpV6PacketSocketRecvpacketFuture::new(self, maxsize, flags)
+        }
+
+        pub fn sendpacket<'a>(
+            &'a mut self,
+            packet: &'a Ipv6,
+            dest: Option<MacAddr>,
+            flags: SendFlagSet
+        ) -> IpV6PacketSocketSendpacketFuture {
+            IpV6PacketSocketSendpacketFuture::new(self, packet, dest,
+                flags)
         }
     }
 
-    impl AsRawFd for IpV6RawSocketAdapter {
+    impl AsRawFd for IpV6PacketSocketAdapter {
         fn as_raw_fd(&self) -> RawFd {
-            self.0.as_raw_fd()
+            self.0.get_ref().as_raw_fd()
         }
     }
-
-    pub struct IpV6PacketSocketAdapter(IpV6PacketSocket);
 
     pub struct IpV6PacketSocketRecvpacketFuture<'a>(
         Option<IpV6PacketSocketRecvpacketFutureState<'a>>
     );
+
     struct IpV6PacketSocketRecvpacketFutureState<'a> {
-        sock: &'a mut IpV6PacketSocket,
+        sock: &'a mut IpV6PacketSocketAdapter,
         maxsize: size_t,
         flags: RecvFlagSet
     }
 
     impl<'a> IpV6PacketSocketRecvpacketFuture<'a> {
         fn new(
-            sock: &'a mut IpV6PacketSocket,
+            sock: &'a mut IpV6PacketSocketAdapter,
             maxsize: size_t,
             flags: RecvFlagSet
         ) -> IpV6PacketSocketRecvpacketFuture<'a> {
@@ -548,7 +723,7 @@ pub mod futures {
         type Item = (Ipv6, MacAddr);
         type Error = Error;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
             let state_pre = self.0.as_mut().map(
                 |x| unsafe {
                     (x as *mut IpV6PacketSocketRecvpacketFutureState).as_mut()
@@ -556,15 +731,17 @@ pub mod futures {
                 }
             );
             let state = state_pre.expect("pending recvpacket future");
-            try_async!(state.sock.recvpacket(state.maxsize, state.flags))
+            try_async!(state.sock.recvpacket_direct(state.maxsize,
+                state.flags))
         }
     }
 
     pub struct IpV6PacketSocketSendpacketFuture<'a>(
         Option<IpV6PacketSocketSendpacketFutureState<'a>>
     );
+
     struct IpV6PacketSocketSendpacketFutureState<'a> {
-        sock: &'a mut IpV6PacketSocket,
+        sock: &'a mut IpV6PacketSocketAdapter,
         packet: &'a Ipv6,
         destination: Option<MacAddr>,
         flags: SendFlagSet
@@ -572,7 +749,7 @@ pub mod futures {
 
     impl<'a> IpV6PacketSocketSendpacketFuture<'a> {
         fn new(
-            sock: &'a mut IpV6PacketSocket,
+            sock: &'a mut IpV6PacketSocketAdapter,
             packet: &'a Ipv6,
             destination: Option<MacAddr>,
             flags: SendFlagSet
@@ -592,7 +769,7 @@ pub mod futures {
         type Item = size_t;
         type Error = Error;
 
-        fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
             let state_pre = self.0.as_mut().map(
                 |x| unsafe {
                     (x as *mut IpV6PacketSocketSendpacketFutureState).as_mut()
@@ -600,37 +777,8 @@ pub mod futures {
                 }
             );
             let state = state_pre.expect("pending sendpacket future");
-            try_async!(state.sock.sendpacket(state.packet, state.destination,
-                state.flags))
-        }
-    }
-
-    impl IpV6PacketSocketAdapter {
-        pub fn new(inner: IpV6PacketSocket)
-                -> Result<IpV6PacketSocketAdapter> {
-            set_fd_nonblock(&inner, true)?;
-            Ok(IpV6PacketSocketAdapter(inner))
-        }
-
-        pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
-                -> IpV6PacketSocketRecvpacketFuture {
-            IpV6PacketSocketRecvpacketFuture::new(&mut self.0, maxsize, flags)
-        }
-
-        pub fn sendpacket<'a>(
-            &'a mut self,
-            packet: &'a Ipv6,
-            dest: Option<MacAddr>,
-            flags: SendFlagSet
-        ) -> IpV6PacketSocketSendpacketFuture {
-            IpV6PacketSocketSendpacketFuture::new(&mut self.0, packet, dest,
-                flags)
-        }
-    }
-
-    impl AsRawFd for IpV6PacketSocketAdapter {
-        fn as_raw_fd(&self) -> RawFd {
-            self.0.as_raw_fd()
+            try_async!(state.sock.sendpacket_direct(state.packet,
+                state.destination, state.flags))
         }
     }
 

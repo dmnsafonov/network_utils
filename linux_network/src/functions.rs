@@ -192,12 +192,14 @@ pub fn get_fd_nonblock<F>(fd: &F) -> Result<bool> where F: AsRawFd + ?Sized {
     Ok(get_fd_flags(fd)?.test(FileOpenFlags::Nonblock))
 }
 
-pub fn set_fd_nonblock<F>(fd: &F, nonblock: bool)
+gen_boolean_enum!(pub Nonblock);
+
+pub fn set_fd_nonblock<F>(fd: &F, nonblock: Nonblock)
         -> Result<bool> where F: AsRawFd + ?Sized {
     let flags = get_fd_flags(fd)?;
     let new_flags = match nonblock {
-        true => flags | FileOpenFlags::Nonblock,
-        false => flags & FileOpenFlags::Nonblock
+        Nonblock::Yes => flags | FileOpenFlags::Nonblock,
+        Nonblock::No => flags & FileOpenFlags::Nonblock
     };
     if flags != new_flags {
         set_fd_flags(fd, new_flags)?;

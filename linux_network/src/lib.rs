@@ -1,11 +1,14 @@
 #[macro_use] extern crate error_chain;
-#[cfg(feature = "futures")] extern crate futures as ext_futures;
+#[cfg(feature = "async")] extern crate futures as ext_futures;
 extern crate interfaces;
 #[macro_use] extern crate log;
+#[cfg(feature = "async")] extern crate mio;
 extern crate nix;
 extern crate pnet_packet;
 #[cfg(feature = "seccomp")] extern crate seccomp;
+#[cfg(feature = "async")] extern crate tokio_core;
 
+#[macro_use] extern crate boolean_enums;
 #[macro_use] extern crate numeric_enums;
 
 #[macro_use] mod util;
@@ -23,7 +26,7 @@ pub mod raw {
     pub use structs::raw::*;
 }
 
-#[cfg(feature = "futures")]
+#[cfg(feature = "async")]
 pub mod futures {
     pub use socket::futures::*;
 }
