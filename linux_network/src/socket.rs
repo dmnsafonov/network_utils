@@ -463,7 +463,7 @@ pub mod futures {
             &'a mut self,
             buf: &'a mut [u8],
             flags: RecvFlagSet
-        ) -> IpV6RawSocketRecvfromFuture {
+        ) -> IpV6RawSocketRecvfromFuture<'a> {
             IpV6RawSocketRecvfromFuture::new(self, buf, flags)
         }
 
@@ -472,7 +472,7 @@ pub mod futures {
             buf: &'a [u8],
             addr: SocketAddrV6,
             flags: SendFlagSet
-        ) -> IpV6RawSocketSendtoFuture {
+        ) -> IpV6RawSocketSendtoFuture<'a> {
             IpV6RawSocketSendtoFuture::new(self, buf, addr, flags)
         }
     }
@@ -633,7 +633,7 @@ pub mod futures {
             packet: &'a Ipv6,
             dest: Option<MacAddr>,
             flags: SendFlagSet
-        ) -> IpV6PacketSocketSendpacketFuture {
+        ) -> IpV6PacketSocketSendpacketFuture<'a> {
             IpV6PacketSocketSendpacketFuture::new(self, packet, dest,
                 flags)
         }
