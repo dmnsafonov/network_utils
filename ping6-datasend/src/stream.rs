@@ -1,5 +1,6 @@
 use ::std::cmp::*;
 use ::std::collections::*;
+use ::std::ops::Deref;
 use ::std::slice;
 
 use ::config::*;
@@ -257,11 +258,23 @@ enum WindowedBufferSlice<'a> {
 
 impl<'a> Drop for WindowedBufferSlice<'a> {
     fn drop(&mut self) {
-        if let &mut WindowedBufferSlice::Direct { parent, start, len, .. }
+        if let &mut WindowedBufferSlice::Direct { parent, start, len }
                 = self { unsafe {
             let p = parent.as_mut().unwrap();
             p.del_tracker.track(slice::from_raw_parts(start, len as usize));
         }}
+    }
+}
+
+impl<'a> Deref for WindowedBufferSlice<'a> {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            WindowedBufferSlice::Direct { start, len, .. } => { unsafe {
+                slice::from_raw_parts(start, len as usize)
+            }},
+            WindowedBufferSlice::Owning(ref boxed) => boxed.as_ref()
+        }
     }
 }
 
