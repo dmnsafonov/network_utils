@@ -1,6 +1,6 @@
 use ::std::cmp::*;
 use ::std::collections::*;
-use ::std::ops::Range;
+use ::std::slice;
 
 use ::config::*;
 use ::errors::Result;
@@ -8,21 +8,26 @@ use ::errors::Result;
 use ::util::InitState;
 
 #[derive(Debug)]
-struct WindowedBuffer {
+struct WindowedBuffer<'a> {
     inner: VecDeque<u8>,
     window_size: u16,
-    window_start: u16,
-    del_tracker: DeletionTracker
+    first_available: u16,
+    del_tracker: DeletionTracker<'a>
 }
 
-impl WindowedBuffer {
-    fn new(size: usize, window_size: u16) -> WindowedBuffer {
-        WindowedBuffer {
+impl<'a> WindowedBuffer<'a> {
+    fn new(size: usize, window_size: u16) -> Box<WindowedBuffer<'a>> {
+        let mut ret = Box::new(WindowedBuffer {
             inner: VecDeque::with_capacity(size),
             window_size: window_size,
-            window_start: 0,
-            del_tracker: DeletionTracker::new()
-        }
+            first_available: 0,
+            del_tracker: unsafe { ::std::mem::uninitialized() }
+        });
+        ret.del_tracker = unsafe {
+            let ptr = ret.as_ref() as *const WindowedBuffer;
+            DeletionTracker::new(ptr.as_ref().unwrap())
+        };
+        ret
     }
 
     fn add<T>(&mut self, data: T) -> usize where T: Into<VecDeque<u8>> {
@@ -38,11 +43,60 @@ impl WindowedBuffer {
         self.inner.extend(dataref[0..len].iter());
         len
     }
+
+    fn get_available(&self) -> usize {
+        min(self.inner.len() - self.first_available as usize,
+            self.window_size as usize - self.first_available as usize)
+    }
+
+    fn take(&mut self, size: u16) -> WindowedBufferSlice<'a> {
+        let len = min(self.get_available(), size as usize) as u16;
+        let self_ptr = self as *mut WindowedBuffer;
+        let (beginning, ending) = self.inner.as_slices();
+        let beg_len = beginning.len();
+        if (self.first_available as usize) < beg_len {
+            if (self.first_available + len) as usize <= beg_len { unsafe {
+                WindowedBufferSlice::Direct {
+                    parent: self_ptr,
+                    start: beginning.as_ptr()
+                        .offset(self.first_available as isize),
+                    len: len
+                }
+            }} else {
+                let mut ret = Vec::with_capacity(len as usize);
+                let beg_slice = &beginning[self.first_available as usize..];
+                ret.extend_from_slice(beg_slice);
+                let ending_len = (len - beg_slice.len() as u16) as usize;
+                let end_slice = &ending[0..ending_len];
+                ret.extend_from_slice(end_slice);
+
+                self.del_tracker.track(beg_slice);
+                self.del_tracker.track(end_slice);
+
+                WindowedBufferSlice::Owning(ret.into())
+            }
+        } else { unsafe {
+            WindowedBufferSlice::Direct {
+                parent: self_ptr,
+                start: ending.as_ptr()
+                    .offset((self.first_available as usize - beg_len) as isize),
+                len: len
+            }
+        }}
+    }
+
+    fn cleanup(&mut self) {
+        if let Some(ind) = self.del_tracker.take_deletion() {
+            self.inner.drain(0 .. ind as usize + 1);
+        }
+    }
 }
 
 // can track stream sized of up to usize::MAX/2
 #[derive(Debug)]
-struct DeletionTracker {
+struct DeletionTracker<'a> {
+    parent: &'a WindowedBuffer<'a>,
+
     // at no point should two overlapping ranges be insert()'ed into the set
     rangeset: BTreeSet<DTRange>,
 
@@ -52,16 +106,35 @@ struct DeletionTracker {
     offset: usize
 }
 
-impl DeletionTracker {
-    fn new() -> DeletionTracker {
+impl<'a> DeletionTracker<'a> {
+    fn new(parent: &'a WindowedBuffer) -> DeletionTracker<'a> {
         DeletionTracker {
+            parent: parent,
             rangeset: BTreeSet::new(),
             offset: 0
         }
     }
 
-    fn track(&mut self, newrange: Range<u16>) {
-        let offset_range = DTRange::from(newrange).offset(self.offset as isize);
+    fn track(&mut self, newrange: &[u8]) {
+        let len = newrange.len();
+        debug_assert!(len <= ::std::u16::MAX as usize);
+        let ptr = newrange.as_ptr() as usize;
+
+        let (beginning, ending) = self.parent.inner.as_slices();
+        let range = if is_subslice(beginning, newrange) {
+                let beg_ptr = beginning.as_ptr() as usize;
+                let start = beg_ptr - ptr;
+                let end = start + len - 1;
+                DTRange(start, end)
+            } else {
+                let end_ptr = ending.as_ptr() as usize;
+                debug_assert!(is_subslice(ending, newrange));
+                let start = end_ptr - ptr;
+                let end = start + len - 1;
+                DTRange(start, end)
+            };
+
+        let offset_range = range.offset(self.offset as isize);
 
         let mut merge_left = None;
         let mut merge_right = None;
@@ -111,6 +184,7 @@ impl DeletionTracker {
             None
         } else {
             self.rangeset.remove(&offset_first);
+            self.offset += first.1 + 1;
             Some(first.1 as u16)
         }
     }
@@ -119,6 +193,18 @@ impl DeletionTracker {
         *self.rangeset.iter().next().expect("nonempty range set")
     }
 }
+
+fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
+    assert!(slice.len() <= ::std::isize::MAX as usize);
+    assert!(sub.len() <= ::std::isize::MAX as usize);
+
+    let slice_start = slice.as_ptr();
+    let slice_end = slice_start.offset(slice.len() as isize - 1);
+    let sub_start = sub.as_ptr();
+    let sub_end = sub_start.offset(sub.len() as isize - 1);
+
+    sub_start >= slice_start && sub_end <= slice_end
+}}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct DTRange(usize,usize);
@@ -156,9 +242,22 @@ impl Ord for DTRange {
     }
 }
 
-impl From<Range<u16>> for DTRange {
-    fn from(range: Range<u16>) -> DTRange {
-        DTRange(range.start as usize, range.end as usize)
+enum WindowedBufferSlice<'a> {
+    Direct {
+        parent: *mut WindowedBuffer<'a>,
+        start: *const u8,
+        len: u16
+    },
+    Owning(Box<[u8]>)
+}
+
+impl<'a> Drop for WindowedBufferSlice<'a> {
+    fn drop(&mut self) {
+        if let &mut WindowedBufferSlice::Direct { parent, start, len, .. }
+                = self { unsafe {
+            let p = parent.as_mut().unwrap();
+            p.del_tracker.track(slice::from_raw_parts(start, len as usize));
+        }}
     }
 }
 
