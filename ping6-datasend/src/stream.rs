@@ -49,13 +49,17 @@ impl<'a> WindowedBuffer<'a> {
         self.inner.capacity() - self.inner.len()
     }
 
-    fn get_available(&self) -> usize {
-        min(self.inner.len() - self.first_available as usize,
-            self.window_size as usize - self.first_available as usize)
+    // availability is moot beyond the current window,
+    // so value returned is restrained by the window size
+    fn get_available(&self) -> u16 {
+        let ret = min(self.inner.len() - self.first_available as usize,
+            self.window_size as usize - self.first_available as usize);
+        debug_assert!(ret <= ::std::u16::MAX as usize);
+        ret as u16
     }
 
     fn take(&mut self, size: u16) -> WindowedBufferSlice<'a> {
-        let len = min(self.get_available(), size as usize) as u16;
+        let len = min(self.get_available(), size) as u16;
         let self_ptr = self as *mut WindowedBuffer;
         let (beginning, ending) = self.inner.as_slices();
         let beg_len = beginning.len();
@@ -71,7 +75,7 @@ impl<'a> WindowedBuffer<'a> {
                 let mut ret = Vec::with_capacity(len as usize);
                 let beg_slice = &beginning[self.first_available as usize..];
                 ret.extend_from_slice(beg_slice);
-                let ending_len = (len - beg_slice.len() as u16) as usize;
+                let ending_len = len as usize - beg_slice.len();
                 let end_slice = &ending[0..ending_len];
                 ret.extend_from_slice(end_slice);
 
@@ -132,8 +136,8 @@ impl<'a> DeletionTracker<'a> {
                 let end = start + len - 1;
                 DTRange(start, end)
             } else {
-                let end_ptr = ending.as_ptr() as usize;
                 debug_assert!(is_subslice(ending, newrange));
+                let end_ptr = ending.as_ptr() as usize;
                 let start = end_ptr - ptr;
                 let end = start + len - 1;
                 DTRange(start, end)
@@ -152,10 +156,10 @@ impl<'a> DeletionTracker<'a> {
             if i.1 == offset_range.0 - 1 {
                 merge_left = Some(*i);
             }
-            if i.0 > offset_range.1 + 1 {
+            if i.0 == offset_range.1 + 1 {
                 merge_right = Some(*i);
             }
-            if i.0 > offset_range.1 {
+            if i.0 >= offset_range.1 {
                 break;
             }
         }
@@ -230,9 +234,9 @@ impl PartialOrd for DTRange {
         if self == other {
             Some(Ordering::Equal)
         } else {
-            if other.0 < self.0 && other.1 < self.0 {
+            if self.0 > other.1 {
                 Some(Ordering::Greater)
-            } else if other.0 > self.1 && other.1 > self.1 {
+            } else if self.1 < other.0 {
                 Some(Ordering::Less)
             } else {
                 None
