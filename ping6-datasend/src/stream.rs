@@ -92,7 +92,7 @@ impl<'a> WindowedBuffer<'a> {
     }
 }
 
-// can track stream sized of up to usize::MAX/2
+// can track stream sized up to usize::MAX/2
 #[derive(Debug)]
 struct DeletionTracker<'a> {
     parent: &'a WindowedBuffer<'a>,
