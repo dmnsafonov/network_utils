@@ -32,16 +32,20 @@ impl<'a> WindowedBuffer<'a> {
 
     fn add<T>(&mut self, data: T) -> usize where T: Into<VecDeque<u8>> {
         let mut vddata = data.into();
-        let len = min(self.inner.capacity() - self.inner.len(), vddata.len());
+        let len = min(self.get_space_left(), vddata.len());
         self.inner.append(&mut vddata);
         len
     }
 
     fn add_cloning<T>(&mut self, data: T) -> usize where T: AsRef<[u8]> {
         let dataref = data.as_ref();
-        let len = min(self.inner.capacity() - self.inner.len(), dataref.len());
+        let len = min(self.get_space_left(), dataref.len());
         self.inner.extend(dataref[0..len].iter());
         len
+    }
+
+    fn get_space_left(&self) -> usize {
+        self.inner.capacity() - self.inner.len()
     }
 
     fn get_available(&self) -> usize {
