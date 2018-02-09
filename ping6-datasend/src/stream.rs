@@ -13,7 +13,7 @@ struct WindowedBuffer<'a> {
     inner: VecDeque<u8>,
     window_size: u16,
     first_available: u16,
-    del_tracker: DeletionTracker<'a>
+    del_tracker: DeletionTracker<'a, u8>
 }
 
 impl<'a> WindowedBuffer<'a> {
@@ -25,7 +25,7 @@ impl<'a> WindowedBuffer<'a> {
             del_tracker: unsafe { ::std::mem::uninitialized() }
         });
         ret.del_tracker = unsafe {
-            let ptr = ret.as_ref() as *const WindowedBuffer;
+            let ptr = &ret.inner as *const VecDeque<u8>;
             DeletionTracker::new(ptr.as_ref().unwrap())
         };
         ret
@@ -60,13 +60,14 @@ impl<'a> WindowedBuffer<'a> {
 
     fn take(&mut self, size: u16) -> WindowedBufferSlice<'a> {
         let len = min(self.get_available(), size) as u16;
-        let self_ptr = self as *mut WindowedBuffer;
+        let tracker_ptr = &mut self.del_tracker
+            as *mut DeletionTracker<'a, u8>;
         let (beginning, ending) = self.inner.as_slices();
         let beg_len = beginning.len();
         if (self.first_available as usize) < beg_len {
             if (self.first_available + len) as usize <= beg_len { unsafe {
                 WindowedBufferSlice::Direct {
-                    parent: self_ptr,
+                    tracker: tracker_ptr,
                     start: beginning.as_ptr()
                         .offset(self.first_available as isize),
                     len: len
@@ -86,7 +87,7 @@ impl<'a> WindowedBuffer<'a> {
             }
         } else { unsafe {
             WindowedBufferSlice::Direct {
-                parent: self_ptr,
+                tracker: tracker_ptr,
                 start: ending.as_ptr()
                     .offset((self.first_available as usize - beg_len) as isize),
                 len: len
@@ -103,33 +104,33 @@ impl<'a> WindowedBuffer<'a> {
 
 // can track stream sized up to usize::MAX/2
 #[derive(Debug)]
-struct DeletionTracker<'a> {
-    parent: &'a WindowedBuffer<'a>,
+struct DeletionTracker<'a, E> where E: 'a {
+    tracked: &'a VecDeque<E>,
 
     // at no point should two overlapping ranges be insert()'ed into the set
     rangeset: BTreeSet<DTRange>,
 
-    // we return the WindowedBuffer's buffer indices, but we do not increment
+    // we return the VecDeque's buffer indices, but we do not increment
     // the rangeset range indices each deletion, so we need to track how much
     // we are off
     offset: usize
 }
 
-impl<'a> DeletionTracker<'a> {
-    fn new(parent: &'a WindowedBuffer) -> DeletionTracker<'a> {
+impl<'a, E> DeletionTracker<'a, E> {
+    fn new(tracked: &'a VecDeque<E>) -> DeletionTracker<'a, E> {
         DeletionTracker {
-            parent: parent,
+            tracked: tracked,
             rangeset: BTreeSet::new(),
             offset: 0
         }
     }
 
-    fn track(&mut self, newrange: &[u8]) {
+    fn track(&mut self, newrange: &[E]) {
         let len = newrange.len();
         debug_assert!(len <= ::std::u16::MAX as usize);
         let ptr = newrange.as_ptr() as usize;
 
-        let (beginning, ending) = self.parent.inner.as_slices();
+        let (beginning, ending) = self.tracked.as_slices();
         let range = if is_subslice(beginning, newrange) {
                 let beg_ptr = beginning.as_ptr() as usize;
                 let start = beg_ptr - ptr;
@@ -253,7 +254,7 @@ impl Ord for DTRange {
 
 enum WindowedBufferSlice<'a> {
     Direct {
-        parent: *mut WindowedBuffer<'a>,
+        tracker: *mut DeletionTracker<'a, u8>,
         start: *const u8,
         len: u16
     },
@@ -262,10 +263,10 @@ enum WindowedBufferSlice<'a> {
 
 impl<'a> Drop for WindowedBufferSlice<'a> {
     fn drop(&mut self) {
-        if let &mut WindowedBufferSlice::Direct { parent, start, len }
+        if let &mut WindowedBufferSlice::Direct { tracker, start, len }
                 = self { unsafe {
-            let p = parent.as_mut().unwrap();
-            p.del_tracker.track(slice::from_raw_parts(start, len as usize));
+            let tr = tracker.as_mut().unwrap();
+            tr.track(slice::from_raw_parts(start, len as usize));
         }}
     }
 }
