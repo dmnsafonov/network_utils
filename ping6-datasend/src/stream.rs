@@ -1,6 +1,7 @@
 use ::std::cmp::*;
 use ::std::collections::*;
-use ::std::ops::Deref;
+use ::std::mem::uninitialized;
+use ::std::ops::*;
 use ::std::slice;
 
 use ::config::*;
@@ -22,7 +23,7 @@ impl<'a> WindowedBuffer<'a> {
             inner: VecDeque::with_capacity(size),
             window_size: window_size,
             first_available: 0,
-            del_tracker: unsafe { ::std::mem::uninitialized() }
+            del_tracker: unsafe { uninitialized() }
         });
         ret.del_tracker = unsafe {
             let ptr = &ret.inner as *const VecDeque<u8>;
@@ -80,8 +81,8 @@ impl<'a> WindowedBuffer<'a> {
                 let end_slice = &ending[0..ending_len];
                 ret.extend_from_slice(end_slice);
 
-                self.del_tracker.track(beg_slice);
-                self.del_tracker.track(end_slice);
+                self.del_tracker.track_slice(beg_slice);
+                self.del_tracker.track_slice(end_slice);
 
                 WindowedBufferSlice::Owning(ret.into())
             }
@@ -125,26 +126,32 @@ impl<'a, E> DeletionTracker<'a, E> {
         }
     }
 
-    fn track(&mut self, newrange: &[E]) {
-        let len = newrange.len();
-        debug_assert!(len <= ::std::u16::MAX as usize);
-        let ptr = newrange.as_ptr() as usize;
+    fn track_slice(&mut self, newslice: &[E]) {
+        let len_usize = newslice.len();
+        debug_assert!(len_usize <= ::std::u16::MAX as usize);
+        let len = len_usize as u16;
+        let ptr = newslice.as_ptr() as usize;
 
         let (beginning, ending) = self.tracked.as_slices();
-        let range = if is_subslice(beginning, newrange) {
+        let range = if is_subslice(beginning, newslice) {
                 let beg_ptr = beginning.as_ptr() as usize;
-                let start = beg_ptr - ptr;
+                let start = (beg_ptr - ptr) as u16;
                 let end = start + len - 1;
-                DTRange(start, end)
+                start .. end + 1
             } else {
-                debug_assert!(is_subslice(ending, newrange));
+                debug_assert!(is_subslice(ending, newslice));
                 let end_ptr = ending.as_ptr() as usize;
-                let start = end_ptr - ptr;
+                let start = (end_ptr - ptr) as u16;
                 let end = start + len - 1;
-                DTRange(start, end)
+                start .. end + 1
             };
 
-        let offset_range = range.offset(self.offset as isize);
+        self.track_range(range);
+    }
+
+    fn track_range(&mut self, newrange: Range<u16>) {
+        let offset_range = DTRange::from(newrange)
+            .offset(self.offset as isize);
 
         let mut merge_left = None;
         let mut merge_right = None;
@@ -252,6 +259,12 @@ impl Ord for DTRange {
     }
 }
 
+impl From<Range<u16>> for DTRange {
+    fn from(r: Range<u16>) -> DTRange {
+        DTRange(r.start as usize, r.end as usize)
+    }
+}
+
 enum WindowedBufferSlice<'a> {
     Direct {
         tracker: *mut DeletionTracker<'a, u8>,
@@ -266,7 +279,7 @@ impl<'a> Drop for WindowedBufferSlice<'a> {
         if let &mut WindowedBufferSlice::Direct { tracker, start, len }
                 = self { unsafe {
             let tr = tracker.as_mut().unwrap();
-            tr.track(slice::from_raw_parts(start, len as usize));
+            tr.track_slice(slice::from_raw_parts(start, len as usize));
         }}
     }
 }
@@ -279,6 +292,49 @@ impl<'a> Deref for WindowedBufferSlice<'a> {
                 slice::from_raw_parts(start, len as usize)
             }},
             WindowedBufferSlice::Owning(ref boxed) => boxed.as_ref()
+        }
+    }
+}
+
+struct AckWaitlist<'a> {
+    inner: VecDeque<AckWait<'a>>,
+    del_tracker: DeletionTracker<'a, AckWait<'a>>
+}
+
+struct AckWait<'a> {
+    seqno: u16,
+    data: WindowedBufferSlice<'a>
+}
+
+impl<'a> AckWaitlist<'a> {
+    fn new(window_size: u16) -> Box<AckWaitlist<'a>> {
+        let mut ret = Box::new(AckWaitlist {
+            inner: VecDeque::with_capacity(window_size as usize),
+            del_tracker: unsafe { uninitialized() }
+        });
+        ret.del_tracker = unsafe {
+            let ptr = &mut ret.inner as *mut VecDeque<AckWait<'a>>;
+            DeletionTracker::new(ptr.as_mut().unwrap())
+        };
+        ret
+    }
+
+    fn add(&mut self, wait: AckWait<'a>) {
+        debug_assert!(self.inner.is_empty()
+            || wait.seqno > self.inner.back().unwrap().seqno);
+        assert!(self.inner.capacity() - self.inner.len() > 0);
+        self.inner.push_back(wait);
+    }
+
+    // safe to call multiple times with the same arguments
+    // and with overlapping ranges
+    fn remove(&mut self, range: Range<u16>) {
+        unimplemented!()
+    }
+
+    fn cleanup(&mut self) {
+        if let Some(ind) = self.del_tracker.take_deletion() {
+            self.inner.drain(0 .. ind as usize + 1);
         }
     }
 }
