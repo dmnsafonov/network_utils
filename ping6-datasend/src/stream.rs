@@ -1,6 +1,7 @@
 use ::std::cmp::*;
 use ::std::collections::*;
 use ::std::mem::uninitialized;
+use ::std::num::Wrapping;
 use ::std::ops::*;
 use ::std::slice;
 
@@ -12,13 +13,15 @@ use ::util::InitState;
 #[derive(Debug)]
 struct WindowedBuffer<'a> {
     inner: VecDeque<u8>,
-    window_size: u16,
+    window_size: u32,
     first_available: u16,
     del_tracker: DeletionTracker<'a, u8>
 }
 
 impl<'a> WindowedBuffer<'a> {
-    fn new(size: usize, window_size: u16) -> Box<WindowedBuffer<'a>> {
+    fn new(size: usize, window_size: u32) -> Box<WindowedBuffer<'a>> {
+        assert!(window_size <= ::std::u16::MAX as u32 + 1);
+
         let mut ret = Box::new(WindowedBuffer {
             inner: VecDeque::with_capacity(size),
             window_size: window_size,
@@ -32,18 +35,16 @@ impl<'a> WindowedBuffer<'a> {
         ret
     }
 
-    fn add<T>(&mut self, data: T) -> usize where T: Into<VecDeque<u8>> {
+    fn add<T>(&mut self, data: T) where T: Into<VecDeque<u8>> {
         let mut vddata = data.into();
-        let len = min(self.get_space_left(), vddata.len());
+        assert!(self.inner.len().checked_add(vddata.len()).is_some());
         self.inner.append(&mut vddata);
-        len
     }
 
-    fn add_cloning<T>(&mut self, data: T) -> usize where T: AsRef<[u8]> {
+    fn add_cloning<T>(&mut self, data: T) where T: AsRef<[u8]> {
         let dataref = data.as_ref();
-        let len = min(self.get_space_left(), dataref.len());
-        self.inner.extend(dataref[0..len].iter());
-        len
+        assert!(self.inner.len().checked_add(dataref.len()).is_some());
+        self.inner.extend(dataref[..].iter());
     }
 
     fn get_space_left(&self) -> usize {
@@ -52,28 +53,36 @@ impl<'a> WindowedBuffer<'a> {
 
     // availability is moot beyond the current window,
     // so value returned is restrained by the window size
-    fn get_available(&self) -> u16 {
+    fn get_available(&self) -> u32 {
         let ret = min(self.inner.len() - self.first_available as usize,
             self.window_size as usize - self.first_available as usize);
-        debug_assert!(ret <= ::std::u16::MAX as usize);
-        ret as u16
+        debug_assert!(ret <= ::std::u16::MAX as usize + 1);
+        ret as u32
     }
 
-    fn take(&mut self, size: u16) -> WindowedBufferSlice<'a> {
-        let len = min(self.get_available(), size) as u16;
+    fn take(&mut self, size: u32) -> Option<WindowedBufferSlice<'a>> {
+        assert!(size <= ::std::u16::MAX as u32 + 1);
+
+        let len = min(self.get_available(), size);
+        if len == 0 {
+            return None;
+        }
+
         let tracker_ptr = &mut self.del_tracker
             as *mut DeletionTracker<'a, u8>;
         let (beginning, ending) = self.inner.as_slices();
         let beg_len = beginning.len();
-        if (self.first_available as usize) < beg_len {
-            if (self.first_available + len) as usize <= beg_len { unsafe {
+        Some(if (self.first_available as usize) < beg_len {
+            if self.first_available as usize + len as usize <= beg_len {
                 WindowedBufferSlice::Direct {
                     tracker: tracker_ptr,
-                    start: beginning.as_ptr()
-                        .offset(self.first_available as isize),
+                    start: unsafe {
+                        beginning.as_ptr()
+                            .offset(self.first_available as isize)
+                    },
                     len: len
                 }
-            }} else {
+            } else {
                 let mut ret = Vec::with_capacity(len as usize);
                 let beg_slice = &beginning[self.first_available as usize..];
                 ret.extend_from_slice(beg_slice);
@@ -93,7 +102,7 @@ impl<'a> WindowedBuffer<'a> {
                     .offset((self.first_available as usize - beg_len) as isize),
                 len: len
             }
-        }}
+        }})
     }
 
     fn cleanup(&mut self) {
@@ -128,28 +137,30 @@ impl<'a, E> DeletionTracker<'a, E> {
 
     fn track_slice(&mut self, newslice: &[E]) {
         let len_usize = newslice.len();
-        debug_assert!(len_usize <= ::std::u16::MAX as usize);
-        let len = len_usize as u16;
+        debug_assert!(len_usize <= ::std::u16::MAX as usize + 1);
+        let len = len_usize as u32;
         let ptr = newslice.as_ptr() as usize;
 
         let (beginning, ending) = self.tracked.as_slices();
         let range = if is_subslice(beginning, newslice) {
                 let beg_ptr = beginning.as_ptr() as usize;
-                let start = (beg_ptr - ptr) as u16;
+                let start = (beg_ptr - ptr) as u32;
                 let end = start + len - 1;
-                start .. end + 1
+                IRange(start, end)
             } else {
                 debug_assert!(is_subslice(ending, newslice));
                 let end_ptr = ending.as_ptr() as usize;
-                let start = (end_ptr - ptr) as u16;
+                let start = (end_ptr - ptr + beginning.len()) as u32;
                 let end = start + len - 1;
-                start .. end + 1
+                IRange(start, end)
             };
 
         self.track_range(range);
     }
 
-    fn track_range(&mut self, newrange: Range<u16>) {
+    fn track_range(&mut self, newrange: IRange<u32>) {
+        debug_assert!(newrange.0 <= newrange.1);
+
         let offset_range = DTRange::from(newrange)
             .offset(self.offset as isize);
 
@@ -212,6 +223,8 @@ impl<'a, E> DeletionTracker<'a, E> {
 }
 
 fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
+    debug_assert!(slice.len() > 0);
+    debug_assert!(sub.len() > 0);
     assert!(slice.len() <= ::std::isize::MAX as usize);
     assert!(sub.len() <= ::std::isize::MAX as usize);
 
@@ -224,11 +237,16 @@ fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
 }}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct IRange<Idx>(Idx,Idx);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct DTRange(usize,usize);
 
 impl DTRange {
     fn offset(&self, off: isize) -> DTRange {
-        DTRange(
+        assert!(off >= 0
+            || (self.0 >= (-off) as usize && self.1 >= (-off) as usize));
+        DTRange (
             (self.0 as isize + off) as usize,
             (self.1 as isize + off) as usize
         )
@@ -259,9 +277,15 @@ impl Ord for DTRange {
     }
 }
 
-impl From<Range<u16>> for DTRange {
-    fn from(r: Range<u16>) -> DTRange {
-        DTRange(r.start as usize, r.end as usize)
+impl From<IRange<u32>> for DTRange where {
+    fn from(r: IRange<u32>) -> DTRange {
+        DTRange(r.0 as usize, r.0 as usize)
+    }
+}
+
+impl From<IRange<u16>> for DTRange where {
+    fn from(r: IRange<u16>) -> DTRange {
+        DTRange(r.0 as usize, r.0 as usize)
     }
 }
 
@@ -269,7 +293,7 @@ enum WindowedBufferSlice<'a> {
     Direct {
         tracker: *mut DeletionTracker<'a, u8>,
         start: *const u8,
-        len: u16
+        len: u32
     },
     Owning(Box<[u8]>)
 }
@@ -302,12 +326,13 @@ struct AckWaitlist<'a> {
 }
 
 struct AckWait<'a> {
-    seqno: u16,
+    seqno: Wrapping<u16>,
     data: WindowedBufferSlice<'a>
 }
 
 impl<'a> AckWaitlist<'a> {
-    fn new(window_size: u16) -> Box<AckWaitlist<'a>> {
+    fn new(window_size: u32) -> Box<AckWaitlist<'a>> {
+        assert!(window_size <= ::std::u16::MAX as u32 + 1);
         let mut ret = Box::new(AckWaitlist {
             inner: VecDeque::with_capacity(window_size as usize),
             del_tracker: unsafe { uninitialized() }
@@ -321,15 +346,53 @@ impl<'a> AckWaitlist<'a> {
 
     fn add(&mut self, wait: AckWait<'a>) {
         debug_assert!(self.inner.is_empty()
-            || wait.seqno > self.inner.back().unwrap().seqno);
+            || wait.seqno > self.inner.back().unwrap().seqno
+            || (self.inner.back().unwrap().seqno.0 == ::std::u16::MAX
+                && wait.seqno.0 == 0));
         assert!(self.inner.capacity() - self.inner.len() > 0);
         self.inner.push_back(wait);
     }
 
     // safe to call multiple times with the same arguments
     // and with overlapping ranges
-    fn remove(&mut self, range: Range<u16>) {
-        unimplemented!()
+    fn remove(&mut self, range: IRange<Wrapping<u16>>) {
+        if range.0 < range.1 {
+            self.remove_not_wrapping(IRange(range.0,
+                Wrapping(::std::u16::MAX)));
+            self.remove_not_wrapping(IRange(Wrapping(0), range.1));
+        } else {
+            self.remove_not_wrapping(range);
+        }
+    }
+
+    // safe to call multiple times with the same arguments
+    fn remove_not_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
+        assert!(range.0 <= range.1);
+
+        let del_tracker = &mut self.del_tracker;
+        let mut peekable = self.inner.iter()
+            .enumerate()
+            .map(|(ind,x)| (ind as u32, x))
+            .skip_while(|&(_,x)| x.seqno < range.0
+                || x.seqno > range.1)
+            .take_while(|&(_,x)| x.seqno >= range.0
+                && x.seqno <= range.1)
+            .peekable();
+        if let Some(&(first_ind, first_ackwait)) = peekable.peek() {
+            let mut start_ind = first_ind;
+            // wrapping is for the case of range.start: 0
+            let mut curr_seqno = first_ackwait.seqno - Wrapping(1);
+            let mut last_ind = 0;
+            peekable.for_each(|(ind, &AckWait { seqno, .. })| {
+                if curr_seqno + Wrapping(1) != seqno {
+                    del_tracker.track_range(IRange(start_ind, ind));
+                    start_ind = ind;
+                }
+                curr_seqno = seqno;
+                last_ind = ind;
+            });
+            del_tracker.track_range(IRange(start_ind, last_ind));
+        }
     }
 
     fn cleanup(&mut self) {
