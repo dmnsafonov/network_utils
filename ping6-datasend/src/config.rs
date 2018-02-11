@@ -9,18 +9,20 @@ pub struct Config {
     pub mode: ModeConfig
 }
 
-#[derive(EnumKind)]
+#[derive(Clone, EnumKind)]
 #[enum_kind_name(ModeConfigKind)]
 pub enum ModeConfig {
     Datagram(DatagramConfig),
     Stream(StreamConfig)
 }
 
+#[derive(Clone)]
 pub struct DatagramConfig {
     pub raw: bool,
     pub inline_messages: Vec<OsString>
 }
 
+#[derive(Clone)]
 pub struct StreamConfig;
 
 pub fn get_config() -> Config {

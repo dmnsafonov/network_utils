@@ -1,19 +1,21 @@
 use ::std::cmp::*;
 use ::std::collections::*;
+use ::std::io;
 use ::std::mem::uninitialized;
 use ::std::net::SocketAddrV6;
 use ::std::num::Wrapping;
 use ::std::ops::*;
-use ::std::rc::Rc;
 use ::std::slice;
 
 use ::futures::prelude::*;
 use ::state_machine_future::RentToOwn;
+use ::tokio_core::reactor::Core;
 
 use ::linux_network::*;
 
 use ::config::*;
 use ::errors::{Error, Result};
+use ::stdin_iterator::StdinBytesReader;
 use ::util::InitState;
 
 #[derive(Debug)]
@@ -409,63 +411,63 @@ impl<'a> AckWaitlist<'a> {
 }
 
 #[derive(StateMachineFuture)]
-enum StreamMachine {
+enum StreamMachine<'s> {
     #[state_machine_future(start, transitions(WaitForSynAck))]
     SendFirstSyn {
-        init_state: StreamInitState,
+        init_state: StreamInitState<'s>,
         try_number: u32
     },
 
     #[state_machine_future(transitions(SendFirstSyn, SendAck))]
     WaitForSynAck {
-        init_state: StreamInitState,
+        init_state: StreamInitState<'s>,
         try_number: u32
     },
 
     #[state_machine_future(transitions(SendData))]
     SendAck {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
     SendData {
-        init_state: StreamInitState,
+        init_state: StreamInitState<'s>,
 
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
     WaitForAck {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(SendFinAck))]
     ReceivedServerFin {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, WaitForLastAck))]
     SendFinAck {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     WaitForLastAck {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
     WaitForFinAck {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
-        init_state: StreamInitState
+        init_state: StreamInitState<'s>
     },
 
     #[state_machine_future(ready)]
@@ -480,46 +482,46 @@ enum TerminationReason {
     ServerFin
 }
 
-impl PollStreamMachine for StreamMachine {
+impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_first_syn<'a>(
         state: &'a mut RentToOwn<'a, SendFirstSyn>
-    ) -> Poll<AfterSendFirstSyn, Error> {
+    ) -> Poll<AfterSendFirstSyn<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_wait_for_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForSynAck>
-    ) -> Poll<AfterWaitForSynAck, Error> {
+    ) -> Poll<AfterWaitForSynAck<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_send_ack<'a>(
         state: &'a mut RentToOwn<'a, SendAck>
-    ) -> Poll<AfterSendAck, Error> {
+    ) -> Poll<AfterSendAck<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_send_data<'a>(
         state: &'a mut RentToOwn<'a, SendData>
-    ) -> Poll<AfterSendData, Error> {
+    ) -> Poll<AfterSendData<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_wait_for_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForAck>
-    ) -> Poll<AfterWaitForAck, Error> {
+    ) -> Poll<AfterWaitForAck<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_received_server_fin<'a>(
         state: &'a mut RentToOwn<'a, ReceivedServerFin>
-    ) -> Poll<AfterReceivedServerFin, Error> {
+    ) -> Poll<AfterReceivedServerFin<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_send_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, SendFinAck>
-    ) -> Poll<AfterSendFinAck, Error> {
+    ) -> Poll<AfterSendFinAck<'s>, Error> {
         unimplemented!()
     }
 
@@ -531,13 +533,13 @@ impl PollStreamMachine for StreamMachine {
 
     fn poll_send_fin<'a>(
         state: &'a mut RentToOwn<'a, SendFin>
-    ) -> Poll<AfterSendFin, Error> {
+    ) -> Poll<AfterSendFin<'s>, Error> {
         unimplemented!()
     }
 
     fn poll_wait_for_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForFinAck>
-    ) -> Poll<AfterWaitForFinAck, Error> {
+    ) -> Poll<AfterWaitForFinAck<'s>, Error> {
         unimplemented!()
     }
 
@@ -548,15 +550,35 @@ impl PollStreamMachine for StreamMachine {
     }
 }
 
-struct StreamInitState {
-    config: Rc<Config>,
+struct StreamInitState<'a> {
+    config: &'a Config,
     src: SocketAddrV6,
     dst: SocketAddrV6,
-    sock: futures::IpV6RawSocketAdapter
+    sock: futures::IpV6RawSocketAdapter,
+    data_source: StdinBytesReader<'a>
 }
 
-pub fn stream_mode((config, src, dst, mut sock): InitState) -> Result<()> {
-    let _stream_conf = extract!(ModeConfig::Stream(_), config.mode).unwrap();
+pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
+    let _stream_conf = extract!(ModeConfig::Stream(_), config.mode.clone())
+        .unwrap();
 
-    unimplemented!()
+    let mut core = Core::new()?;
+    let core_handle = core.handle();
+
+    let async_sock = futures::IpV6RawSocketAdapter::new(&core_handle, sock)?;
+    let stdin = io::stdin();
+    let data = StdinBytesReader::new(&core_handle, stdin.lock())?;
+    let init_state = StreamInitState {
+        config: &config,
+        src: src,
+        dst: dst,
+        sock: async_sock,
+        data_source: data
+    };
+
+    let stm = StreamMachine::start(init_state, 0);
+    match core.run(stm)? {
+        TerminationReason::DataSent => unimplemented!(),
+        TerminationReason::ServerFin => unimplemented!()
+    }
 }
