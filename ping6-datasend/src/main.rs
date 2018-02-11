@@ -10,6 +10,7 @@ extern crate libc;
 extern crate mio;
 extern crate pnet_packet;
 extern crate seccomp;
+#[macro_use] extern crate state_machine_future;
 extern crate tokio_core;
 
 extern crate linux_network;
