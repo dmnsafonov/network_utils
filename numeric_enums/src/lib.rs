@@ -337,14 +337,17 @@ macro_rules! _gen_flag_set_impl {
             }
 
             fn set(&self, flag: $t) -> $name {
+                use $crate::EnumToNum;
                 $name(self.0 | flag.to_num())
             }
 
             fn clear(&self, flag: $t) -> $name {
+                use $crate::EnumToNum;
                 $name(self.0 & !flag.to_num())
             }
 
             fn test(&self, flag: $t) -> bool {
+                use $crate::EnumToNum;
                 (self.0 & flag.to_num()) != 0
             }
 
@@ -411,6 +414,7 @@ macro_rules! _gen_flag_set_impl {
 
         impl ::std::convert::From<$t> for $name {
             fn from(x: $t) -> Self {
+                use $crate::NumEnumFlagSet;
                 $name::new().set(x)
             }
         }

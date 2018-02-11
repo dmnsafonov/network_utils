@@ -82,8 +82,6 @@ use ::libc::*;
 
 use self::raw::*;
 use self::raw::{S_ISUID, S_ISGID, S_ISVTX};
-use ::numeric_enums::EnumToNum;
-use super::*;
 
 gen_enum!(pub SecBit: c_int;
     (SECBIT_NOROOT => NoRoot),
