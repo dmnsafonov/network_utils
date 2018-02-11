@@ -14,6 +14,7 @@ extern crate seccomp;
 extern crate tokio_core;
 
 extern crate linux_network;
+#[macro_use] extern crate numeric_enums;
 extern crate ping6_datacommon;
 
 mod config;

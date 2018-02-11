@@ -9,6 +9,8 @@ extern crate seccomp;
 #[macro_use] extern crate boolean_enums;
 extern crate linux_network;
 
+mod range_tracker;
+
 error_chain!(
     errors {
         Priv {
@@ -45,6 +47,8 @@ use owning_ref::OwningHandle;
 use seccomp::*;
 
 use linux_network::*;
+
+pub use range_tracker::*;
 
 gen_boolean_enum!(pub Resolve);
 
@@ -243,3 +247,6 @@ pub fn movable_io_lock<'a, T>(io: T)
         }}
     )
 }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct IRange<Idx>(pub Idx, pub Idx);
