@@ -459,20 +459,20 @@ pub mod futures {
             }
         }
 
-        pub fn recvfrom<'a>(
+        pub fn recvfrom<'a, 'b>(
             &'a mut self,
-            buf: &'a mut [u8],
+            buf: &'b mut [u8],
             flags: RecvFlagSet
-        ) -> IpV6RawSocketRecvfromFuture<'a> {
+        ) -> IpV6RawSocketRecvfromFuture<'b> where 'a: 'b {
             IpV6RawSocketRecvfromFuture::new(self, buf, flags)
         }
 
-        pub fn sendto<'a>(
+        pub fn sendto<'a, 'b>(
             &'a mut self,
-            buf: &'a [u8],
+            buf: &'b [u8],
             addr: SocketAddrV6,
             flags: SendFlagSet
-        ) -> IpV6RawSocketSendtoFuture<'a> {
+        ) -> IpV6RawSocketSendtoFuture<'b> where 'a: 'b {
             IpV6RawSocketSendtoFuture::new(self, buf, addr, flags)
         }
     }
@@ -494,11 +494,11 @@ pub mod futures {
     }
 
     impl<'a> IpV6RawSocketRecvfromFuture<'a> {
-        fn new(
-            sock: &'a mut IpV6RawSocketAdapter,
+        fn new<'b>(
+            sock: &'b mut IpV6RawSocketAdapter,
             buf: &'a mut [u8],
             flags: RecvFlagSet
-        ) -> IpV6RawSocketRecvfromFuture<'a> {
+        ) -> IpV6RawSocketRecvfromFuture<'a> where 'b: 'a {
             IpV6RawSocketRecvfromFuture(
                 Some(IpV6RawSocketRecvfromFutureState {
                     sock: sock,
@@ -509,7 +509,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6RawSocketRecvfromFuture<'a> where Self: 'a {
+    impl<'a> Future for IpV6RawSocketRecvfromFuture<'a> {
         type Item = (&'a mut [u8], SocketAddrV6);
         type Error = Error;
 
@@ -537,12 +537,12 @@ pub mod futures {
     }
 
     impl<'a> IpV6RawSocketSendtoFuture<'a> {
-        fn new(
-            sock: &'a mut IpV6RawSocketAdapter,
+        fn new<'b>(
+            sock: &'b mut IpV6RawSocketAdapter,
             buf: &'a [u8],
             addr: SocketAddrV6,
             flags: SendFlagSet
-        ) -> IpV6RawSocketSendtoFuture<'a> {
+        ) -> IpV6RawSocketSendtoFuture<'a> where 'b: 'a {
             IpV6RawSocketSendtoFuture(
                 Some(IpV6RawSocketSendtoFutureState {
                     sock: sock,
@@ -554,7 +554,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6RawSocketSendtoFuture<'a> where Self: 'a {
+    impl<'a> Future for IpV6RawSocketSendtoFuture<'a> {
         type Item = size_t;
         type Error = Error;
 
@@ -602,9 +602,9 @@ pub mod futures {
             }
         }
 
-        pub fn sendpacket_direct<'a>(
-            &'a mut self,
-            packet: &'a Ipv6,
+        pub fn sendpacket_direct(
+            &mut self,
+            packet: &Ipv6,
             dest: Option<MacAddr>,
             flags: SendFlagSet
         ) -> Result<size_t> {
@@ -628,12 +628,12 @@ pub mod futures {
             IpV6PacketSocketRecvpacketFuture::new(self, maxsize, flags)
         }
 
-        pub fn sendpacket<'a>(
+        pub fn sendpacket<'a, 'b>(
             &'a mut self,
-            packet: &'a Ipv6,
+            packet: &'b Ipv6,
             dest: Option<MacAddr>,
             flags: SendFlagSet
-        ) -> IpV6PacketSocketSendpacketFuture<'a> {
+        ) -> IpV6PacketSocketSendpacketFuture<'b> where 'a: 'b {
             IpV6PacketSocketSendpacketFuture::new(self, packet, dest,
                 flags)
         }
@@ -671,7 +671,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6PacketSocketRecvpacketFuture<'a> where Self: 'a {
+    impl<'a> Future for IpV6PacketSocketRecvpacketFuture<'a> {
         type Item = (Ipv6, MacAddr);
         type Error = Error;
 
@@ -700,12 +700,12 @@ pub mod futures {
     }
 
     impl<'a> IpV6PacketSocketSendpacketFuture<'a> {
-        fn new(
-            sock: &'a mut IpV6PacketSocketAdapter,
+        fn new<'b>(
+            sock: &'b mut IpV6PacketSocketAdapter,
             packet: &'a Ipv6,
             destination: Option<MacAddr>,
             flags: SendFlagSet
-        ) -> IpV6PacketSocketSendpacketFuture<'a> {
+        ) -> IpV6PacketSocketSendpacketFuture<'a> where 'b: 'a {
             IpV6PacketSocketSendpacketFuture(
                 Some(IpV6PacketSocketSendpacketFutureState {
                     sock: sock,
@@ -717,7 +717,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6PacketSocketSendpacketFuture<'a> where Self: 'a {
+    impl<'a> Future for IpV6PacketSocketSendpacketFuture<'a> {
         type Item = size_t;
         type Error = Error;
 

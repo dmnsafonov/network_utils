@@ -111,7 +111,7 @@ impl<'a, E> RangeTracker<'a, E> {
         *self.rangeset.iter().next().expect("nonempty range set")
     }
 
-    pub fn iter(&'a self) -> RangeTrackerIterator<'a, E> {
+    pub fn iter<'b>(&'b self) -> RangeTrackerIterator<'a, 'b, E> where 'a: 'b {
         self.into_iter()
     }
 }
@@ -130,9 +130,9 @@ fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
     sub_start >= slice_start && sub_end <= slice_end
 }}
 
-impl<'a, E> IntoIterator for &'a RangeTracker<'a, E> {
+impl<'a, 'b, E> IntoIterator for &'b RangeTracker<'a, E> where E: 'a, 'a: 'b {
     type Item = IRange<u32>;
-    type IntoIter = RangeTrackerIterator<'a, E>;
+    type IntoIter = RangeTrackerIterator<'a, 'b, E>;
 
     fn into_iter(self) -> Self::IntoIter {
         RangeTrackerIterator {
@@ -142,12 +142,13 @@ impl<'a, E> IntoIterator for &'a RangeTracker<'a, E> {
     }
 }
 
-pub struct RangeTrackerIterator<'a, E> where E: 'a {
-    parent: &'a RangeTracker<'a, E>,
-    inner: ::std::collections::btree_set::Iter<'a, DTRange>
+pub struct RangeTrackerIterator<'a, 'b, E> where E: 'a, 'a: 'b {
+    parent: &'b RangeTracker<'a, E>,
+    inner: ::std::collections::btree_set::Iter<'b, DTRange>
 }
 
-impl<'a, E> Iterator for RangeTrackerIterator<'a, E> {
+impl<'a, 'b, E> Iterator for RangeTrackerIterator<'a, 'b, E>
+        where E: 'a, 'a: 'b {
     type Item = IRange<u32>;
 
     fn next(&mut self) -> Option<Self::Item> {

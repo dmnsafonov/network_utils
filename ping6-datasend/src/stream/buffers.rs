@@ -191,29 +191,34 @@ impl<'a> AckWaitlist<'a> {
     pub fn remove_not_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
         assert!(range.0 <= range.1);
 
-        let del_tracker = &mut self.del_tracker;
-        let mut peekable = self.inner.iter()
-            .enumerate()
-            .map(|(ind,x)| (ind as u32, x))
-            .skip_while(|&(_,x)| x.seqno < range.0
-                || x.seqno > range.1)
-            .take_while(|&(_,x)| x.seqno >= range.0
-                && x.seqno <= range.1)
-            .peekable();
-        if let Some(&(first_ind, first_ackwait)) = peekable.peek() {
-            let mut start_ind = first_ind;
-            // wrapping is for the case of range.start: 0
-            let mut curr_seqno = first_ackwait.seqno - Wrapping(1);
-            let mut last_ind = 0;
-            peekable.for_each(|(ind, &AckWait { seqno, .. })| {
-                if curr_seqno + Wrapping(1) != seqno {
-                    del_tracker.track_range(IRange(start_ind, ind));
-                    start_ind = ind;
-                }
-                curr_seqno = seqno;
-                last_ind = ind;
-            });
-            del_tracker.track_range(IRange(start_ind, last_ind));
+        let mut ranges_to_delete =
+            Vec::with_capacity(((range.1).0 - (range.0).0) as usize);
+        {
+            let mut peekable = self.iter().0
+                .map(|(ind,x)| (ind as u32, x))
+                .skip_while(|&(_,x)| x.seqno < range.0
+                    || x.seqno > range.1)
+                .take_while(|&(_,x)| x.seqno >= range.0
+                    && x.seqno <= range.1)
+                .peekable();
+            if let Some(&(first_ind, first_ackwait)) = peekable.peek() {
+                let mut start_ind = first_ind;
+                // wrapping is for the case of range.start: 0
+                let mut curr_seqno = first_ackwait.seqno - Wrapping(1);
+                let mut last_ind = 0;
+                peekable.for_each(|(ind, &AckWait { seqno, .. })| {
+                    if curr_seqno + Wrapping(1) != seqno {
+                        ranges_to_delete.push(IRange(start_ind, ind));
+                        start_ind = ind;
+                    }
+                    curr_seqno = seqno;
+                    last_ind = ind;
+                });
+                ranges_to_delete.push(IRange(start_ind, last_ind));
+            }
+        }
+        for i in ranges_to_delete {
+            self.del_tracker.track_range(i);
         }
     }
 
@@ -222,27 +227,31 @@ impl<'a> AckWaitlist<'a> {
             self.inner.drain(0 .. ind as usize + 1);
         }
     }
-}
 
-impl<'a> IntoIterator for &'a AckWaitlist<'a> {
-    type Item = &'a AckWait<'a>;
-    type IntoIter = AckWaitlistIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        AckWaitlistIterator {
-            tracker_iter: self.del_tracker.iter().peekable(),
-            inner: self.inner.iter().enumerate()
-        }
+    pub fn iter<'b>(&'b self) -> AckWaitlistIterator<'a, 'b> where 'a: 'b {
+        self.into_iter()
     }
 }
 
-pub struct AckWaitlistIterator<'a> {
-    tracker_iter: Peekable<RangeTrackerIterator<'a, AckWait<'a>>>,
-    inner: Enumerate<vec_deque::Iter<'a, AckWait<'a>>>
+impl<'a, 'b> IntoIterator for &'b AckWaitlist<'a> where 'a: 'b {
+    type Item = &'b AckWait<'a>;
+    type IntoIter = AckWaitlistIterator<'a, 'b>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AckWaitlistIterator(AckWaitlistIteratorInternal {
+            tracker_iter: self.del_tracker.iter().peekable(),
+            inner: self.inner.iter().enumerate()
+        })
+    }
 }
 
-impl<'a> Iterator for AckWaitlistIterator<'a> {
-    type Item = &'a AckWait<'a>;
+struct AckWaitlistIteratorInternal<'a, 'b> where 'a: 'b {
+    tracker_iter: Peekable<RangeTrackerIterator<'b, 'b, AckWait<'a>>>,
+    inner: Enumerate<vec_deque::Iter<'b, AckWait<'a>>>
+}
+
+impl<'a, 'b> Iterator for AckWaitlistIteratorInternal<'a, 'b> where 'a: 'b {
+    type Item = (u32, &'b AckWait<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut acked_range_opt = self.tracker_iter.peek().cloned();
@@ -257,10 +266,21 @@ impl<'a> Iterator for AckWaitlistIterator<'a> {
                     continue;
                 }
 
-                return Some(wait);
+                return Some((ind as u32, wait));
             }
         }
 
         return None;
+    }
+}
+
+pub struct AckWaitlistIterator<'a, 'b>(AckWaitlistIteratorInternal<'a, 'b>)
+    where 'a: 'b;
+
+impl<'a, 'b> Iterator for AckWaitlistIterator<'a, 'b> where 'a: 'b {
+    type Item = &'b AckWait<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_,x)| x)
     }
 }
