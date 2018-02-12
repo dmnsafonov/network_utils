@@ -7,6 +7,7 @@ use ::mio::*;
 use ::mio::event::Evented;
 use ::mio::unix::EventedFd;
 use ::tokio_core::reactor::*;
+use ::tokio_io::AsyncRead;
 
 use ::ping6_datacommon::*;
 use ::linux_network::*;
@@ -92,6 +93,8 @@ impl<'a> Read for StdinBytesReader<'a> {
         self.stdin.get_mut().read(buf)
     }
 }
+
+impl<'a> AsyncRead for StdinBytesReader<'a> {}
 
 impl<'a> Drop for StdinBytesReader<'a> {
     fn drop(&mut self) {

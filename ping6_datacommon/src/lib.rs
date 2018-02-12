@@ -250,3 +250,9 @@ pub fn movable_io_lock<'a, T>(io: T)
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct IRange<Idx>(pub Idx, pub Idx);
+
+impl<Idx> IRange<Idx> where Idx: Ord {
+    pub fn contains(&self, x: Idx) -> bool {
+        x >= self.0 && x <= self.1
+    }
+}

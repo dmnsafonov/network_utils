@@ -1,5 +1,7 @@
 use ::std::cmp::*;
+use ::std::collections::vec_deque;
 use ::std::collections::VecDeque;
+use ::std::iter::*;
 use ::std::mem::uninitialized;
 use ::std::num::Wrapping;
 use ::std::ops::*;
@@ -219,5 +221,46 @@ impl<'a> AckWaitlist<'a> {
         if let Some(ind) = self.del_tracker.take_range() {
             self.inner.drain(0 .. ind as usize + 1);
         }
+    }
+}
+
+impl<'a> IntoIterator for &'a AckWaitlist<'a> {
+    type Item = &'a AckWait<'a>;
+    type IntoIter = AckWaitlistIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AckWaitlistIterator {
+            tracker_iter: self.del_tracker.iter().peekable(),
+            inner: self.inner.iter().enumerate()
+        }
+    }
+}
+
+pub struct AckWaitlistIterator<'a> {
+    tracker_iter: Peekable<RangeTrackerIterator<'a, AckWait<'a>>>,
+    inner: Enumerate<vec_deque::Iter<'a, AckWait<'a>>>
+}
+
+impl<'a> Iterator for AckWaitlistIterator<'a> {
+    type Item = &'a AckWait<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut acked_range_opt = self.tracker_iter.peek().cloned();
+        while let Some((ind, wait)) = self.inner.next() {
+            while acked_range_opt.is_some()
+                    && acked_range_opt.unwrap().1 < ind as u32 {
+                self.tracker_iter.next();
+                acked_range_opt = self.tracker_iter.peek().cloned();
+            }
+            if let Some(acked_range) = acked_range_opt {
+                if acked_range.contains(ind as u32) {
+                    continue;
+                }
+
+                return Some(wait);
+            }
+        }
+
+        return None;
     }
 }

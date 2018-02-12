@@ -278,14 +278,14 @@ pub mod SockOpts {
 
     pub trait ToSetSockOptArg<'a> where Self: 'a {
         type Owner;
-        unsafe fn to_set_sock_opt_arg(&self)
+        unsafe fn to_set_sock_opt_arg(&'a self)
             -> Result<(Self::Owner, *const c_void, socklen_t)>;
     }
 
     impl<'a> ToSetSockOptArg<'a> for bool {
         type Owner = Box<c_int>;
 
-        unsafe fn to_set_sock_opt_arg(&self)
+        unsafe fn to_set_sock_opt_arg(&'a self)
                 -> Result<(Box<c_int>, *const c_void, socklen_t)> {
             let ptr = Box::into_raw(Box::new(if *self {1} else {0}));
             Ok((
@@ -299,7 +299,7 @@ pub mod SockOpts {
     impl<'a> ToSetSockOptArg<'a> for str {
         type Owner = CString;
 
-        unsafe fn to_set_sock_opt_arg(&self)
+        unsafe fn to_set_sock_opt_arg(&'a self)
                 -> Result<(CString, *const c_void, socklen_t)> {
             let owner = CString::new(self)?;
             let ptr = owner.as_ptr() as *const c_void;
@@ -344,10 +344,10 @@ pub mod SockOpts {
             impl<'a> ToSetSockOptArg<'a> for $typ {
                 type Owner = &'a $typ;
 
-                unsafe fn to_set_sock_opt_arg(&self)
+                unsafe fn to_set_sock_opt_arg(&'a self)
                         -> Result<(&'a $typ, *const c_void, socklen_t)> {
                     Ok((
-                        (self as *const $typ).as_ref().unwrap(),
+                        self,
                         self as *const $typ as *const c_void,
                         size_of::<$typ>() as socklen_t
                     ))
@@ -509,7 +509,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6RawSocketRecvfromFuture<'a> {
+    impl<'a> Future for IpV6RawSocketRecvfromFuture<'a> where Self: 'a {
         type Item = (&'a mut [u8], SocketAddrV6);
         type Error = Error;
 
@@ -554,7 +554,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6RawSocketSendtoFuture<'a> {
+    impl<'a> Future for IpV6RawSocketSendtoFuture<'a> where Self: 'a {
         type Item = size_t;
         type Error = Error;
 
@@ -671,7 +671,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6PacketSocketRecvpacketFuture<'a> {
+    impl<'a> Future for IpV6PacketSocketRecvpacketFuture<'a> where Self: 'a {
         type Item = (Ipv6, MacAddr);
         type Error = Error;
 
@@ -717,7 +717,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6PacketSocketSendpacketFuture<'a> {
+    impl<'a> Future for IpV6PacketSocketSendpacketFuture<'a> where Self: 'a {
         type Item = size_t;
         type Error = Error;
 

@@ -12,6 +12,8 @@ extern crate pnet_packet;
 extern crate seccomp;
 #[macro_use] extern crate state_machine_future;
 extern crate tokio_core;
+extern crate tokio_io;
+extern crate tokio_timer;
 
 extern crate linux_network;
 #[macro_use] extern crate numeric_enums;
