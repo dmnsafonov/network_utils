@@ -1,3 +1,4 @@
+use ::std::cell::RefCell;
 use ::std::cmp::*;
 use ::std::collections::vec_deque;
 use ::std::collections::VecDeque;
@@ -144,7 +145,8 @@ impl<'a> Deref for WindowedBufferSlice<'a> {
 
 pub struct AckWaitlist<'a> {
     inner: VecDeque<AckWait<'a>>,
-    del_tracker: RangeTracker<'a, AckWait<'a>>
+    del_tracker: RangeTracker<'a, AckWait<'a>>,
+    tmpvec: RefCell<Vec<IRange<u32>>>
 }
 
 pub struct AckWait<'a> {
@@ -157,7 +159,8 @@ impl<'a> AckWaitlist<'a> {
         assert!(window_size <= ::std::u16::MAX as u32 + 1);
         let mut ret = Box::new(AckWaitlist {
             inner: VecDeque::with_capacity(window_size as usize),
-            del_tracker: unsafe { uninitialized() }
+            del_tracker: unsafe { uninitialized() },
+            tmpvec: RefCell::new(Vec::with_capacity(window_size as usize))
         });
         ret.del_tracker = unsafe {
             let ptr = &mut ret.inner as *mut VecDeque<AckWait<'a>>;
@@ -190,9 +193,9 @@ impl<'a> AckWaitlist<'a> {
     // safe to call multiple times with the same arguments
     pub fn remove_not_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
         assert!(range.0 <= range.1);
+        let mut tmpvec = self.tmpvec.borrow_mut();
+        debug_assert!(tmpvec.is_empty());
 
-        let mut ranges_to_delete =
-            Vec::with_capacity(((range.1).0 - (range.0).0) as usize);
         {
             let mut peekable = self.iter().0
                 .map(|(ind,x)| (ind as u32, x))
@@ -208,16 +211,16 @@ impl<'a> AckWaitlist<'a> {
                 let mut last_ind = 0;
                 peekable.for_each(|(ind, &AckWait { seqno, .. })| {
                     if curr_seqno + Wrapping(1) != seqno {
-                        ranges_to_delete.push(IRange(start_ind, ind));
+                        tmpvec.push(IRange(start_ind, ind));
                         start_ind = ind;
                     }
                     curr_seqno = seqno;
                     last_ind = ind;
                 });
-                ranges_to_delete.push(IRange(start_ind, last_ind));
+                tmpvec.push(IRange(start_ind, last_ind));
             }
         }
-        for i in ranges_to_delete {
+        for i in tmpvec.drain(..) {
             self.del_tracker.track_range(i);
         }
     }
