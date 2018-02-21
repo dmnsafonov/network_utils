@@ -1,6 +1,6 @@
 use ::std::cell::RefCell;
 use ::std::net::SocketAddrV6;
-use ::std::rc::Rc;
+use ::std::time::Duration;
 
 use ::futures::prelude::*;
 use ::pnet_packet::Packet;
@@ -10,7 +10,7 @@ use ::tokio_timer::*;
 use ::linux_network::*;
 
 use ::config::Config;
-use ::errors::Error;
+use ::errors::{Error, ErrorKind};
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::constants::*;
 use ::stream::packet::*;
@@ -32,6 +32,8 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendFirstSyn, SendAck))]
     WaitForSynAck {
         common: StreamState<'s>,
+        timed_recv:
+            Box<Future<Item = (&'s mut [u8], SocketAddrV6), Error = Error>>,
         try_number: u32
     },
 
@@ -98,18 +100,33 @@ macro_rules! reset_lifetime {
     ($v:expr; mut $t:ty) => (($v as *mut $t).as_mut().unwrap())
 }
 
+macro_rules! get_common {
+    (mut $c:expr) => (
+        reset_lifetime!(&mut $c; mut StreamState)
+    )
+}
+
 macro_rules! get_sock {
     (mut $c:ident) => (
         reset_lifetime!(&mut *$c.sock; mut futures::IpV6RawSocketAdapter)
     )
 }
 
-macro_rules! get_buf {
+macro_rules! get_send_buf {
     ($c:ident, $size:expr) => (
-        reset_lifetime!(&$c.buf.borrow()[0 .. $size as usize]; [u8])
+        reset_lifetime!(&$c.send_buf.borrow()[0 .. $size as usize]; [u8])
     );
     (mut $c:ident, $size:expr) => (
-        reset_lifetime!(&mut $c.buf.borrow_mut()[0 .. $size as usize]; mut [u8])
+        reset_lifetime!(&mut $c.send_buf.borrow_mut()[0 .. $size as usize]; mut [u8])
+    )
+}
+
+macro_rules! get_recv_buf {
+    ($c:ident, $size:expr) => (
+        reset_lifetime!(&$c.recv_buf.borrow()[0 .. $size as usize]; [u8])
+    );
+    (mut $c:ident, $size:expr) => (
+        reset_lifetime!(&mut $c.recv_buf.borrow_mut()[0 .. $size as usize]; mut [u8])
     )
 }
 
@@ -119,26 +136,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterInitState<'s>, Error> {
         let mut common = state.take().common;
 
-        let dst = common.dst;
-        let packet = make_stream_packet(
-            unsafe {
-                get_buf!(mut common, FULL_HEADER_SIZE)
-            },
-            *common.src.ip(),
-            *dst.ip(),
-            common.next_seqno,
-            StreamPacketFlags::Syn.into(),
-            &[]
-        );
-
-        let mut send_future = unsafe {
-            get_sock!(mut common).sendto(
-                get_buf!(common, FULL_HEADER_SIZE),
-                dst,
-                SendFlagSet::new()
+        let send_future = unsafe {
+            make_first_syn_future(
+                reset_lifetime!(&mut common; mut StreamState)
             )
         };
-
         transition!(SendFirstSyn {
             common: common,
             send: send_future,
@@ -151,12 +153,53 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendFirstSyn<'s>, Error> {
         let size = try_ready!(state.send.poll());
         debug_assert!(size == FULL_HEADER_SIZE as usize);
-        unimplemented!()
+
+        let state = state.take();
+        let mut common = state.common;
+
+        let recv_future = unsafe {
+            get_sock!(mut common).recvfrom(
+                get_recv_buf!(mut common, common.mtu),
+                RecvFlagSet::new()
+            )
+        }.map_err(Error::from);
+        let timed_future = common.timer.timeout(
+            recv_future,
+            Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+        );
+
+        transition!(WaitForSynAck {
+            common: common,
+            timed_recv: Box::new(timed_future),
+            try_number: state.try_number + 1
+        })
     }
 
     fn poll_wait_for_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForSynAck<'s>>
     ) -> Poll<AfterWaitForSynAck<'s>, Error> {
+        let data = match state.timed_recv.poll() {
+            Err(e) => {
+                if let ErrorKind::TimedOut = *e.kind() {
+                    if state.try_number <= RETRANSMISSION_NUMBER {
+                        let mut st = state.take();
+                        let send_future = make_first_syn_future( unsafe {
+                            get_common!(mut st.common)
+                        } );
+                        return transition!(SendFirstSyn {
+                            common: st.common,
+                            send: send_future,
+                            try_number: st.try_number
+                        });
+                    }
+                }
+
+                bail!(e)
+            },
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Ok(Async::Ready(x)) => x
+        };
+
         unimplemented!()
     }
 
@@ -215,13 +258,38 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     }
 }
 
+fn make_first_syn_future<'a>(common: &'a mut StreamState<'a>)
+        -> futures::IpV6RawSocketSendtoFuture<'a> {
+    let dst = common.dst;
+    let packet = make_stream_packet(
+        unsafe {
+            get_send_buf!(mut common, FULL_HEADER_SIZE)
+        },
+        *common.src.ip(),
+        *dst.ip(),
+        common.next_seqno,
+        StreamPacketFlags::Syn.into(),
+        &[]
+    );
+
+    unsafe {
+        get_sock!(mut common).sendto(
+            get_send_buf!(common, FULL_HEADER_SIZE),
+            dst,
+            SendFlagSet::new()
+        )
+    }
+}
+
 pub struct StreamState<'a> {
     pub config: &'a Config,
     pub src: SocketAddrV6,
     pub dst: SocketAddrV6,
     pub sock: Box<futures::IpV6RawSocketAdapter>,
+    pub mtu: u16,
     pub data_source: StdinBytesReader<'a>,
     pub timer: Timer,
-    pub buf: RefCell<Vec<u8>>,
+    pub send_buf: RefCell<Vec<u8>>,
+    pub recv_buf: RefCell<Vec<u8>>,
     pub next_seqno: u16
 }

@@ -1,8 +1,21 @@
+use ::futures::MapErr;
+use ::tokio_timer::TimeoutError;
+
+use ::linux_network::futures::IpV6RawSocketRecvfromFuture;
+
 error_chain!(
     errors {
         PayloadTooBig(size: usize) {
             description("packet payload is too big")
             display("packet payload size {} is too big", size)
+        }
+
+        TimedOut {
+            description("operation timed out")
+        }
+
+        TimerError {
+            description("timer operation failed")
         }
 
         WrongLength(len: usize, exp: usize) {
@@ -29,3 +42,14 @@ error_chain!(
         );
     }
 );
+
+impl<'a, F> From<TimeoutError<MapErr<IpV6RawSocketRecvfromFuture<'a>, F>>>
+        for Error where F: Fn(::linux_network::errors::Error) -> Error {
+    fn from(x: TimeoutError<MapErr<IpV6RawSocketRecvfromFuture<'a>, F>>)
+            -> Error {
+        match x {
+            TimeoutError::Timer(_, _) => ErrorKind::TimerError.into(),
+            TimeoutError::TimedOut(_) => ErrorKind::TimedOut.into()
+        }
+    }
+}

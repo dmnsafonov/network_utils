@@ -12,6 +12,7 @@ use ::linux_network::*;
 use ::config::*;
 use ::errors::Result;
 use ::stdin_iterator::StdinBytesReader;
+use self::constants::IPV6_MIN_MTU;
 use ::util::InitState;
 
 use self::stm::*;
@@ -22,6 +23,19 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
 
     let mut core = ::tokio_core::reactor::Core::new()?;
     let core_handle = core.handle();
+
+    let mtu = match config.bind_interface {
+        Some(ref s) => {
+            let mtu = get_interface_mtu(&sock, s)?;
+            assert!(mtu >= 1280);
+            if mtu as usize >= ::std::u16::MAX as usize {
+                ::std::u16::MAX
+            } else {
+                mtu as u16
+            }
+        },
+        None => IPV6_MIN_MTU
+    };
 
     let async_sock = futures::IpV6RawSocketAdapter::new(&core_handle, sock)?;
     let stdin = ::std::io::stdin();
@@ -34,9 +48,11 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
         src: src,
         dst: dst,
         sock: Box::new(async_sock),
+        mtu: mtu,
         data_source: data,
         timer: timer,
-        buf: RefCell::new(vec![0; ::std::u16::MAX as usize]),
+        send_buf: RefCell::new(vec![0; ::std::u16::MAX as usize]),
+        recv_buf: RefCell::new(vec![0; mtu as usize]),
         next_seqno: thread_rng().gen()
     };
 
