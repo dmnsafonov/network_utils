@@ -182,16 +182,16 @@ impl<'a> AckWaitlist<'a> {
     // and with overlapping ranges
     pub fn remove(&mut self, range: IRange<Wrapping<u16>>) {
         if range.0 < range.1 {
-            self.remove_not_wrapping(IRange(range.0,
+            self.remove_non_wrapping(IRange(range.0,
                 Wrapping(::std::u16::MAX)));
-            self.remove_not_wrapping(IRange(Wrapping(0), range.1));
+            self.remove_non_wrapping(IRange(Wrapping(0), range.1));
         } else {
-            self.remove_not_wrapping(range);
+            self.remove_non_wrapping(range);
         }
     }
 
     // safe to call multiple times with the same arguments
-    pub fn remove_not_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
+    pub fn remove_non_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
         assert!(range.0 <= range.1);
         let mut tmpvec = self.tmpvec.borrow_mut();
         debug_assert!(tmpvec.is_empty());

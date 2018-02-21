@@ -3,6 +3,10 @@ mod constants;
 mod packet;
 mod stm;
 
+use ::std::cell::RefCell;
+
+use ::rand::*;
+
 use ::linux_network::*;
 
 use ::config::*;
@@ -22,15 +26,21 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
     let async_sock = futures::IpV6RawSocketAdapter::new(&core_handle, sock)?;
     let stdin = ::std::io::stdin();
     let data = StdinBytesReader::new(&core_handle, stdin.lock())?;
-    let init_state = StreamInitState {
+    let timer = ::tokio_timer::wheel()
+        .num_slots(::std::u16::MAX as usize + 1)
+        .build();
+    let init_state = StreamState {
         config: &config,
         src: src,
         dst: dst,
-        sock: async_sock,
-        data_source: data
+        sock: Box::new(async_sock),
+        data_source: data,
+        timer: timer,
+        buf: RefCell::new(vec![0; ::std::u16::MAX as usize]),
+        next_seqno: thread_rng().gen()
     };
 
-    let stm = StreamMachine::start(init_state, 0);
+    let stm = StreamMachine::start(init_state);
     match core.run(stm)? {
         TerminationReason::DataSent => unimplemented!(),
         TerminationReason::ServerFin => unimplemented!()

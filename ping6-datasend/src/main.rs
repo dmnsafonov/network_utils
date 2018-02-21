@@ -4,17 +4,19 @@ extern crate env_logger;
 #[macro_use] extern crate enum_kinds_macros;
 extern crate enum_kinds_traits;
 #[macro_use] extern crate error_chain;
-extern crate futures;
+#[macro_use] extern crate futures;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate mio;
 extern crate pnet_packet;
+extern crate rand;
 extern crate seccomp;
 #[macro_use] extern crate state_machine_future;
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_timer;
 
+#[macro_use] extern crate boolean_enums;
 extern crate linux_network;
 #[macro_use] extern crate numeric_enums;
 extern crate ping6_datacommon;
@@ -80,16 +82,28 @@ fn init() -> Result<InitState> {
     } else {
         false
     };
-    setup_seccomp(&sock, use_stdin)?;
+    setup_seccomp(&sock, use_stdin.into(),
+        (config.mode.kind() == ModeConfigKind::Stream).into())?;
 
     Ok((config, src, dst, sock))
 }
 
-fn setup_seccomp<T>(sock: &T, use_stdin: bool)
-        -> Result<()> where T: SocketCommon {
+gen_boolean_enum!(UseStreamMode);
+gen_boolean_enum!(StdinUse);
+
+fn setup_seccomp<T>(
+    sock: &T,
+    use_stdin: StdinUse,
+    use_stream_mode: UseStreamMode
+) -> Result<()> where T: SocketCommon {
+    // tokio libs syscall use is not documented
+    if use_stream_mode.into() {
+        return Ok(())
+    }
+
     let mut ctx = allow_defaults()?;
     allow_console_out(&mut ctx, StdoutUse::No)?;
-    if use_stdin {
+    if use_stdin.into() {
         allow_console_in(&mut ctx)?;
     }
     sock.allow_sending(&mut ctx)?;
