@@ -139,6 +139,11 @@ pub fn u16_to_bytes_be(x: u16) -> [u8; 2] {
     ]
 }
 
+pub fn u16_from_bytes_be(x: &[u8]) -> u16 {
+    assert!(x.len() == 2);
+    ((x[0] as u16) << 8) | x[1] as u16
+}
+
 gen_boolean_enum!(pub StdoutUse);
 
 pub fn allow_defaults() -> Result<Context> {

@@ -1,5 +1,6 @@
 use ::std::cell::RefCell;
 use ::std::net::SocketAddrV6;
+use ::std::num::Wrapping;
 use ::std::time::Duration;
 
 use ::futures::prelude::*;
@@ -39,7 +40,8 @@ pub enum StreamMachine<'s> {
 
     #[state_machine_future(transitions(SendData))]
     SendAck {
-        common: StreamState<'s>
+        common: StreamState<'s>,
+        send_ack: futures::IpV6RawSocketSendtoFuture<'s>
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
@@ -141,6 +143,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 reset_lifetime!(&mut common; mut StreamState)
             )
         };
+        common.next_seqno += Wrapping(1);
         transition!(SendFirstSyn {
             common: common,
             send: send_future,
@@ -178,7 +181,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_wait_for_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForSynAck<'s>>
     ) -> Poll<AfterWaitForSynAck<'s>, Error> {
-        let data = match state.timed_recv.poll() {
+        let (data,dst) = match state.timed_recv.poll() {
             Err(e) => {
                 if let ErrorKind::TimedOut = *e.kind() {
                     if state.try_number <= RETRANSMISSION_NUMBER {
@@ -200,12 +203,60 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             Ok(Async::Ready(x)) => x
         };
 
-        unimplemented!()
+        let mut state = state.take();
+        let mut common = state.common;
+        debug_assert!(dst == common.dst);
+
+        let src = *common.src.ip();
+
+        let packet_opt = parse_stream_packet(&data, Some((*dst.ip(), src)));
+        let packet = match packet_opt {
+            Some(x) => x,
+            None => return Ok(Async::NotReady)
+        };
+
+        if packet.seqno_start != packet.seqno_end
+                || packet.seqno_start != (common.next_seqno - Wrapping(1)).0 {
+            return Ok(Async::NotReady);
+        }
+
+        if packet.flags != (StreamPacketFlags::Syn | StreamPacketFlags::Ack) {
+            return Ok(Async::NotReady);
+        }
+
+        // TODO: output the server message
+
+        let ack_reply = make_stream_client_icmpv6_packet(
+            unsafe {
+                get_send_buf!(mut common, FULL_HEADER_SIZE)
+            },
+            src,
+            *dst.ip(),
+            common.next_seqno.0,
+            StreamPacketFlags::Ack.into(),
+            &[]
+        );
+        let send_ack_future = unsafe {
+            get_sock!(mut common).sendto(
+                get_send_buf!(mut common, FULL_HEADER_SIZE),
+                dst,
+                SendFlagSet::new()
+            )
+        };
+        common.next_seqno += Wrapping(1);
+
+        transition!(SendAck {
+            common: common,
+            send_ack: send_ack_future
+        });
     }
 
     fn poll_send_ack<'a>(
         state: &'a mut RentToOwn<'a, SendAck<'s>>
     ) -> Poll<AfterSendAck<'s>, Error> {
+        let size = try_ready!(state.send_ack.poll());
+        debug_assert!(size == FULL_HEADER_SIZE as usize);
+
         unimplemented!()
     }
 
@@ -261,13 +312,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 fn make_first_syn_future<'a>(common: &'a mut StreamState<'a>)
         -> futures::IpV6RawSocketSendtoFuture<'a> {
     let dst = common.dst;
-    let packet = make_stream_packet(
+    let packet = make_stream_client_icmpv6_packet(
         unsafe {
             get_send_buf!(mut common, FULL_HEADER_SIZE)
         },
         *common.src.ip(),
         *dst.ip(),
-        common.next_seqno,
+        common.next_seqno.0,
         StreamPacketFlags::Syn.into(),
         &[]
     );
@@ -291,5 +342,5 @@ pub struct StreamState<'a> {
     pub timer: Timer,
     pub send_buf: RefCell<Vec<u8>>,
     pub recv_buf: RefCell<Vec<u8>>,
-    pub next_seqno: u16
+    pub next_seqno: Wrapping<u16>
 }

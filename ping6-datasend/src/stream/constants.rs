@@ -15,6 +15,8 @@ gen_enum!(pub StreamPacketFlags: u8;
 );
 gen_flag_set!(pub StreamPacketFlagSet, StreamPacketFlags: u8);
 
+pub const ALL_STREAM_PACKET_FLAGS: u8 = STREAM_SYN | STREAM_ACK | STREAM_FIN;
+
 pub const HEADER_SIZE: u16 = 6;
 pub const FULL_HEADER_SIZE: u16
     = ICMPV6_ECHO_REQUEST_HEADER_SIZE + HEADER_SIZE;

@@ -66,8 +66,8 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     let payload = payload_arg.as_ref();
 
-    let packet_checksum = ((payload[0] as u16) << 8) | (payload[1] as u16);
-    let len = ((payload[2] as u16) << 8) | (payload[3] as u16);
+    let packet_checksum = u16_from_bytes_be(&payload[0..2]);
+    let len = u16_from_bytes_be(&payload[2..4]);
 
     if len != (payload.len() - 4) as u16 {
         debug!("wrong encapsulated packet length: {}, dropping", len);

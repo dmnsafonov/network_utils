@@ -4,6 +4,7 @@ mod packet;
 mod stm;
 
 use ::std::cell::RefCell;
+use ::std::num::Wrapping;
 
 use ::rand::*;
 
@@ -53,7 +54,7 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
         timer: timer,
         send_buf: RefCell::new(vec![0; ::std::u16::MAX as usize]),
         recv_buf: RefCell::new(vec![0; mtu as usize]),
-        next_seqno: thread_rng().gen()
+        next_seqno: Wrapping(thread_rng().gen())
     };
 
     let stm = StreamMachine::start(init_state);
