@@ -8,7 +8,9 @@ extern crate seccomp;
 
 #[macro_use] extern crate boolean_enums;
 extern crate linux_network;
+#[macro_use] extern crate numeric_enums;
 
+mod constants;
 mod range_tracker;
 
 error_chain!(
@@ -48,11 +50,10 @@ use seccomp::*;
 
 use linux_network::*;
 
+pub use constants::*;
 pub use range_tracker::*;
 
 gen_boolean_enum!(pub Resolve);
-
-pub const ICMPV6_ECHO_REQUEST_HEADER_SIZE: u16 = 4;
 
 pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve)
         -> Result<SocketAddrV6> where T: AsRef<str> {

@@ -27,7 +27,7 @@ pub fn make_stream_client_icmpv6_packet<'a>(
     let mut packet = MutableIcmpv6Packet::new(packet_buff)
         .expect("buffer big enough for the payload");
     debug_assert!(packet.payload().len()
-        == HEADER_SIZE as usize + payload.len());
+        == STREAM_CLIENT_HEADER_SIZE as usize + payload.len());
 
     packet.set_icmpv6_type(Icmpv6Types::EchoRequest);
     packet.set_icmpv6_code(Icmpv6Codes::NoCode);

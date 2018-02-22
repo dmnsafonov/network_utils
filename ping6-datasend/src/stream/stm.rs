@@ -9,11 +9,11 @@ use ::state_machine_future::RentToOwn;
 use ::tokio_timer::*;
 
 use ::linux_network::*;
+use ::ping6_datacommon::*;
 
 use ::config::Config;
 use ::errors::{Error, ErrorKind};
 use ::stdin_iterator::StdinBytesReader;
-use ::stream::constants::*;
 use ::stream::packet::*;
 
 #[derive(StateMachineFuture)]
@@ -155,7 +155,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         state: &'a mut RentToOwn<'a, SendFirstSyn<'s>>
     ) -> Poll<AfterSendFirstSyn<'s>, Error> {
         let size = try_ready!(state.send.poll());
-        debug_assert!(size == FULL_HEADER_SIZE as usize);
+        debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 
         let state = state.take();
         let mut common = state.common;
@@ -184,7 +184,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let (data,dst) = match state.timed_recv.poll() {
             Err(e) => {
                 if let ErrorKind::TimedOut = *e.kind() {
-                    if state.try_number <= RETRANSMISSION_NUMBER {
+                    if state.try_number <= RETRANSMISSIONS_NUMBER {
                         let mut st = state.take();
                         let send_future = make_first_syn_future( unsafe {
                             get_common!(mut st.common)
@@ -228,7 +228,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let ack_reply = make_stream_client_icmpv6_packet(
             unsafe {
-                get_send_buf!(mut common, FULL_HEADER_SIZE)
+                get_send_buf!(mut common, STREAM_CLIENT_FULL_HEADER_SIZE)
             },
             src,
             *dst.ip(),
@@ -238,7 +238,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         );
         let send_ack_future = unsafe {
             get_sock!(mut common).sendto(
-                get_send_buf!(mut common, FULL_HEADER_SIZE),
+                get_send_buf!(mut common, STREAM_CLIENT_FULL_HEADER_SIZE),
                 dst,
                 SendFlagSet::new()
             )
@@ -255,7 +255,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         state: &'a mut RentToOwn<'a, SendAck<'s>>
     ) -> Poll<AfterSendAck<'s>, Error> {
         let size = try_ready!(state.send_ack.poll());
-        debug_assert!(size == FULL_HEADER_SIZE as usize);
+        debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 
         unimplemented!()
     }
@@ -314,7 +314,7 @@ fn make_first_syn_future<'a>(common: &'a mut StreamState<'a>)
     let dst = common.dst;
     let packet = make_stream_client_icmpv6_packet(
         unsafe {
-            get_send_buf!(mut common, FULL_HEADER_SIZE)
+            get_send_buf!(mut common, STREAM_CLIENT_FULL_HEADER_SIZE)
         },
         *common.src.ip(),
         *dst.ip(),
@@ -325,7 +325,7 @@ fn make_first_syn_future<'a>(common: &'a mut StreamState<'a>)
 
     unsafe {
         get_sock!(mut common).sendto(
-            get_send_buf!(common, FULL_HEADER_SIZE),
+            get_send_buf!(common, STREAM_CLIENT_FULL_HEADER_SIZE),
             dst,
             SendFlagSet::new()
         )
