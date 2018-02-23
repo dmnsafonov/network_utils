@@ -1,0 +1,7 @@
+[package]
+name = "sliceable_rcref"
+version = "0.1.0"
+authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
+
+[dependencies]
+owning_ref = "^0.3.3"
