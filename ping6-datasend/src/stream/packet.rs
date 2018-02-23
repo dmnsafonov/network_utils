@@ -4,7 +4,6 @@ use ::pnet_packet::icmpv6::*;
 use ::pnet_packet::icmpv6::ndp::Icmpv6Codes;
 use ::pnet_packet::*;
 
-use ::numeric_enums::*;
 use ::ping6_datacommon::*;
 
 use ::stream::constants::*;

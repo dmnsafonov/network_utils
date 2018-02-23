@@ -407,11 +407,11 @@ pub mod futures {
 
     use sliceable_rcref::SRcRef;
 
-    type U8Slice = SRcRef<Vec<u8>, Range>;
-    type Range = ::std::ops::Range<usize>;
+    pub type U8Slice = SRcRef<Vec<u8>>;
 
     gen_evented_eventedfd!(IpV6RawSocket);
 
+    #[derive(Clone)]
     pub struct IpV6RawSocketAdapter(IpV6RawSocketPE);
     type IpV6RawSocketPE = Rc<RefCell<PollEvented<IpV6RawSocket>>>;
 
@@ -542,8 +542,7 @@ pub mod futures {
                 IpV6RawSocketAdapter(state.sock.clone())
                     .recvfrom_direct(&mut buf, state.flags)
             );
-            let mut data = state.buf.clone();
-            data.set_range(0 .. slice.len());
+            let data = state.buf.range(0 .. slice.len());
             Ok(Async::Ready((
                 data,
                 addr
@@ -595,6 +594,7 @@ pub mod futures {
 
     gen_evented_eventedfd!(IpV6PacketSocket);
 
+    #[derive(Clone)]
     pub struct IpV6PacketSocketAdapter(IpV6PacketSocketPE);
     type IpV6PacketSocketPE = Rc<RefCell<PollEvented<IpV6PacketSocket>>>;
 

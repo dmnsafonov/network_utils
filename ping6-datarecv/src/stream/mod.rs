@@ -15,7 +15,7 @@ use ::util::InitState;
 
 use self::stm::*;
 
-pub fn stream_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
+pub fn stream_mode((config, bound_addr, sock): InitState) -> Result<()> {
     let stream_conf = match config.mode {
         ModeConfig::Stream(ref x) => x,
         _ => unreachable!()

@@ -21,6 +21,7 @@ ping6_datacommon = { path = "../ping6_datacommon" }
 pnet_packet = "^0.20.0"
 rand = "^0.4.2"
 seccomp = "^0.1.1"
+sliceable_rcref = { path = "../sliceable_rcref" }
 state_machine_future = "^0.1.5"
 tokio-core = "^0.1.12"
 tokio-io = "^0.1.4"

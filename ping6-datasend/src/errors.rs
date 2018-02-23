@@ -43,9 +43,9 @@ error_chain!(
     }
 );
 
-impl<'a, F> From<TimeoutError<MapErr<IpV6RawSocketRecvfromFuture<'a>, F>>>
+impl<F> From<TimeoutError<MapErr<IpV6RawSocketRecvfromFuture, F>>>
         for Error where F: Fn(::linux_network::errors::Error) -> Error {
-    fn from(x: TimeoutError<MapErr<IpV6RawSocketRecvfromFuture<'a>, F>>)
+    fn from(x: TimeoutError<MapErr<IpV6RawSocketRecvfromFuture, F>>)
             -> Error {
         match x {
             TimeoutError::Timer(_, _) => ErrorKind::TimerError.into(),

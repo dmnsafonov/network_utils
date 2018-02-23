@@ -50,6 +50,8 @@ use seccomp::*;
 
 use linux_network::*;
 
+pub use numeric_enums::*;
+
 pub use constants::*;
 pub use range_tracker::*;
 
