@@ -403,8 +403,12 @@ pub mod futures {
     use ::mio::*;
     use ::mio::event::Evented;
     use ::mio::unix::EventedFd;
-    use ::owning_ref::RcRef;
     use ::tokio_core::reactor::*;
+
+    use sliceable_rcref::SRcRef;
+
+    type U8Slice = SRcRef<Vec<u8>, Range>;
+    type Range = ::std::ops::Range<usize>;
 
     gen_evented_eventedfd!(IpV6RawSocket);
 
@@ -474,20 +478,20 @@ pub mod futures {
             }
         }
 
-        pub fn recvfrom<'a, 'b>(
-            &'a mut self,
-            buf: &'b mut [u8],
+        pub fn recvfrom(
+            &mut self,
+            buf: U8Slice,
             flags: RecvFlagSet
-        ) -> IpV6RawSocketRecvfromFuture<'b> where 'a: 'b {
+        ) -> IpV6RawSocketRecvfromFuture {
             IpV6RawSocketRecvfromFuture::new(self.0.clone(), buf, flags)
         }
 
-        pub fn sendto<'a, 'b>(
-            &'a mut self,
-            buf: &'b [u8],
+        pub fn sendto(
+            &mut self,
+            buf: U8Slice,
             addr: SocketAddrV6,
             flags: SendFlagSet
-        ) -> IpV6RawSocketSendtoFuture<'b> where 'a: 'b {
+        ) -> IpV6RawSocketSendtoFuture {
             IpV6RawSocketSendtoFuture::new(self.0.clone(), buf, addr, flags)
         }
 
@@ -500,22 +504,22 @@ pub mod futures {
         }
     }
 
-    pub struct IpV6RawSocketRecvfromFuture<'a>(
-        Option<IpV6RawSocketRecvfromFutureState<'a>>
+    pub struct IpV6RawSocketRecvfromFuture(
+        Option<IpV6RawSocketRecvfromFutureState>
     );
 
-    struct IpV6RawSocketRecvfromFutureState<'a> {
+    struct IpV6RawSocketRecvfromFutureState {
         sock: IpV6RawSocketPE,
-        buf: &'a mut [u8],
+        buf: U8Slice,
         flags: RecvFlagSet
     }
 
-    impl<'a> IpV6RawSocketRecvfromFuture<'a> {
+    impl IpV6RawSocketRecvfromFuture {
         fn new(
             sock: IpV6RawSocketPE,
-            buf: &'a mut [u8],
+            buf: U8Slice,
             flags: RecvFlagSet
-        ) -> IpV6RawSocketRecvfromFuture<'a> {
+        ) -> IpV6RawSocketRecvfromFuture {
             IpV6RawSocketRecvfromFuture(
                 Some(IpV6RawSocketRecvfromFutureState {
                     sock: sock,
@@ -526,41 +530,45 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6RawSocketRecvfromFuture<'a> {
-        type Item = (&'a mut [u8], SocketAddrV6);
+    impl Future for IpV6RawSocketRecvfromFuture {
+        type Item = (U8Slice, SocketAddrV6);
         type Error = Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            let state_pre = self.0.as_mut().map(
-                |x| unsafe {
-                    (x as *mut IpV6RawSocketRecvfromFutureState).as_mut()
-                        .unwrap()
-                }
+            let state = self.0.take().expect("pending recvfrom future");
+
+            let mut buf = state.buf.borrow_mut();
+            let (slice, addr) = try_async_val!(
+                IpV6RawSocketAdapter(state.sock.clone())
+                    .recvfrom_direct(&mut buf, state.flags)
             );
-            let state = state_pre.expect("pending recvfrom future");
-            try_async!(IpV6RawSocketAdapter(state.sock.clone())
-                .recvfrom_direct(&mut state.buf, state.flags))
+            let mut data = state.buf.clone();
+            data.set_range(0 .. slice.len());
+            Ok(Async::Ready((
+                data,
+                addr
+            )))
         }
     }
 
-    pub struct IpV6RawSocketSendtoFuture<'a>(
-        Option<IpV6RawSocketSendtoFutureState<'a>>
+    pub struct IpV6RawSocketSendtoFuture(
+        Option<IpV6RawSocketSendtoFutureState>
     );
 
-    struct IpV6RawSocketSendtoFutureState<'a> {
+    struct IpV6RawSocketSendtoFutureState {
         sock: IpV6RawSocketPE,
-        buf: &'a [u8],
+        buf: U8Slice,
         addr: SocketAddrV6,
         flags: SendFlagSet
     }
 
-    impl<'a> IpV6RawSocketSendtoFuture<'a> {
-        fn new<'b>(
+    impl IpV6RawSocketSendtoFuture {
+        fn new(
             sock: IpV6RawSocketPE,
-            buf: &'a [u8],
+            buf: U8Slice,
             addr: SocketAddrV6,
             flags: SendFlagSet
-        ) -> IpV6RawSocketSendtoFuture<'a> where 'b: 'a {
+        ) -> IpV6RawSocketSendtoFuture {
             IpV6RawSocketSendtoFuture(
                 Some(IpV6RawSocketSendtoFutureState {
                     sock: sock,
@@ -572,20 +580,16 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6RawSocketSendtoFuture<'a> {
+    impl Future for IpV6RawSocketSendtoFuture {
         type Item = size_t;
         type Error = Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            let state_pre = self.0.as_mut().map(
-                |x| unsafe {
-                    (x as *mut IpV6RawSocketSendtoFutureState).as_mut()
-                        .unwrap()
-                }
-            );
-            let state = state_pre.expect("pending sendto future");
+            let state = self.0.take().expect("pending sendto future");
+            let mut buf = state.buf.borrow_mut();
             try_async!(IpV6RawSocketAdapter(state.sock.clone())
-                .sendto_direct(&mut state.buf, state.addr, state.flags))
+                .sendto_direct(&mut buf, state.addr,
+                    state.flags))
         }
     }
 

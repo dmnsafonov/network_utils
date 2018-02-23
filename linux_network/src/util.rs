@@ -26,7 +26,7 @@ macro_rules! n1try {
 }
 
 #[cfg(feature = "futures")]
-macro_rules! try_async {
+macro_rules! try_async_val {
     ($e:expr) => (
         match $e {
             Err(e) => {
@@ -35,8 +35,15 @@ macro_rules! try_async {
                     _ => return Err(e)
                 }
             },
-            Ok(x) => Ok(Async::Ready(x))
+            Ok(x) => x
         }
+    )
+}
+
+#[cfg(feature = "futures")]
+macro_rules! try_async {
+    ($e:expr) => (
+        Ok(Async::Ready(try_async_val!($e)))
     )
 }
 

@@ -6,12 +6,13 @@ use std::rc::Rc;
 
 use owning_ref::*;
 
+#[derive(Clone)]
 pub struct SRcRef<T,R> where T: Index<R> {
     inner: Rc<RefCell<T>>,
     range: R
 }
 
-impl<T, R> SRcRef<T,R> where T: Index<R>, R: Copy {
+impl<T, R> SRcRef<T,R> where T: Index<R>, R: Clone {
     pub fn new(x: T, r: R) -> SRcRef<T,R> {
         SRcRef {
             inner: Rc::new(RefCell::new(x)),
@@ -36,13 +37,13 @@ impl<T, R> SRcRef<T,R> where T: Index<R>, R: Copy {
 
     pub fn borrow(&self) -> RefRef<T, <T as Index<R>>::Output> {
         RefRef::new(self.inner.borrow())
-            .map(|x| x.index(self.range))
+            .map(|x| x.index(self.range.clone()))
     }
 }
 
-impl<T,R> SRcRef<T,R> where T: IndexMut<R>, R: Copy {
+impl<T,R> SRcRef<T,R> where T: IndexMut<R>, R: Clone {
     pub fn borrow_mut(&self) -> RefMutRefMut<T, <T as Index<R>>::Output> {
         RefMutRefMut::new(self.inner.borrow_mut())
-            .map_mut(|x| x.index_mut(self.range))
+            .map_mut(|x| x.index_mut(self.range.clone()))
     }
 }

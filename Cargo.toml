@@ -6,5 +6,6 @@ members = [
     "ping6-datarecv",
     "ping6-datasend",
     "ping6_datacommon",
-    "rsndpproxy"
+    "rsndpproxy",
+    "sliceable_rcref"
 ]
