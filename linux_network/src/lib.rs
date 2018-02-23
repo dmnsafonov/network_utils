@@ -4,6 +4,7 @@ extern crate interfaces;
 #[macro_use] extern crate log;
 #[cfg(feature = "async")] extern crate mio;
 extern crate nix;
+#[cfg(feature = "async")] extern crate owning_ref;
 extern crate pnet_packet;
 #[cfg(feature = "seccomp")] extern crate seccomp;
 #[cfg(feature = "async")] extern crate tokio_core;

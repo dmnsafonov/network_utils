@@ -8,6 +8,7 @@ extern crate enum_kinds_traits;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate mio;
+extern crate owning_ref;
 extern crate pnet_packet;
 extern crate rand;
 extern crate seccomp;

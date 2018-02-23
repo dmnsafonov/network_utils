@@ -20,52 +20,52 @@ use ::stream::packet::*;
 pub enum StreamMachine<'s> {
     #[state_machine_future(start, transitions(WaitForFirstSyn))]
     InitState {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(SendSynAck))]
     WaitForFirstSyn {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(WaitForAck))]
     SendSynAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(WaitForPackets))]
     WaitForAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(SendFinAck, SendFin))]
     WaitForPackets {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
     SendFinAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(SendFinAck, ConnectionTerminated))]
     WaitForLastAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
     WaitForFinAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(ready)]
@@ -144,7 +144,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
 pub struct StreamState<'a> {
     pub config: &'a Config,
-    pub sock: Box<futures::IpV6RawSocketAdapter>,
+    pub sock: futures::IpV6RawSocketAdapter,
     pub mtu: u16,
     pub data_out: StdoutBytesWriter<'a>,
     pub timer: Timer,

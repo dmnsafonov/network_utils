@@ -44,16 +44,17 @@ pub fn stream_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
         .num_slots(::std::u16::MAX as usize + 1)
         .build();
 
-    let init_state = StreamState {
+    let init_state = Box::new(StreamState {
         config: &config,
-        sock: Box::new(async_sock),
+        sock: async_sock,
         mtu: mtu,
         data_out: data_out,
         timer: timer,
         send_buf: RefCell::new(vec![0; mtu as usize]),
+        // if we assumed default mtu, then the incoming packet size is unknown
         recv_buf: RefCell::new(vec![0; ::std::u16::MAX as usize]),
         next_seqno: Wrapping(0)
-    };
+    });
 
     let stm = StreamMachine::start(init_state);
     match core.run(stm)? {

@@ -3,7 +3,9 @@ use ::std::net::SocketAddrV6;
 use ::std::num::Wrapping;
 use ::std::time::Duration;
 
+use ::futures::future;
 use ::futures::prelude::*;
+use ::futures::stream::*;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
 use ::tokio_timer::*;
@@ -16,23 +18,25 @@ use ::errors::{Error, ErrorKind};
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::packet::*;
 
+type Stream<T> = ::futures::stream::Stream<Item = T, Error = Error>;
+
 #[derive(StateMachineFuture)]
 pub enum StreamMachine<'s> {
     #[state_machine_future(start, transitions(SendFirstSyn))]
     InitState {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(WaitForSynAck))]
     SendFirstSyn {
-        common: StreamState<'s>,
+        common: Box<StreamState<'s>>,
         send: futures::IpV6RawSocketSendtoFuture<'s>,
         try_number: u32
     },
 
     #[state_machine_future(transitions(SendFirstSyn, SendAck))]
     WaitForSynAck {
-        common: StreamState<'s>,
+        common: Box<StreamState<'s>>,
         timed_recv:
             Box<Future<Item = (&'s mut [u8], SocketAddrV6), Error = Error>>,
         try_number: u32
@@ -40,49 +44,49 @@ pub enum StreamMachine<'s> {
 
     #[state_machine_future(transitions(SendData))]
     SendAck {
-        common: StreamState<'s>,
+        common: Box<StreamState<'s>>,
         send_ack: futures::IpV6RawSocketSendtoFuture<'s>
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
     SendData {
-        common: StreamState<'s>,
+        common: Box<StreamState<'s>>,
 
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
     WaitForAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(SendFinAck))]
     ReceivedServerFin {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, WaitForLastAck))]
     SendFinAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     WaitForLastAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
     WaitForFinAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
-        common: StreamState<'s>
+        common: Box<StreamState<'s>>
     },
 
     #[state_machine_future(ready)]
@@ -104,13 +108,13 @@ macro_rules! reset_lifetime {
 
 macro_rules! get_common {
     (mut $c:expr) => (
-        reset_lifetime!(&mut $c; mut StreamState)
+        reset_lifetime!(&mut *$c; mut StreamState)
     )
 }
 
 macro_rules! get_sock {
     (mut $c:ident) => (
-        reset_lifetime!(&mut *$c.sock; mut futures::IpV6RawSocketAdapter)
+        reset_lifetime!(&mut $c.sock; mut futures::IpV6RawSocketAdapter)
     )
 }
 
@@ -139,9 +143,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let mut common = state.take().common;
 
         let send_future = unsafe {
-            make_first_syn_future(
-                reset_lifetime!(&mut common; mut StreamState)
-            )
+            make_first_syn_future(get_common!(mut common))
         };
         common.next_seqno += Wrapping(1);
         transition!(SendFirstSyn {
@@ -170,7 +172,19 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             recv_future,
             Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
         );
+/*
+        unfold(get_common!(mut common), |common| {
+            Some(future::ok((
+                get_sock!(mut common).recvfrom(
+                    get_recv_buf!(mut common, common.mtu),
+                    RecvFlagSet::new()
+                ),
+                common
+            )))
+        }).filter(|x| {
 
+        });
+*/
         transition!(WaitForSynAck {
             common: common,
             timed_recv: Box::new(timed_future),
@@ -336,7 +350,7 @@ pub struct StreamState<'a> {
     pub config: &'a Config,
     pub src: SocketAddrV6,
     pub dst: SocketAddrV6,
-    pub sock: Box<futures::IpV6RawSocketAdapter>,
+    pub sock: futures::IpV6RawSocketAdapter,
     pub mtu: u16,
     pub data_source: StdinBytesReader<'a>,
     pub timer: Timer,

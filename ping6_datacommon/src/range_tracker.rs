@@ -11,7 +11,7 @@ pub struct RangeTracker<'a, E> where E: 'a {
     rangeset: BTreeSet<DTRange>,
 
     // we return the VecDeque's buffer indices, but we do not increment
-    // the rangeset range indices each deletion, so we need to track how much
+    // the rangeset range indicies each deletion, so we need to track how much
     // we are off
     offset: usize
 }
