@@ -1,10 +1,9 @@
 mod buffers;
 mod packet;
 mod stm;
+mod timeout;
 
-use ::std::cell::RefCell;
 use ::std::num::Wrapping;
-use ::std::rc::Rc;
 
 use ::rand::*;
 

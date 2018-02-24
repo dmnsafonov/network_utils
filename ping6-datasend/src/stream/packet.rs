@@ -6,8 +6,6 @@ use ::pnet_packet::*;
 
 use ::ping6_datacommon::*;
 
-use ::stream::constants::*;
-
 pub struct StreamServerPacket<'a> {
     pub flags: StreamPacketFlagSet,
     pub seqno_start: u16,
@@ -47,22 +45,47 @@ pub fn make_stream_client_icmpv6_packet<'a>(
     packet.consume_to_immutable()
 }
 
-pub fn parse_stream_packet<'a>(
-    packet_buff: &'a [u8],
+pub fn parse_stream_server_packet<'a>(
+    packet_buff: &'a [u8]
+) -> StreamServerPacket<'a> {
+    debug_assert!(validate_stream_server_packet(packet_buff, None));
+
+    let packet = Icmpv6Packet::new(packet_buff)
+        .expect("a valid length icmpv6 packet");
+    let payload = packet.payload();
+
+    let flags = unsafe {
+        StreamPacketFlagSet::from_num(payload[3])
+    };
+
+    // satisfying the borrow checker
+    let payload_ind = (&payload[8..9]).as_ptr() as usize
+        - packet_buff.as_ptr() as usize;
+
+    StreamServerPacket {
+        flags: flags,
+        seqno_start: u16_from_bytes_be(&payload[4..6]),
+        seqno_end: u16_from_bytes_be(&payload[6..8]),
+        payload: &packet_buff[payload_ind..]
+    }
+}
+
+pub fn validate_stream_server_packet(
+    packet_buff: &[u8],
     addrs: Option<(Ipv6Addr,Ipv6Addr)>
-) -> Option<StreamServerPacket<'a>> {
+) -> bool {
     let packet = Icmpv6Packet::new(packet_buff)
         .expect("a valid length icmpv6 packet");
 
     if packet.get_icmpv6_type() != Icmpv6Types::EchoReply
             || packet.get_icmpv6_code() != Icmpv6Codes::NoCode {
-        return None;
+        return false;
     }
 
     if let Some((src,dst)) = addrs {
         if packet.get_checksum()
             != icmpv6::checksum(&packet, src, dst) {
-            return None;
+            return false;
         }
     }
 
@@ -70,29 +93,17 @@ pub fn parse_stream_packet<'a>(
     let checksum = u16_from_bytes_be(&payload[0..2]);
 
     if checksum != ping6_data_checksum(&payload[2..]) {
-        return None;
+        return false;
     }
 
-    let flags = unsafe {
-        let x = payload[3];
-        if x & ALL_STREAM_PACKET_FLAGS != 0 {
-            return None;
-        }
-        StreamPacketFlagSet::from_num(x)
-    };
+    let x = payload[3];
+    if x & !ALL_STREAM_PACKET_FLAGS != 0 {
+        return false;
+    }
 
     if payload[2] != !0 {
-        return None;
+        return false;
     }
 
-    // satisfying the borrow checker
-    let payload_ind = (&payload[8..9]).as_ptr() as usize
-        - packet_buff.as_ptr() as usize;
-
-    Some(StreamServerPacket {
-        flags: flags,
-        seqno_start: u16_from_bytes_be(&payload[4..6]),
-        seqno_end: u16_from_bytes_be(&payload[6..8]),
-        payload: &packet_buff[payload_ind..]
-    })
+    return true;
 }

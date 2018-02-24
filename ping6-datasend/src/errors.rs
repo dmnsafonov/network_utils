@@ -1,7 +1,4 @@
-use ::futures::MapErr;
 use ::tokio_timer::TimeoutError;
-
-use ::linux_network::futures::IpV6RawSocketRecvfromFuture;
 
 error_chain!(
     errors {
@@ -12,10 +9,6 @@ error_chain!(
 
         TimedOut {
             description("operation timed out")
-        }
-
-        TimerError {
-            description("timer operation failed")
         }
 
         WrongLength(len: usize, exp: usize) {
@@ -29,6 +22,7 @@ error_chain!(
         IoError(::std::io::Error);
         LogInit(::log::SetLoggerError);
         Seccomp(::seccomp::SeccompError);
+        TimerError(::tokio_timer::TimerError);
     }
 
     links {
@@ -43,12 +37,10 @@ error_chain!(
     }
 );
 
-impl<F> From<TimeoutError<MapErr<IpV6RawSocketRecvfromFuture, F>>>
-        for Error where F: Fn(::linux_network::errors::Error) -> Error {
-    fn from(x: TimeoutError<MapErr<IpV6RawSocketRecvfromFuture, F>>)
-            -> Error {
-        match x {
-            TimeoutError::Timer(_, _) => ErrorKind::TimerError.into(),
+impl<T> From<TimeoutError<T>> for Error {
+    fn from(error: TimeoutError<T>) -> Error {
+        match error {
+            TimeoutError::Timer(_,e) => e.into(),
             TimeoutError::TimedOut(_) => ErrorKind::TimedOut.into()
         }
     }

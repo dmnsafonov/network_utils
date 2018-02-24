@@ -535,14 +535,18 @@ pub mod futures {
         type Error = Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            let state = self.0.take().expect("pending recvfrom future");
+            let (data, addr) = {
+                let state = self.0.as_mut().expect("pending recvfrom future");
+                let mut buf = state.buf.borrow_mut();
+                let (slice, addr) = try_async_val!(
+                    IpV6RawSocketAdapter(state.sock.clone())
+                        .recvfrom_direct(&mut buf, state.flags)
+                );
+                (state.buf.range(0 .. slice.len()), addr)
+            };
 
-            let mut buf = state.buf.borrow_mut();
-            let (slice, addr) = try_async_val!(
-                IpV6RawSocketAdapter(state.sock.clone())
-                    .recvfrom_direct(&mut buf, state.flags)
-            );
-            let data = state.buf.range(0 .. slice.len());
+            self.0.take();
+
             Ok(Async::Ready((
                 data,
                 addr
@@ -584,11 +588,15 @@ pub mod futures {
         type Error = Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            let state = self.0.take().expect("pending sendto future");
-            let mut buf = state.buf.borrow_mut();
-            try_async!(IpV6RawSocketAdapter(state.sock.clone())
-                .sendto_direct(&mut buf, state.addr,
-                    state.flags))
+            let len = {
+                let state = self.0.as_mut().expect("pending sendto future");
+                let mut buf = state.buf.borrow_mut();
+                try_async!(IpV6RawSocketAdapter(state.sock.clone())
+                    .sendto_direct(&mut buf, state.addr,
+                        state.flags))
+            };
+            self.0.take();
+            len
         }
     }
 
@@ -711,15 +719,14 @@ pub mod futures {
         type Error = Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            let state_pre = self.0.as_mut().map(
-                |x| unsafe {
-                    (x as *mut IpV6PacketSocketRecvpacketFutureState).as_mut()
-                        .unwrap()
-                }
-            );
-            let state = state_pre.expect("pending recvpacket future");
-            try_async!(IpV6PacketSocketAdapter(state.sock.clone())
-                .recvpacket_direct(state.maxsize, state.flags))
+            let ret = {
+                let state = self.0.as_mut()
+                    .expect("pending recvpacket future");
+                try_async!(IpV6PacketSocketAdapter(state.sock.clone())
+                    .recvpacket_direct(state.maxsize, state.flags))
+            };
+            self.0.take();
+            ret
         }
     }
 
@@ -757,16 +764,15 @@ pub mod futures {
         type Error = Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            let state_pre = self.0.as_mut().map(
-                |x| unsafe {
-                    (x as *mut IpV6PacketSocketSendpacketFutureState).as_mut()
-                        .unwrap()
-                }
-            );
-            let state = state_pre.expect("pending sendpacket future");
-            try_async!(IpV6PacketSocketAdapter(state.sock.clone())
-                .sendpacket_direct(state.packet, state.destination,
-                    state.flags))
+            let len = {
+                let state = self.0.as_mut()
+                    .expect("pending sendpacket future");
+                try_async!(IpV6PacketSocketAdapter(state.sock.clone())
+                    .sendpacket_direct(state.packet, state.destination,
+                        state.flags))
+            };
+            self.0.take();
+            len
         }
     }
 
