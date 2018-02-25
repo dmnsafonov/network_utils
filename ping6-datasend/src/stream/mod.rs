@@ -44,7 +44,7 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
     let timer = ::tokio_timer::wheel()
         .num_slots(::std::u16::MAX as usize + 1)
         .build();
-    let init_state = StreamState {
+    let init_state = StreamCommonState {
         config: &config,
         src: src,
         dst: dst,

@@ -45,7 +45,7 @@ pub fn stream_mode((config, bound_addr, sock): InitState) -> Result<()> {
         .num_slots(::std::u16::MAX as usize + 1)
         .build();
 
-    let init_state = StreamState {
+    let init_state = StreamCommonState {
         config: &config,
         src: make_socket_addr(
             config.bind_address.as_ref().unwrap(),
@@ -58,8 +58,7 @@ pub fn stream_mode((config, bound_addr, sock): InitState) -> Result<()> {
         send_buf: SRcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
         // if we assumed default mtu, then the incoming packet size is unknown
         recv_buf: SRcRef::new(vec![0; ::std::u16::MAX as usize],
-            0 .. (::std::u16::MAX as usize)),
-        next_seqno: Wrapping(0)
+            0 .. (::std::u16::MAX as usize))
     };
 
     let stm = StreamMachine::start(init_state);

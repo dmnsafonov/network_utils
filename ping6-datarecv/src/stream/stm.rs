@@ -25,68 +25,62 @@ type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
 pub enum StreamMachine<'s> {
     #[state_machine_future(start, transitions(WaitForFirstSyn))]
     InitState {
-        common: StreamState<'s>
+        common: StreamCommonState<'s>
     },
 
     #[state_machine_future(transitions(SendSynAck))]
     WaitForFirstSyn {
-        common: StreamState<'s>,
-        recv_future: Box<FutureE<(futures::U8Slice, SocketAddrV6)>>
+        common: StreamCommonState<'s>,
+        recv_first_syn: Box<FutureE<(futures::U8Slice, SocketAddrV6)>>
     },
 
     #[state_machine_future(transitions(WaitForAck))]
     SendSynAck {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
-        dst: SocketAddrV6
+        common: StreamCommonState<'s>,
+        dst: SocketAddrV6,
+        next_seqno: Wrapping<u16>,
+        send_syn_ack: futures::IpV6RawSocketSendtoFuture
     },
 
     #[state_machine_future(transitions(WaitForPackets))]
     WaitForAck {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
     #[state_machine_future(transitions(SendFinAck, SendFin))]
     WaitForPackets {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
     SendFinAck {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
     #[state_machine_future(transitions(SendFinAck, ConnectionTerminated))]
     WaitForLastAck {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
     WaitForFinAck {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
-        common: StreamState<'s>,
-        src: SocketAddrV6,
+        common: StreamCommonState<'s>,
         dst: SocketAddrV6
     },
 
@@ -121,21 +115,41 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         transition!(WaitForFirstSyn {
             common: common,
-            recv_future: Box::new(recv_future)
+            recv_first_syn: Box::new(recv_future)
         })
     }
 
     fn poll_wait_for_first_syn<'a>(
         state: &'a mut RentToOwn<'a, WaitForFirstSyn<'s>>
     ) -> Poll<AfterWaitForFirstSyn<'s>, Error> {
-        let (data_ref, dst) = try_ready!(state.recv_future.poll());
+        let (data_ref, dst) = try_ready!(state.recv_first_syn.poll());
 
-        unimplemented!()
+        let mut common = state.take().common;
+
+        let data = data_ref.borrow();
+        let packet = parse_stream_client_packet(&data);
+
+        let send_future = make_syn_ack_future(
+            &mut common,
+            dst,
+            packet.seqno,
+            packet.seqno
+        );
+
+        transition!(SendSynAck {
+            common: common,
+            dst: dst,
+            next_seqno: Wrapping(packet.seqno) + Wrapping(1),
+            send_syn_ack: send_future
+        })
     }
 
     fn poll_send_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, SendSynAck<'s>>
     ) -> Poll<AfterSendSynAck<'s>, Error> {
+        let size = try_ready!(state.send_syn_ack.poll());
+        debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
+
         unimplemented!()
     }
 
@@ -183,7 +197,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 }
 
 fn make_recv_packets_stream<'a>(
-    common: &mut StreamState<'a>
+    common: &mut StreamCommonState<'a>
 ) -> Box<StreamE<(futures::U8Slice, SocketAddrV6)>> {
     let csrc = common.src;
 
@@ -206,7 +220,33 @@ fn make_recv_packets_stream<'a>(
     }))
 }
 
-pub struct StreamState<'a> {
+fn make_syn_ack_future<'a>(
+    common: &mut StreamCommonState<'a>,
+    dst: SocketAddrV6,
+    seqno_start: u16,
+    seqno_end: u16
+) -> futures::IpV6RawSocketSendtoFuture {
+    let send_buf_ref = common.send_buf
+        .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
+
+    make_stream_server_icmpv6_packet(
+        &mut send_buf_ref.borrow_mut(),
+        *common.src.ip(),
+        *dst.ip(),
+        seqno_start,
+        seqno_end,
+        StreamPacketFlags::Syn.into(),
+        &[]
+    );
+
+    common.sock.sendto(
+        send_buf_ref,
+        dst,
+        SendFlagSet::new()
+    )
+}
+
+pub struct StreamCommonState<'a> {
     pub config: &'a Config,
     pub src: SocketAddrV6,
     pub sock: futures::IpV6RawSocketAdapter,
@@ -214,6 +254,5 @@ pub struct StreamState<'a> {
     pub data_out: StdoutBytesWriter<'a>,
     pub timer: Timer,
     pub send_buf: SRcRef<Vec<u8>>,
-    pub recv_buf: SRcRef<Vec<u8>>,
-    pub next_seqno: Wrapping<u16>
+    pub recv_buf: SRcRef<Vec<u8>>
 }
