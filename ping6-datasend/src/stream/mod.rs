@@ -1,7 +1,6 @@
 mod buffers;
 mod packet;
 mod stm;
-mod timeout;
 
 use ::std::num::Wrapping;
 

@@ -1,40 +1,22 @@
 extern crate capabilities;
 #[macro_use] extern crate error_chain;
+extern crate futures;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate owning_ref;
 extern crate pnet_packet;
 extern crate seahash;
 extern crate seccomp;
+extern crate tokio_timer;
 
 #[macro_use] extern crate boolean_enums;
 extern crate linux_network;
 #[macro_use] extern crate numeric_enums;
 
 mod constants;
+mod errors;
 mod range_tracker;
-
-error_chain!(
-    errors {
-        Priv {
-            description("privilege operation error (is cap_net_raw+p not set \
-                on the executable?)")
-        }
-    }
-
-    foreign_links {
-        IoError(std::io::Error);
-        NixError(nix::Error);
-        Seccomp(seccomp::SeccompError);
-    }
-
-    links {
-        LinuxNetwork (
-            linux_network::errors::Error,
-            linux_network::errors::ErrorKind
-        );
-    }
-);
+mod timeout;
 
 use std::cell::RefCell;
 use std::io;
@@ -57,7 +39,9 @@ use linux_network::*;
 pub use numeric_enums::*;
 
 pub use constants::*;
+pub use errors::*;
 pub use range_tracker::*;
+pub use timeout::*;
 
 gen_boolean_enum!(pub Resolve);
 

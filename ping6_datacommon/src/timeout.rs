@@ -16,10 +16,11 @@ pub enum TimedResult<T> {
     TimedOut
 }
 
-impl<S> TimeoutResultStream<S> where {
+impl<S,E> TimeoutResultStream<S> where
+        S: Stream<Error = E>,
+        E: From<Error> {
     pub fn new(timer: &Timer, stream: S, duration: Duration)
-            -> TimeoutResultStream<S> where
-                S: Stream<Error = Error> {
+            -> TimeoutResultStream<S> {
         TimeoutResultStream {
             stream: Some(stream),
             duration: duration,
@@ -28,11 +29,13 @@ impl<S> TimeoutResultStream<S> where {
     }
 }
 
-impl<S> Stream for TimeoutResultStream<S> where S: Stream<Error = Error> {
+impl<S,E> Stream for TimeoutResultStream<S> where
+        S: Stream<Error = E>,
+        E: From<Error> {
     type Item = TimedResult<S::Item>;
-    type Error = Error;
+    type Error = E;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Error> {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         match self.stream.as_mut()
                 .expect("not consumed TimeoutResultStream").poll() {
             Ok(Async::NotReady) => (),
@@ -42,7 +45,7 @@ impl<S> Stream for TimeoutResultStream<S> where S: Stream<Error = Error> {
 
                 return Ok(Async::Ready(x.map(TimedResult::InTime)))
             },
-            Err(e) => return Err(e)
+            Err(e) => return Err(e.into())
         }
 
         match self.sleep.poll() {
@@ -55,7 +58,7 @@ impl<S> Stream for TimeoutResultStream<S> where S: Stream<Error = Error> {
             },
             Err(e) => {
                 self.stream.take().unwrap();
-                Err(e.into())
+                Err(Error::from(e).into())
             }
         }
     }

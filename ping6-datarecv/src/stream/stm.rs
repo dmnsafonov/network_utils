@@ -39,13 +39,20 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         dst: SocketAddrV6,
         next_seqno: Wrapping<u16>,
-        send_syn_ack: futures::IpV6RawSocketSendtoFuture
+        send_syn_ack: futures::IpV6RawSocketSendtoFuture,
+        next_action: Option<Box<StreamE<
+            TimedResult<(futures::U8Slice, SocketAddrV6)>
+        >>>
     },
 
     #[state_machine_future(transitions(WaitForPackets))]
     WaitForAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        dst: SocketAddrV6,
+        next_seqno: Wrapping<u16>,
+        recv_stream: Box<StreamE<
+            TimedResult<(futures::U8Slice, SocketAddrV6)>
+        >>
     },
 
     #[state_machine_future(transitions(SendFinAck, SendFin))]
@@ -140,7 +147,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             common: common,
             dst: dst,
             next_seqno: Wrapping(packet.seqno) + Wrapping(1),
-            send_syn_ack: send_future
+            send_syn_ack: send_future,
+            next_action: None
         })
     }
 
@@ -150,7 +158,33 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let size = try_ready!(state.send_syn_ack.poll());
         debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
-        unimplemented!()
+        let SendSynAck { mut common, dst, next_seqno, next_action, .. }
+            = state.take();
+
+        let timed_packets = next_action.unwrap_or_else(|| {
+            let seqno = next_seqno;
+            let packets = make_recv_packets_stream(&mut common)
+                .filter(move |&(ref x, src)| {
+                    let data_ref = x.borrow();
+                    let packet = parse_stream_client_packet(&data_ref);
+
+                    packet.flags == StreamPacketFlags::Ack.into()
+                        && packet.seqno == seqno.0
+                });
+            let timed = TimeoutResultStream::new(
+                &common.timer,
+                packets,
+                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+            );
+            Box::new(timed.take(RETRANSMISSIONS_NUMBER as u64))
+        });
+
+        transition!(WaitForAck {
+            common: common,
+            dst: dst,
+            next_seqno: next_seqno,
+            recv_stream: timed_packets
+        })
     }
 
     fn poll_wait_for_ack<'a>(

@@ -22,7 +22,6 @@ error_chain!(
         IoError(::std::io::Error);
         LogInit(::log::SetLoggerError);
         Seccomp(::seccomp::SeccompError);
-        TimerError(::tokio_timer::TimerError);
     }
 
     links {
@@ -36,12 +35,3 @@ error_chain!(
         );
     }
 );
-
-impl<T> From<TimeoutError<T>> for Error {
-    fn from(error: TimeoutError<T>) -> Error {
-        match error {
-            TimeoutError::Timer(_,e) => e.into(),
-            TimeoutError::TimedOut(_) => ErrorKind::TimedOut.into()
-        }
-    }
-}

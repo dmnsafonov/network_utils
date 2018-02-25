@@ -18,7 +18,6 @@ use ::config::Config;
 use ::errors::{Error, ErrorKind, Result};
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::packet::*;
-use ::stream::timeout::*;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
 type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
