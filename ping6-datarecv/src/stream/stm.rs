@@ -45,7 +45,7 @@ pub enum StreamMachine<'s> {
         >>>
     },
 
-    #[state_machine_future(transitions(WaitForPackets))]
+    #[state_machine_future(transitions(SendSynAck, WaitForPackets))]
     WaitForAck {
         common: StreamCommonState<'s>,
         dst: SocketAddrV6,
@@ -190,6 +190,30 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_wait_for_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForAck<'s>>
     ) -> Poll<AfterWaitForAck<'s>, Error> {
+        let (data_ref, dst) = match state.recv_stream.poll() {
+            Err(e) => bail!(e),
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
+            Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
+                let mut st = state.take();
+                let seqno = st.next_seqno - Wrapping(1);
+                let send_future = make_syn_ack_future(
+                    &mut st.common,
+                    st.dst,
+                    seqno.0,
+                    seqno.0
+                );
+                return transition!(SendSynAck {
+                    common: st.common,
+                    dst: st.dst,
+                    next_seqno: st.next_seqno,
+                    send_syn_ack: send_future,
+                    next_action: Some(st.recv_stream)
+                });
+            }
+            Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
+        };
+
         unimplemented!()
     }
 
