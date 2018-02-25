@@ -15,7 +15,7 @@ use ::ping6_datacommon::*;
 use ::sliceable_rcref::SRcRef;
 
 use ::config::Config;
-use ::errors::{Error, ErrorKind, Result};
+use ::errors::{Error, ErrorKind};
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::packet::*;
 
@@ -131,7 +131,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let timed_packets = state.next_action.unwrap_or_else(|| {
             let seqno = common.next_seqno;
             let packets = make_recv_packets_stream(&mut common)
-                .filter(move |&(ref x, src)| {
+                .filter(move |&(ref x, _)| {
                     let data_ref = x.borrow();
                     let packet = parse_stream_server_packet(&data_ref);
 
@@ -166,11 +166,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 let mut st = state.take();
                 let send_future =
                     make_first_syn_future(&mut st.common);
-                return transition!(SendFirstSyn {
+                transition!(SendFirstSyn {
                     common: st.common,
                     send: send_future,
                     next_action: Some(st.recv_stream)
-                });
+                })
             }
             Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
         };
@@ -200,7 +200,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize);
         let mut send_buf = send_buf_ref.borrow_mut();
 
-        let ack_reply = make_stream_client_icmpv6_packet(
+        make_stream_client_icmpv6_packet(
             &mut send_buf,
             src,
             *dst.ip(),

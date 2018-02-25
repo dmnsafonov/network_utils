@@ -1,5 +1,3 @@
-use ::tokio_timer::TimeoutError;
-
 error_chain!(
     errors {
         PayloadTooBig(size: usize) {

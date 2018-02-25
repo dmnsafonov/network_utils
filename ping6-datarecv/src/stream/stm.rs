@@ -117,8 +117,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 packet.flags == StreamPacketFlags::Syn.into()
             })
             .into_future()
-            .map(|(x,s)| x.unwrap())
-            .map_err(|(e,s)| e);
+            .map(|(x,_)| x.unwrap())
+            .map_err(|(e,_)| e);
 
         transition!(WaitForFirstSyn {
             common: common,
@@ -164,7 +164,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let timed_packets = next_action.unwrap_or_else(|| {
             let seqno = next_seqno;
             let packets = make_recv_packets_stream(&mut common)
-                .filter(move |&(ref x, src)| {
+                .filter(move |&(ref x, _)| {
                     let data_ref = x.borrow();
                     let packet = parse_stream_client_packet(&data_ref);
 
@@ -203,13 +203,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     seqno.0,
                     seqno.0
                 );
-                return transition!(SendSynAck {
+                transition!(SendSynAck {
                     common: st.common,
                     dst: st.dst,
                     next_seqno: st.next_seqno,
                     send_syn_ack: send_future,
                     next_action: Some(st.recv_stream)
-                });
+                })
             }
             Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
         };

@@ -13,7 +13,7 @@ use ::tokio_io::AsyncWrite;
 use ::ping6_datacommon::*;
 use ::linux_network::*;
 
-use ::errors::{ErrorKind, Result};
+use ::errors::Result;
 
 struct StdoutLockWrapper<'a>(io::StdoutLock<'a>);
 

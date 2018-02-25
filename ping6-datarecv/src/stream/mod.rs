@@ -2,9 +2,6 @@ mod buffers;
 mod packet;
 mod stm;
 
-use ::std::cell::RefCell;
-use ::std::num::Wrapping;
-
 use ::linux_network::*;
 use ::ping6_datacommon::*;
 use ::sliceable_rcref::SRcRef;
