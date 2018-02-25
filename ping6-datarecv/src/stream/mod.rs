@@ -6,7 +6,8 @@ use ::std::cell::RefCell;
 use ::std::num::Wrapping;
 
 use ::linux_network::*;
-use ::ping6_datacommon::IPV6_MIN_MTU;
+use ::ping6_datacommon::*;
+use ::sliceable_rcref::SRcRef;
 
 use ::config::*;
 use ::errors::Result;
@@ -44,17 +45,22 @@ pub fn stream_mode((config, bound_addr, sock): InitState) -> Result<()> {
         .num_slots(::std::u16::MAX as usize + 1)
         .build();
 
-    let init_state = Box::new(StreamState {
+    let init_state = StreamState {
         config: &config,
+        src: make_socket_addr(
+            config.bind_address.as_ref().unwrap(),
+            Resolve::No
+        )?,
         sock: async_sock,
         mtu: mtu,
         data_out: data_out,
         timer: timer,
-        send_buf: RefCell::new(vec![0; mtu as usize]),
+        send_buf: SRcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
         // if we assumed default mtu, then the incoming packet size is unknown
-        recv_buf: RefCell::new(vec![0; ::std::u16::MAX as usize]),
+        recv_buf: SRcRef::new(vec![0; ::std::u16::MAX as usize],
+            0 .. (::std::u16::MAX as usize)),
         next_seqno: Wrapping(0)
-    });
+    };
 
     let stm = StreamMachine::start(init_state);
     match core.run(stm)? {

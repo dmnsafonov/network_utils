@@ -31,8 +31,8 @@ pub fn make_stream_client_icmpv6_packet<'a>(
 
     {
         let payload_buff = packet.payload_mut();
-        payload_buff[2] = flags.get();
-        payload_buff[3] = 0;
+        payload_buff[2] = !0;
+        payload_buff[3] = flags.get();
         payload_buff[4..6].copy_from_slice(&u16_to_bytes_be(seqno));
         payload_buff[6..].copy_from_slice(payload);
         let checksum = ping6_data_checksum(&payload_buff[2..]);
@@ -48,7 +48,7 @@ pub fn make_stream_client_icmpv6_packet<'a>(
 pub fn parse_stream_server_packet<'a>(
     packet_buff: &'a [u8]
 ) -> StreamServerPacket<'a> {
-    debug_assert!(validate_stream_server_packet(packet_buff, None));
+    debug_assert!(validate_stream_packet(packet_buff, None));
 
     let packet = Icmpv6Packet::new(packet_buff)
         .expect("a valid length icmpv6 packet");
@@ -59,7 +59,7 @@ pub fn parse_stream_server_packet<'a>(
     };
 
     // satisfying the borrow checker
-    let payload_ind = (&payload[8..9]).as_ptr() as usize
+    let payload_ind = (&payload[7..8]).as_ptr() as usize + 1
         - packet_buff.as_ptr() as usize;
 
     StreamServerPacket {
@@ -68,42 +68,4 @@ pub fn parse_stream_server_packet<'a>(
         seqno_end: u16_from_bytes_be(&payload[6..8]),
         payload: &packet_buff[payload_ind..]
     }
-}
-
-pub fn validate_stream_server_packet(
-    packet_buff: &[u8],
-    addrs: Option<(Ipv6Addr,Ipv6Addr)>
-) -> bool {
-    let packet = Icmpv6Packet::new(packet_buff)
-        .expect("a valid length icmpv6 packet");
-
-    if packet.get_icmpv6_type() != Icmpv6Types::EchoReply
-            || packet.get_icmpv6_code() != Icmpv6Codes::NoCode {
-        return false;
-    }
-
-    if let Some((src,dst)) = addrs {
-        if packet.get_checksum()
-            != icmpv6::checksum(&packet, src, dst) {
-            return false;
-        }
-    }
-
-    let payload = packet.payload();
-    let checksum = u16_from_bytes_be(&payload[0..2]);
-
-    if checksum != ping6_data_checksum(&payload[2..]) {
-        return false;
-    }
-
-    let x = payload[3];
-    if x & !ALL_STREAM_PACKET_FLAGS != 0 {
-        return false;
-    }
-
-    if payload[2] != !0 {
-        return false;
-    }
-
-    return true;
 }

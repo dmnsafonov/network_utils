@@ -3,6 +3,7 @@ extern crate capabilities;
 #[macro_use] extern crate log;
 extern crate nix;
 extern crate owning_ref;
+extern crate pnet_packet;
 extern crate seahash;
 extern crate seccomp;
 
@@ -46,6 +47,9 @@ use libc::{c_int, c_long, IPPROTO_ICMPV6};
 use nix::libc;
 use nix::sys::signal::*;
 use owning_ref::OwningHandle;
+use ::pnet_packet::icmpv6::*;
+use ::pnet_packet::icmpv6::ndp::Icmpv6Codes;
+use ::pnet_packet::*;
 use seccomp::*;
 
 use linux_network::*;
@@ -265,4 +269,42 @@ impl<Idx> IRange<Idx> where Idx: Ord {
     pub fn contains(&self, x: Idx) -> bool {
         x >= self.0 && x <= self.1
     }
+}
+
+pub fn validate_stream_packet(
+    packet_buff: &[u8],
+    addrs: Option<(Ipv6Addr,Ipv6Addr)>
+) -> bool {
+    let packet = Icmpv6Packet::new(packet_buff)
+        .expect("a valid length icmpv6 packet");
+
+    if packet.get_icmpv6_type() != Icmpv6Types::EchoReply
+            || packet.get_icmpv6_code() != Icmpv6Codes::NoCode {
+        return false;
+    }
+
+    if let Some((src,dst)) = addrs {
+        if packet.get_checksum()
+            != icmpv6::checksum(&packet, src, dst) {
+            return false;
+        }
+    }
+
+    let payload = packet.payload();
+    let checksum = u16_from_bytes_be(&payload[0..2]);
+
+    if checksum != ping6_data_checksum(&payload[2..]) {
+        return false;
+    }
+
+    let x = payload[3];
+    if x & !ALL_STREAM_PACKET_FLAGS != 0 {
+        return false;
+    }
+
+    if payload[2] != !0 {
+        return false;
+    }
+
+    return true;
 }

@@ -18,6 +18,7 @@ extern crate tokio_timer;
 #[macro_use] extern crate boolean_enums;
 #[macro_use] extern crate linux_network;
 extern crate ping6_datacommon;
+extern crate sliceable_rcref;
 
 mod config;
 mod datagrams;

@@ -76,8 +76,9 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
         ).arg(Arg::with_name("stream")
             .long("stream")
             .short("s")
-            .help("Sets stream mode on: message contents are written as \
-                a continuous stream to stdout")
+            .help("Sets stream mode on: stream contents are written as \
+                a continuous stream to stdout. Requires an address to bind to")
+            .requires("bind")
         ).arg(Arg::with_name("message")
             .long("message")
             .short("m")

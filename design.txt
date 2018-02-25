@@ -5,7 +5,7 @@ Datagram format is:
 2-byte checksum | 2-byte length | payload
 
 Stream format for the client is:
-2-byte checksum | flag byte | 0-byte | 2-byte sequence number | payload
+2-byte checksum | 1's byte | flags byte | 2-byte sequence number | payload
 2 bytes is enough to have timely acks for transmitting 1280-byte packets
 on 10Gbit link with 2-second ping which is highly unlikely for an icmp tunnel
 anyway.

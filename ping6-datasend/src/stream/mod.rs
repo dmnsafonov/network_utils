@@ -52,10 +52,10 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
         mtu: mtu,
         data_source: data,
         timer: timer,
-        send_buf: SRcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize + 1)),
+        send_buf: SRcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
         // if we assumed default mtu, then the incoming packet size is unknown
         recv_buf: SRcRef::new(vec![0; ::std::u16::MAX as usize],
-            0 .. (::std::u16::MAX as usize + 1)),
+            0 .. (::std::u16::MAX as usize)),
         next_seqno: Wrapping(thread_rng().gen())
     };
 

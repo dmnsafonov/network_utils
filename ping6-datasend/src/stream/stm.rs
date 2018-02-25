@@ -321,8 +321,8 @@ fn make_recv_packets_stream<'a>(common: &mut StreamState<'a>)
             )
         }
     ).filter(move |&(ref x, src)| {
-        src == csrc
-            && validate_stream_server_packet(
+        src == cdst
+            && validate_stream_packet(
                 &x.borrow(),
                 Some((*cdst.ip(), *src.ip()))
             )
