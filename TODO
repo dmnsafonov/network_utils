@@ -1,2 +1,3 @@
 try the enumflags crate to replace the numeric_enums internal one.
 remake the async sockets using macros
+migrate to failure
