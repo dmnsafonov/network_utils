@@ -26,23 +26,7 @@ impl<'a, E> RangeTracker<'a, E> {
     }
 
     pub fn track_slice(&mut self, newslice: &[E]) {
-        let len = newslice.len();
-        let ptr = newslice.as_ptr() as usize;
-
-        let (beginning, ending) = self.tracked.as_slices();
-        let range = if is_subslice(beginning, newslice) {
-                let beg_ptr = beginning.as_ptr() as usize;
-                let start = beg_ptr - ptr;
-                let end = start + len - 1;
-                IRange(start, end)
-            } else {
-                debug_assert!(is_subslice(ending, newslice));
-                let end_ptr = ending.as_ptr() as usize;
-                let start = end_ptr - ptr + beginning.len();
-                let end = start + len - 1;
-                IRange(start, end)
-            };
-
+        let range = self.slice_to_range(newslice);
         self.track_range(range);
     }
 
@@ -87,6 +71,25 @@ impl<'a, E> RangeTracker<'a, E> {
             None => offset_range.1
         };
         self.rangeset.insert(DTRange(new_l, new_r));
+    }
+
+    pub fn slice_to_range(&self, slice: &[E]) -> IRange<usize> {
+        let len = slice.len();
+        let ptr = slice.as_ptr() as usize;
+        let (beginning, ending) = self.tracked.as_slices();
+
+        if is_subslice(beginning, slice) {
+            let beg_ptr = beginning.as_ptr() as usize;
+            let start = beg_ptr - ptr;
+            let end = start + len - 1;
+            IRange(start, end)
+        } else {
+            debug_assert!(is_subslice(ending, slice));
+            let end_ptr = ending.as_ptr() as usize;
+            let start = end_ptr - ptr + beginning.len();
+            let end = start + len - 1;
+            IRange(start, end)
+        }
     }
 
     // consume (0 =.. take_range()) after the call
