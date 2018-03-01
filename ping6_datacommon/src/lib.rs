@@ -252,10 +252,36 @@ pub fn movable_io_lock<'a, T>(io: T)
 pub struct IRange<Idx>(pub Idx, pub Idx);
 
 impl<Idx> IRange<Idx> where Idx: Ord {
-    pub fn contains(&self, x: Idx) -> bool {
+    pub fn contains_point(&self, x: Idx) -> bool {
         x >= self.0 && x <= self.1
     }
+
+    pub fn contains_range(&self, IRange(l,r): IRange<Idx>) -> bool {
+        self.contains_point(l) && self.contains_point(r)
+    }
+
+    pub fn intersects(&self, IRange(l,r): IRange<Idx>) -> bool {
+        self.contains_point(l) || self.contains_point(r)
+    }
 }
+
+macro_rules! gen_irange_len {
+    ( $t:ty ) => (
+        impl IRange<$t> {
+            pub fn len(&self) -> $t {
+                assert!(self.0 <= self.1);
+                self.1 - self.0 + 1 as $t
+            }
+        }
+    );
+
+    ( $t:ty, $( $ts:ty ),+ ) => (
+        gen_irange_len!($t);
+        gen_irange_len!( $( $ts ),+ );
+    )
+}
+
+gen_irange_len!(usize, u64, u32, u16, u8);
 
 pub fn validate_stream_packet(
     packet_buff: &[u8],

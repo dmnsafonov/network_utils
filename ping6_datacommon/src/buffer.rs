@@ -1,8 +1,10 @@
 use ::std::collections::VecDeque;
 use ::std::cmp::min;
+use ::std::marker::PhantomData;
 use ::std::slice;
 use ::std::ops::*;
 
+use ::IRange;
 use ::range_tracker::*;
 
 pub struct TrimmingBuffer<'a>(Box<TrimmingBufferImpl<'a>>);
@@ -30,10 +32,19 @@ impl<'a> TrimmingBuffer<'a> {
         ret
     }
 
-    pub fn add<T>(&mut self, data: T) where T: Into<VecDeque<u8>> {
-        let mut vddata = data.into();
-        assert!(self.0.inner.len().checked_add(vddata.len()).is_some());
-        self.0.inner.append(&mut vddata);
+    pub fn add<T>(&mut self, data: T) where T: AsRef<[u8]> {
+        let dataref = data.as_ref();
+        assert!(self.0.inner.len().checked_add(dataref.len()).is_some());
+        self.0.inner.extend(dataref[..].iter());
+    }
+
+    pub fn add_slicing<T>(&mut self, data: T) -> TrimmingBufferSlice<'a>
+            where T: AsRef<[u8]> {
+        let first_ind = self.0.inner.len() - 1;
+        let dataref = data.as_ref();
+        self.add(dataref);
+        let last_ind = self.0.inner.len() - 1;
+        self.take_range(IRange(first_ind, last_ind))
     }
 
     pub fn get_space_left(&self) -> usize {
@@ -44,11 +55,26 @@ impl<'a> TrimmingBuffer<'a> {
         self.0.inner.len() - self.0.first_available
     }
 
-    pub fn take(&mut self, size: usize) -> Option<TrimmingBufferSlice<'a>> {
+    pub fn take(&'a mut self, size: usize) -> Option<TrimmingBufferSlice<'a>> {
         let len = min(self.get_available(), size);
         if len == 0 {
             return None;
         }
+
+        let first = self.0.first_available;
+
+        Some(self.take_range(IRange(first, first + len - 1)))
+    }
+
+    fn take_range(&mut self, range: IRange<usize>) -> TrimmingBufferSlice<'a> {
+        let ilen = self.0.inner.len();
+        let len = range.len();
+        debug_assert!(range.0 < ilen && range.1 < ilen);
+        debug_assert!(
+            !self.0.del_tracker.is_range_tracked(range).unwrap_or(true)
+        );
+        debug_assert!(self.0.first_available <= range.0);
+        debug_assert!(len > 0);
 
         let mut ranges_to_free = None;
         let ret = {
@@ -56,17 +82,18 @@ impl<'a> TrimmingBuffer<'a> {
                 as *mut RangeTracker<'a, u8>;
             let (beginning, ending) = self.0.inner.as_slices();
             let beg_len = beginning.len();
-            if self.0.first_available < beg_len {
-                if self.0.first_available + len <= beg_len {
-                    let ind = self.0.first_available;
+            if range.0 < beg_len {
+                if range.0 + len <= beg_len {
+                    let ind = range.0;
                     TrimmingBufferSlice::Direct {
                         tracker: tracker_ptr,
                         start: beginning[ind .. ind + 1].as_ptr(),
-                        len: len
+                        len: len,
+                        _phantom: Default::default()
                     }
                 } else {
                     let mut ret = Vec::with_capacity(len);
-                    let beg_slice = &beginning[self.0.first_available..];
+                    let beg_slice = &beginning[range.0..];
                     ret.extend_from_slice(beg_slice);
                     let ending_len = len - beg_slice.len();
                     let end_slice = &ending[0..ending_len];
@@ -80,11 +107,12 @@ impl<'a> TrimmingBuffer<'a> {
                     TrimmingBufferSlice::Owning(ret.into())
                 }
             } else {
-                let ind = self.0.first_available - beg_len;
+                let ind = range.0 - beg_len;
                 TrimmingBufferSlice::Direct {
                     tracker: tracker_ptr,
                     start: ending[ind .. ind + 1].as_ptr(),
-                    len: len
+                    len: len,
+                    _phantom: Default::default()
                 }
             }
         };
@@ -94,7 +122,7 @@ impl<'a> TrimmingBuffer<'a> {
             self.0.del_tracker.track_range(two);
         }
 
-        Some(ret)
+        ret
     }
 
     pub fn cleanup(&mut self) {
@@ -109,14 +137,15 @@ pub enum TrimmingBufferSlice<'a> {
     Direct {
         tracker: *mut RangeTracker<'a, u8>,
         start: *const u8,
-        len: usize
+        len: usize,
+        _phantom: PhantomData<&'a [u8]>
     },
     Owning(Box<[u8]>)
 }
 
 impl<'a> Drop for TrimmingBufferSlice<'a> {
     fn drop(&mut self) {
-        if let &mut TrimmingBufferSlice::Direct { tracker, start, len }
+        if let &mut TrimmingBufferSlice::Direct { tracker, start, len, .. }
                 = self { unsafe {
             let tr = tracker.as_mut().unwrap();
             tr.track_slice(slice::from_raw_parts(start, len));

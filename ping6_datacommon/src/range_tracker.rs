@@ -110,6 +110,32 @@ impl<'a, E> RangeTracker<'a, E> {
         }
     }
 
+    pub fn is_slice_tracked(&self, slice: &[E]) -> Option<bool> {
+        let range = self.slice_to_range(slice);
+        self.is_range_tracked(range)
+    }
+
+    // return None when the range is partially tracked
+    pub fn is_range_tracked<T>(&self, range: IRange<T>)
+            -> Option<bool> where DTRange: From<IRange<T>>, T: Ord {
+        let DTRange(l,r) = range.into();
+        let range = IRange(l,r);
+
+        for i in self.iter() {
+            if i.contains_range(range) {
+                return Some(true);
+            } else if i.intersects(range) {
+                return None;
+            }
+
+            if i.1 < l {
+                break;
+            }
+        }
+
+        Some(false)
+    }
+
     fn _get_first(&self) -> DTRange {
         *self.rangeset.iter().next().expect("nonempty range set")
     }
@@ -200,26 +226,19 @@ impl Ord for DTRange {
     }
 }
 
-impl From<IRange<usize>> for DTRange where {
-    fn from(r: IRange<usize>) -> DTRange {
-        DTRange(r.0, r.1)
-    }
+macro_rules! gen_dtrange_from_irange {
+    ( $t:ty ) => (
+        impl From<IRange<$t>> for DTRange {
+            fn from(r: IRange<$t>) -> DTRange {
+                DTRange(r.0 as usize, r.1 as usize)
+            }
+        }
+    );
+
+    ( $t:ty, $( $ts:ty ),+ ) => (
+        gen_dtrange_from_irange!($t);
+        gen_dtrange_from_irange!( $( $ts ),+ );
+    );
 }
 
-impl From<IRange<u64>> for DTRange where {
-    fn from(r: IRange<u64>) -> DTRange {
-        DTRange(r.0 as usize, r.1 as usize)
-    }
-}
-
-impl From<IRange<u32>> for DTRange where {
-    fn from(r: IRange<u32>) -> DTRange {
-        DTRange(r.0 as usize, r.1 as usize)
-    }
-}
-
-impl From<IRange<u16>> for DTRange where {
-    fn from(r: IRange<u16>) -> DTRange {
-        DTRange(r.0 as usize, r.1 as usize)
-    }
-}
+gen_dtrange_from_irange!(usize, u64, u32, u16, u8);

@@ -2,6 +2,7 @@ use ::std::cell::RefCell;
 use ::std::collections::vec_deque;
 use ::std::collections::VecDeque;
 use ::std::iter::*;
+use ::std::marker::PhantomData;
 use ::std::mem::uninitialized;
 use ::std::num::Wrapping;
 
@@ -107,14 +108,16 @@ impl<'a, 'b> IntoIterator for &'b AckWaitlist<'a> where 'a: 'b {
     fn into_iter(self) -> Self::IntoIter {
         AckWaitlistIterator(AckWaitlistIteratorInternal {
             tracker_iter: self.del_tracker.iter().peekable(),
-            inner: self.inner.iter().enumerate()
+            inner: self.inner.iter().enumerate(),
+            _phantom: Default::default()
         })
     }
 }
 
 struct AckWaitlistIteratorInternal<'a, 'b> where 'a: 'b {
     tracker_iter: Peekable<RangeTrackerIterator<'b, 'b, AckWait<'a>>>,
-    inner: Enumerate<vec_deque::Iter<'b, AckWait<'a>>>
+    inner: Enumerate<vec_deque::Iter<'b, AckWait<'a>>>,
+    _phantom: PhantomData<&'b AckWait<'a>>
 }
 
 impl<'a, 'b> Iterator for AckWaitlistIteratorInternal<'a, 'b> where 'a: 'b {
@@ -129,7 +132,7 @@ impl<'a, 'b> Iterator for AckWaitlistIteratorInternal<'a, 'b> where 'a: 'b {
                 acked_range_opt = self.tracker_iter.peek().cloned();
             }
             if let Some(acked_range) = acked_range_opt {
-                if acked_range.contains(ind) {
+                if acked_range.contains_point(ind) {
                     continue;
                 }
 

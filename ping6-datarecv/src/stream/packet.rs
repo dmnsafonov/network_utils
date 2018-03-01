@@ -19,20 +19,31 @@ pub fn parse_stream_client_packet<'a>(
 
     let packet = Icmpv6Packet::new(packet_buff)
         .expect("a valid length icmpv6 packet");
-    let payload = packet.payload();
 
+    let StreamClientPacket { flags, seqno, payload } =
+        parse_stream_client_packet_payload(packet.payload());
+
+    // satisfying the borrow checker
+    let payload_ind = payload.as_ptr() as usize
+        - packet_buff.as_ptr() as usize;
+    StreamClientPacket {
+        flags: flags,
+        seqno: seqno,
+        payload: &packet_buff[payload_ind..]
+    }
+}
+
+pub fn parse_stream_client_packet_payload<'a>(
+    payload: &'a [u8]
+) -> StreamClientPacket<'a> {
     let flags = unsafe {
         StreamPacketFlagSet::from_num(payload[2])
     };
 
-    // satisfying the borrow checker
-    let payload_ind = (&payload[5..6]).as_ptr() as usize + 1
-        - packet_buff.as_ptr() as usize;
-
     StreamClientPacket {
         flags: flags,
-        seqno: u16_from_bytes_be(&payload[5..7]),
-        payload: &packet_buff[payload_ind..]
+        seqno: u16_from_bytes_be(&payload[4..6]),
+        payload: &payload[6..]
     }
 }
 
