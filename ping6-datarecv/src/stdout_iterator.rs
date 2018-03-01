@@ -10,7 +10,6 @@ use ::mio::unix::EventedFd;
 use ::tokio_core::reactor::*;
 use ::tokio_io::AsyncWrite;
 
-use ::ping6_datacommon::*;
 use ::linux_network::*;
 
 use ::errors::Result;

@@ -1,147 +1,11 @@
 use ::std::cell::RefCell;
-use ::std::cmp::*;
 use ::std::collections::vec_deque;
 use ::std::collections::VecDeque;
 use ::std::iter::*;
 use ::std::mem::uninitialized;
 use ::std::num::Wrapping;
-use ::std::ops::*;
-use ::std::slice;
 
 use ::ping6_datacommon::*;
-
-#[derive(Debug)]
-pub struct WindowedBuffer<'a> {
-    inner: VecDeque<u8>,
-    window_size: u32,
-    first_available: u16,
-    del_tracker: RangeTracker<'a, u8>
-}
-
-impl<'a> WindowedBuffer<'a> {
-    pub fn new(size: usize, window_size: u32) -> Box<WindowedBuffer<'a>> {
-        assert!(window_size <= ::std::u16::MAX as u32 + 1);
-
-        let mut ret = Box::new(WindowedBuffer {
-            inner: VecDeque::with_capacity(size),
-            window_size: window_size,
-            first_available: 0,
-            del_tracker: unsafe { uninitialized() }
-        });
-        ret.del_tracker = unsafe {
-            let ptr = &ret.inner as *const VecDeque<u8>;
-            RangeTracker::new(ptr.as_ref().unwrap())
-        };
-        ret
-    }
-
-    pub fn add<T>(&mut self, data: T) where T: Into<VecDeque<u8>> {
-        let mut vddata = data.into();
-        assert!(self.inner.len().checked_add(vddata.len()).is_some());
-        self.inner.append(&mut vddata);
-    }
-
-    pub fn add_cloning<T>(&mut self, data: T) where T: AsRef<[u8]> {
-        let dataref = data.as_ref();
-        assert!(self.inner.len().checked_add(dataref.len()).is_some());
-        self.inner.extend(dataref[..].iter());
-    }
-
-    pub fn get_space_left(&self) -> usize {
-        self.inner.capacity() - self.inner.len()
-    }
-
-    // availability is moot beyond the current window,
-    // so value returned is restrained by the window size
-    pub fn get_available(&self) -> u32 {
-        let ret = min(self.inner.len() - self.first_available as usize,
-            self.window_size as usize - self.first_available as usize);
-        debug_assert!(ret <= ::std::u16::MAX as usize + 1);
-        ret as u32
-    }
-
-    pub fn take(&mut self, size: u32) -> Option<WindowedBufferSlice<'a>> {
-        assert!(size <= ::std::u16::MAX as u32 + 1);
-
-        let len = min(self.get_available(), size);
-        if len == 0 {
-            return None;
-        }
-
-        let tracker_ptr = &mut self.del_tracker
-            as *mut RangeTracker<'a, u8>;
-        let (beginning, ending) = self.inner.as_slices();
-        let beg_len = beginning.len();
-        Some(if (self.first_available as usize) < beg_len {
-            if self.first_available as usize + len as usize <= beg_len {
-                WindowedBufferSlice::Direct {
-                    tracker: tracker_ptr,
-                    start: unsafe {
-                        beginning.as_ptr()
-                            .offset(self.first_available as isize)
-                    },
-                    len: len
-                }
-            } else {
-                let mut ret = Vec::with_capacity(len as usize);
-                let beg_slice = &beginning[self.first_available as usize..];
-                ret.extend_from_slice(beg_slice);
-                let ending_len = len as usize - beg_slice.len();
-                let end_slice = &ending[0..ending_len];
-                ret.extend_from_slice(end_slice);
-
-                self.del_tracker.track_slice(beg_slice);
-                self.del_tracker.track_slice(end_slice);
-
-                WindowedBufferSlice::Owning(ret.into())
-            }
-        } else { unsafe {
-            WindowedBufferSlice::Direct {
-                tracker: tracker_ptr,
-                start: ending.as_ptr()
-                    .offset((self.first_available as usize - beg_len) as isize),
-                len: len
-            }
-        }})
-    }
-
-    pub fn cleanup(&mut self) {
-        if let Some(ind) = self.del_tracker.take_range() {
-            self.inner.drain(0 .. ind as usize + 1);
-        }
-    }
-}
-
-pub enum WindowedBufferSlice<'a> {
-    Direct {
-        tracker: *mut RangeTracker<'a, u8>,
-        start: *const u8,
-        len: u32
-    },
-    Owning(Box<[u8]>)
-}
-
-impl<'a> Drop for WindowedBufferSlice<'a> {
-    fn drop(&mut self) {
-        if let &mut WindowedBufferSlice::Direct { tracker, start, len }
-                = self { unsafe {
-            let tr = tracker.as_mut().unwrap();
-            tr.track_slice(slice::from_raw_parts(start, len as usize));
-        }}
-    }
-}
-
-impl<'a> Deref for WindowedBufferSlice<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        match *self {
-            WindowedBufferSlice::Direct { start, len, .. } => { unsafe {
-                slice::from_raw_parts(start, len as usize)
-            }},
-            WindowedBufferSlice::Owning(ref boxed) => boxed.as_ref()
-        }
-    }
-}
 
 pub struct AckWaitlist<'a> {
     inner: VecDeque<AckWait<'a>>,
@@ -151,7 +15,7 @@ pub struct AckWaitlist<'a> {
 
 pub struct AckWait<'a> {
     pub seqno: Wrapping<u16>,
-    pub data: WindowedBufferSlice<'a>
+    pub data: TrimmingBufferSlice<'a>
 }
 
 impl<'a> AckWaitlist<'a> {
@@ -221,7 +85,7 @@ impl<'a> AckWaitlist<'a> {
             }
         }
         for i in tmpvec.drain(..) {
-            self.del_tracker.track_range(i);
+            self.del_tracker.track_range(i.into());
         }
     }
 
@@ -260,12 +124,12 @@ impl<'a, 'b> Iterator for AckWaitlistIteratorInternal<'a, 'b> where 'a: 'b {
         let mut acked_range_opt = self.tracker_iter.peek().cloned();
         while let Some((ind, wait)) = self.inner.next() {
             while acked_range_opt.is_some()
-                    && acked_range_opt.unwrap().1 < ind as u32 {
+                    && acked_range_opt.unwrap().1 < ind {
                 self.tracker_iter.next();
                 acked_range_opt = self.tracker_iter.peek().cloned();
             }
             if let Some(acked_range) = acked_range_opt {
-                if acked_range.contains(ind as u32) {
+                if acked_range.contains(ind) {
                     continue;
                 }
 

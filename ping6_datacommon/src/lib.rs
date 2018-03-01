@@ -13,6 +13,7 @@ extern crate tokio_timer;
 extern crate linux_network;
 #[macro_use] extern crate numeric_enums;
 
+mod buffer;
 mod constants;
 mod errors;
 mod range_tracker;
@@ -38,6 +39,7 @@ use linux_network::*;
 
 pub use numeric_enums::*;
 
+pub use buffer::*;
 pub use constants::*;
 pub use errors::*;
 pub use range_tracker::*;

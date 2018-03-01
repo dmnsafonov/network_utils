@@ -26,21 +26,19 @@ impl<'a, E> RangeTracker<'a, E> {
     }
 
     pub fn track_slice(&mut self, newslice: &[E]) {
-        let len_usize = newslice.len();
-        debug_assert!(len_usize <= ::std::u16::MAX as usize + 1);
-        let len = len_usize as u32;
+        let len = newslice.len();
         let ptr = newslice.as_ptr() as usize;
 
         let (beginning, ending) = self.tracked.as_slices();
         let range = if is_subslice(beginning, newslice) {
                 let beg_ptr = beginning.as_ptr() as usize;
-                let start = (beg_ptr - ptr) as u32;
+                let start = beg_ptr - ptr;
                 let end = start + len - 1;
                 IRange(start, end)
             } else {
                 debug_assert!(is_subslice(ending, newslice));
                 let end_ptr = ending.as_ptr() as usize;
-                let start = (end_ptr - ptr + beginning.len()) as u32;
+                let start = end_ptr - ptr + beginning.len();
                 let end = start + len - 1;
                 IRange(start, end)
             };
@@ -48,8 +46,9 @@ impl<'a, E> RangeTracker<'a, E> {
         self.track_range(range);
     }
 
-    pub fn track_range(&mut self, newrange: IRange<u32>) {
-        debug_assert!(newrange.0 <= newrange.1);
+    pub fn track_range<T>(&mut self, newrange: IRange<T>)
+            where DTRange: From<IRange<T>>, T: Ord {
+        assert!(newrange.0 <= newrange.1);
 
         let offset_range = DTRange::from(newrange)
             .offset(self.offset as isize);
@@ -91,7 +90,7 @@ impl<'a, E> RangeTracker<'a, E> {
     }
 
     // consume (0 =.. take_range()) after the call
-    pub fn take_range(&mut self) -> Option<u16> {
+    pub fn take_range(&mut self) -> Option<usize> {
         if self.rangeset.is_empty() {
             return None;
         }
@@ -102,8 +101,9 @@ impl<'a, E> RangeTracker<'a, E> {
             None
         } else {
             self.rangeset.remove(&offset_first);
-            self.offset += first.1 + 1;
-            Some(first.1 as u16)
+            self.offset = self.offset.checked_add(first.1 + 1)
+                .expect("no overflow");
+            Some(first.1)
         }
     }
 
@@ -117,8 +117,8 @@ impl<'a, E> RangeTracker<'a, E> {
 }
 
 fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
-    debug_assert!(slice.len() > 0);
-    debug_assert!(sub.len() > 0);
+    assert!(slice.len() > 0);
+    assert!(sub.len() > 0);
     assert!(slice.len() <= ::std::isize::MAX as usize);
     assert!(sub.len() <= ::std::isize::MAX as usize);
 
@@ -131,7 +131,7 @@ fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
 }}
 
 impl<'a, 'b, E> IntoIterator for &'b RangeTracker<'a, E> where E: 'a, 'a: 'b {
-    type Item = IRange<u32>;
+    type Item = <RangeTrackerIterator<'a, 'b, E> as Iterator>::Item;
     type IntoIter = RangeTrackerIterator<'a, 'b, E>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -149,34 +149,34 @@ pub struct RangeTrackerIterator<'a, 'b, E> where E: 'a, 'a: 'b {
 
 impl<'a, 'b, E> Iterator for RangeTrackerIterator<'a, 'b, E>
         where E: 'a, 'a: 'b {
-    type Item = IRange<u32>;
+    type Item = IRange<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|x| {
             let DTRange(s,e) = x.offset(-(self.parent.offset as isize));
-            IRange(s as u32, e as u32)
+            IRange(s, e)
         })
     }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-struct DTRange(usize,usize);
+pub struct DTRange(usize,usize);
 
 impl DTRange {
     fn offset(&self, off: isize) -> DTRange {
-        assert!(off >= 0
-            || (self.0 >= (-off) as usize && self.1 >= (-off) as usize));
         DTRange (
-            (self.0 as isize + off) as usize,
-            (self.1 as isize + off) as usize
+            ((self.0 as isize).checked_add(off)
+                .expect("no overflow")) as usize,
+            ((self.1 as isize).checked_add(off)
+                .expect("no overflow")) as usize
         )
     }
 }
 
 impl PartialOrd for DTRange {
     fn partial_cmp(&self, other: &DTRange) -> Option<Ordering> {
-        debug_assert!(self.0 <= self.1);
-        debug_assert!(other.0 <= other.1);
+        assert!(self.0 <= self.1);
+        assert!(other.0 <= other.1);
         if self == other {
             Some(Ordering::Equal)
         } else {
@@ -197,14 +197,26 @@ impl Ord for DTRange {
     }
 }
 
+impl From<IRange<usize>> for DTRange where {
+    fn from(r: IRange<usize>) -> DTRange {
+        DTRange(r.0, r.1)
+    }
+}
+
+impl From<IRange<u64>> for DTRange where {
+    fn from(r: IRange<u64>) -> DTRange {
+        DTRange(r.0 as usize, r.1 as usize)
+    }
+}
+
 impl From<IRange<u32>> for DTRange where {
     fn from(r: IRange<u32>) -> DTRange {
-        DTRange(r.0 as usize, r.0 as usize)
+        DTRange(r.0 as usize, r.1 as usize)
     }
 }
 
 impl From<IRange<u16>> for DTRange where {
     fn from(r: IRange<u16>) -> DTRange {
-        DTRange(r.0 as usize, r.0 as usize)
+        DTRange(r.0 as usize, r.1 as usize)
     }
 }
