@@ -2,10 +2,13 @@ use super::*;
 
 use ::std::collections::*;
 use ::std::cmp::Ordering;
+use ::std::marker::PhantomData;
+use ::std::ops::Deref;
 
 #[derive(Debug)]
-pub struct RangeTracker<'a, E> where E: 'a {
-    tracked: &'a VecDeque<E>,
+pub struct RangeTracker<P, E>
+        where for<'a> P: RangeTrackerParentHandle<'a, E> {
+    tracked: P,
 
     // at no point should two overlapping ranges be insert()'ed into the set
     rangeset: BTreeSet<DTRange>,
@@ -13,15 +16,25 @@ pub struct RangeTracker<'a, E> where E: 'a {
     // we return the VecDeque's buffer indices, but we do not increment
     // the rangeset range indicies each deletion, so we need to track how much
     // we are off
-    offset: usize
+    offset: usize,
+
+    _phantom: PhantomData<[E]>
 }
 
-impl<'a, E> RangeTracker<'a, E> {
-    pub fn new(tracked: &'a VecDeque<E>) -> RangeTracker<'a, E> {
+pub trait RangeTrackerParentHandle<'a, E>
+        where Self::Borrowed: Deref<Target = VecDeque<E>> {
+    type Borrowed;
+    fn borrow(&'a self) -> Self::Borrowed;
+}
+
+impl<P, E> RangeTracker<P, E>
+        where for<'a> P: RangeTrackerParentHandle<'a, E> {
+    pub fn new(tracked: P) -> RangeTracker<P, E> {
         RangeTracker {
             tracked: tracked,
             rangeset: BTreeSet::new(),
-            offset: 0
+            offset: 0,
+            _phantom: Default::default()
         }
     }
 
@@ -74,9 +87,11 @@ impl<'a, E> RangeTracker<'a, E> {
     }
 
     pub fn slice_to_range(&self, slice: &[E]) -> IRange<usize> {
+        let tracked = self.tracked.borrow();
+
         let len = slice.len();
         let ptr = slice.as_ptr() as usize;
-        let (beginning, ending) = self.tracked.as_slices();
+        let (beginning, ending) = tracked.as_slices();
 
         if is_subslice(beginning, slice) {
             let beg_ptr = beginning.as_ptr() as usize;
@@ -140,7 +155,7 @@ impl<'a, E> RangeTracker<'a, E> {
         *self.rangeset.iter().next().expect("nonempty range set")
     }
 
-    pub fn iter<'b>(&'b self) -> RangeTrackerIterator<'a, 'b, E> where 'a: 'b {
+    pub fn iter<'a>(&'a self) -> RangeTrackerIterator<'a, P, E> {
         self.into_iter()
     }
 }
@@ -159,25 +174,29 @@ fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
     sub_start >= slice_start && sub_end <= slice_end
 }}
 
-impl<'a, 'b, E> IntoIterator for &'b RangeTracker<'a, E> where E: 'a, 'a: 'b {
-    type Item = <RangeTrackerIterator<'a, 'b, E> as Iterator>::Item;
-    type IntoIter = RangeTrackerIterator<'a, 'b, E>;
+impl<'a, P, E> IntoIterator for &'a RangeTracker<P, E>
+        where for<'b> P: RangeTrackerParentHandle<'b, E> {
+    type Item = <RangeTrackerIterator<'a, P, E> as Iterator>::Item;
+    type IntoIter = RangeTrackerIterator<'a, P, E>;
 
     fn into_iter(self) -> Self::IntoIter {
         RangeTrackerIterator {
             parent: self,
-            inner: self.rangeset.iter()
+            inner: self.rangeset.iter(),
+            _phantom: Default::default()
         }
     }
 }
 
-pub struct RangeTrackerIterator<'a, 'b, E> where E: 'a, 'a: 'b {
-    parent: &'b RangeTracker<'a, E>,
-    inner: ::std::collections::btree_set::Iter<'b, DTRange>
+pub struct RangeTrackerIterator<'a, P, E>
+        where P: 'a, E: 'a, for <'b> P: RangeTrackerParentHandle<'b, E> {
+    parent: &'a RangeTracker<P, E>,
+    inner: ::std::collections::btree_set::Iter<'a, DTRange>,
+    _phantom: PhantomData<&'a E>
 }
 
-impl<'a, 'b, E> Iterator for RangeTrackerIterator<'a, 'b, E>
-        where E: 'a, 'a: 'b {
+impl<'a, P, E> Iterator for RangeTrackerIterator<'a, P, E>
+        where for <'b> P: RangeTrackerParentHandle<'b, E> {
     type Item = IRange<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {

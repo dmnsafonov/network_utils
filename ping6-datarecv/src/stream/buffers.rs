@@ -1,20 +1,36 @@
+// the data buffer is a binaryheap of indices into a ring buffer of payloads,
+// sorted by stream positions (MAX-pos for it being a max-heap)
+//#     take ping6_datasend::stream::WindowedBuffer, remove window_size from it
+//#     to remake it into a general buffer; then make a wrapper
+//#     for the prio-queue logic
+//
+// the ack tracker gets every seqno, gives it to rangetracker,
+// gives out a stream of seqno ranges to ack every Duration by using
+// timeout_stream::Interval
+
 use ::std::cmp::*;
 use ::std::collections::*;
-use ::std::mem::ManuallyDrop;
+use ::std::ops::Deref;
 
 use ::ping6_datacommon::*;
 
 use ::stream::packet::parse_stream_client_packet;
 
-pub struct DataOrderer<'a> {
-    buffer: ManuallyDrop<TrimmingBuffer<'a>>,
-    order: ManuallyDrop<BinaryHeap<OrderedTrimmingBufferSlice<'a>>>
+pub struct DataOrderer {
+    buffer: TrimmingBuffer,
+    order: BinaryHeap<OrderedTrimmingBufferSlice>
 }
 
-struct OrderedTrimmingBufferSlice<'a>(TrimmingBufferSlice<'a>);
+struct OrderedTrimmingBufferSlice(TrimmingBufferSlice);
 
-impl<'a> PartialEq for OrderedTrimmingBufferSlice<'a> {
-    fn eq(&self, other: &OrderedTrimmingBufferSlice<'a>) -> bool {
+impl OrderedTrimmingBufferSlice {
+    fn take(self) -> TrimmingBufferSlice {
+        self.0
+    }
+}
+
+impl<'a> PartialEq for OrderedTrimmingBufferSlice {
+    fn eq(&self, other: &OrderedTrimmingBufferSlice) -> bool {
         let l = parse_stream_client_packet(&self.0).seqno;
         let r = parse_stream_client_packet(&other.0).seqno;
 
@@ -22,10 +38,10 @@ impl<'a> PartialEq for OrderedTrimmingBufferSlice<'a> {
     }
 }
 
-impl<'a> Eq for OrderedTrimmingBufferSlice<'a> {}
+impl Eq for OrderedTrimmingBufferSlice {}
 
-impl<'a> PartialOrd for OrderedTrimmingBufferSlice<'a> {
-    fn partial_cmp(&self, other: &OrderedTrimmingBufferSlice<'a>)
+impl PartialOrd for OrderedTrimmingBufferSlice {
+    fn partial_cmp(&self, other: &OrderedTrimmingBufferSlice)
             -> Option<Ordering> {
         let l = parse_stream_client_packet(&self.0).seqno;
         let r = parse_stream_client_packet(&other.0).seqno;
@@ -34,30 +50,30 @@ impl<'a> PartialOrd for OrderedTrimmingBufferSlice<'a> {
     }
 }
 
-impl<'a> Ord for OrderedTrimmingBufferSlice<'a> {
-    fn cmp(&self, other: &OrderedTrimmingBufferSlice<'a>) -> Ordering {
+impl Ord for OrderedTrimmingBufferSlice {
+    fn cmp(&self, other: &OrderedTrimmingBufferSlice) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl<'a> From<TrimmingBufferSlice<'a>> for OrderedTrimmingBufferSlice<'a> {
-    fn from(x: TrimmingBufferSlice<'a>) -> Self {
+impl From<TrimmingBufferSlice> for OrderedTrimmingBufferSlice {
+    fn from(x: TrimmingBufferSlice) -> Self {
         OrderedTrimmingBufferSlice(x)
     }
 }
 
-impl<'a> Drop for DataOrderer<'a> {
-    fn drop(&mut self) { unsafe {
-        ManuallyDrop::drop(&mut self.order);
-        ManuallyDrop::drop(&mut self.buffer);
-    }}
+impl Deref for OrderedTrimmingBufferSlice {
+    type Target = TrimmingBufferSlice;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-impl<'a> DataOrderer<'a> {
-    fn new(size: usize) -> DataOrderer<'a> {
+impl DataOrderer {
+    fn new(size: usize) -> DataOrderer {
         DataOrderer {
-            buffer: ManuallyDrop::new(TrimmingBuffer::new(size)),
-            order: ManuallyDrop::new(BinaryHeap::with_capacity(size))
+            buffer: TrimmingBuffer::new(size),
+            order: BinaryHeap::with_capacity(size)
         }
     }
 
@@ -65,4 +81,15 @@ impl<'a> DataOrderer<'a> {
         let slice = self.buffer.add_slicing(packet);
         self.order.push(slice.into());
     }
+
+    fn peek_seqno(&self) -> Option<u16> {
+        self.order.peek().map(|x| {
+            let packet = parse_stream_client_packet(x);
+            packet.seqno
+        })
+    }
+
+//    fn take(&mut self) -> Option<TrimmingBufferSlice> {
+//        self.order.pop().map(|x| x.take())
+//    }
 }
