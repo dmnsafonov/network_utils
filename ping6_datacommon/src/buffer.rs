@@ -36,7 +36,7 @@ impl TrimmingBuffer {
             first_available: 0,
             del_tracker: unsafe { ::std::mem::uninitialized() }
         })));
-        ret.0.borrow_mut().del_tracker = RangeTracker::new(
+        ret.0.borrow_mut().del_tracker = RangeTracker::new_with_parent(
             TrimmingBufferImplBufferGetter(ret.0.clone())
         );
 

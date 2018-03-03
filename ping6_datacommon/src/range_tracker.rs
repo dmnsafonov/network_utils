@@ -6,8 +6,7 @@ use ::std::marker::PhantomData;
 use ::std::ops::Deref;
 
 #[derive(Debug)]
-pub struct RangeTracker<P, E>
-        where for<'a> P: RangeTrackerParentHandle<'a, E> {
+pub struct RangeTracker<P, E> {
     tracked: P,
 
     // at no point should two overlapping ranges be insert()'ed into the set
@@ -27,22 +26,7 @@ pub trait RangeTrackerParentHandle<'a, E>
     fn borrow(&'a self) -> Self::Borrowed;
 }
 
-impl<P, E> RangeTracker<P, E>
-        where for<'a> P: RangeTrackerParentHandle<'a, E> {
-    pub fn new(tracked: P) -> RangeTracker<P, E> {
-        RangeTracker {
-            tracked: tracked,
-            rangeset: BTreeSet::new(),
-            offset: 0,
-            _phantom: Default::default()
-        }
-    }
-
-    pub fn track_slice(&mut self, newslice: &[E]) {
-        let range = self.slice_to_range(newslice);
-        self.track_range(range);
-    }
-
+impl<P, E> RangeTracker<P, E> {
     pub fn track_range<T>(&mut self, newrange: IRange<T>)
             where DTRange: From<IRange<T>>, T: Ord {
         assert!(newrange.0 <= newrange.1);
@@ -86,27 +70,6 @@ impl<P, E> RangeTracker<P, E>
         self.rangeset.insert(DTRange(new_l, new_r));
     }
 
-    pub fn slice_to_range(&self, slice: &[E]) -> IRange<usize> {
-        let tracked = self.tracked.borrow();
-
-        let len = slice.len();
-        let ptr = slice.as_ptr() as usize;
-        let (beginning, ending) = tracked.as_slices();
-
-        if is_subslice(beginning, slice) {
-            let beg_ptr = beginning.as_ptr() as usize;
-            let start = beg_ptr - ptr;
-            let end = start + len - 1;
-            IRange(start, end)
-        } else {
-            debug_assert!(is_subslice(ending, slice));
-            let end_ptr = ending.as_ptr() as usize;
-            let start = end_ptr - ptr + beginning.len();
-            let end = start + len - 1;
-            IRange(start, end)
-        }
-    }
-
     // consume (0 =.. take_range()) after the call
     pub fn take_range(&mut self) -> Option<usize> {
         if self.rangeset.is_empty() {
@@ -123,11 +86,6 @@ impl<P, E> RangeTracker<P, E>
                 .expect("no overflow");
             Some(first.1)
         }
-    }
-
-    pub fn is_slice_tracked(&self, slice: &[E]) -> Option<bool> {
-        let range = self.slice_to_range(slice);
-        self.is_range_tracked(range)
     }
 
     // return None when the range is partially tracked
@@ -160,6 +118,62 @@ impl<P, E> RangeTracker<P, E>
     }
 }
 
+pub struct NoParent;
+
+impl<E> RangeTracker<NoParent, E> {
+    pub fn new() -> RangeTracker<NoParent, E> {
+        RangeTracker {
+            tracked: NoParent,
+            rangeset: BTreeSet::new(),
+            offset: 0,
+            _phantom: Default::default()
+        }
+    }
+}
+
+impl<P, E> RangeTracker<P, E>
+        where for<'a> P: RangeTrackerParentHandle<'a, E> {
+    pub fn new_with_parent(tracked: P) -> RangeTracker<P, E> {
+        RangeTracker {
+            tracked: tracked,
+            rangeset: BTreeSet::new(),
+            offset: 0,
+            _phantom: Default::default()
+        }
+    }
+
+    pub fn track_slice(&mut self, newslice: &[E]) {
+        let range = self.slice_to_range(newslice);
+        self.track_range(range);
+    }
+
+    pub fn slice_to_range(&self, slice: &[E]) -> IRange<usize> {
+        let tracked = self.tracked.borrow();
+
+        let len = slice.len();
+        let ptr = slice.as_ptr() as usize;
+        let (beginning, ending) = tracked.as_slices();
+
+        if is_subslice(beginning, slice) {
+            let beg_ptr = beginning.as_ptr() as usize;
+            let start = beg_ptr - ptr;
+            let end = start + len - 1;
+            IRange(start, end)
+        } else {
+            assert!(is_subslice(ending, slice));
+            let end_ptr = ending.as_ptr() as usize;
+            let start = end_ptr - ptr + beginning.len();
+            let end = start + len - 1;
+            IRange(start, end)
+        }
+    }
+
+    pub fn is_slice_tracked(&self, slice: &[E]) -> Option<bool> {
+        let range = self.slice_to_range(slice);
+        self.is_range_tracked(range)
+    }
+}
+
 fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
     assert!(slice.len() > 0);
     assert!(sub.len() > 0);
@@ -174,8 +188,7 @@ fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
     sub_start >= slice_start && sub_end <= slice_end
 }}
 
-impl<'a, P, E> IntoIterator for &'a RangeTracker<P, E>
-        where for<'b> P: RangeTrackerParentHandle<'b, E> {
+impl<'a, P, E> IntoIterator for &'a RangeTracker<P, E> {
     type Item = <RangeTrackerIterator<'a, P, E> as Iterator>::Item;
     type IntoIter = RangeTrackerIterator<'a, P, E>;
 
@@ -188,15 +201,13 @@ impl<'a, P, E> IntoIterator for &'a RangeTracker<P, E>
     }
 }
 
-pub struct RangeTrackerIterator<'a, P, E>
-        where P: 'a, E: 'a, for <'b> P: RangeTrackerParentHandle<'b, E> {
+pub struct RangeTrackerIterator<'a, P, E> where P: 'a, E: 'a {
     parent: &'a RangeTracker<P, E>,
     inner: ::std::collections::btree_set::Iter<'a, DTRange>,
     _phantom: PhantomData<&'a E>
 }
 
-impl<'a, P, E> Iterator for RangeTrackerIterator<'a, P, E>
-        where for <'b> P: RangeTrackerParentHandle<'b, E> {
+impl<'a, P, E> Iterator for RangeTrackerIterator<'a, P, E> {
     type Item = IRange<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {

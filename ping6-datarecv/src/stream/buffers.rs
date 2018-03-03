@@ -1,5 +1,5 @@
-// the data buffer is a binaryheap of indices into a ring buffer of payloads,
-// sorted by stream positions (MAX-pos for it being a max-heap)
+//# the data buffer is a binaryheap of indices into a ring buffer of payloads,
+//# sorted by stream positions (MAX-pos for it being a max-heap)
 //#     take ping6_datasend::stream::WindowedBuffer, remove window_size from it
 //#     to remake it into a general buffer; then make a wrapper
 //#     for the prio-queue logic
@@ -89,7 +89,7 @@ impl DataOrderer {
         })
     }
 
-//    fn take(&mut self) -> Option<TrimmingBufferSlice> {
-//        self.order.pop().map(|x| x.take())
-//    }
+    fn take(&mut self) -> Option<TrimmingBufferSlice> {
+        self.order.pop().map(|x| x.take())
+    }
 }

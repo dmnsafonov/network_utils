@@ -44,7 +44,7 @@ impl AckWaitlist {
             del_tracker: unsafe { uninitialized() },
             tmpvec: RefCell::new(Vec::with_capacity(window_size as usize))
         })));
-        ret.0.borrow_mut().del_tracker = RangeTracker::new(
+        ret.0.borrow_mut().del_tracker = RangeTracker::new_with_parent(
             AckWaitlistImplBufferGetter(ret.0.clone())
         );
         ret
