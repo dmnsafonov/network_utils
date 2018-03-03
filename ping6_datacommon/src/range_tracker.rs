@@ -119,9 +119,10 @@ impl<P, E> RangeTracker<P, E> {
 }
 
 pub struct NoParent;
+pub struct NoElement;
 
-impl<E> RangeTracker<NoParent, E> {
-    pub fn new() -> RangeTracker<NoParent, E> {
+impl RangeTracker<NoParent, NoElement> {
+    pub fn new() -> RangeTracker<NoParent, NoElement> {
         RangeTracker {
             tracked: NoParent,
             rangeset: BTreeSet::new(),
