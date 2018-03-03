@@ -10,6 +10,7 @@
 
 use ::std::cmp::*;
 use ::std::collections::*;
+use ::std::num::Wrapping;
 use ::std::ops::Deref;
 
 use ::ping6_datacommon::*;
@@ -91,5 +92,50 @@ impl DataOrderer {
 
     fn take(&mut self) -> Option<TrimmingBufferSlice> {
         self.order.pop().map(|x| x.take())
+    }
+}
+
+pub struct SeqnoTracker {
+    tracker: RangeTracker<NoParent, NoElement>,
+    window_start: Wrapping<u16>,
+    abs_window_start: usize
+}
+
+const U16_MAX_P1: usize = ::std::u16::MAX as usize + 1;
+
+impl SeqnoTracker {
+    pub fn new(next_seqno: u16) -> SeqnoTracker {
+        SeqnoTracker {
+            tracker: RangeTracker::new(),
+            window_start: -Wrapping(next_seqno),
+            abs_window_start: 0
+        }
+    }
+
+    pub fn add(&mut self, IRange(l,r): IRange<Wrapping<u16>>) {
+        let al = self.to_abs(l);
+        let ar = self.to_abs(r);
+
+        // debug_assert because the validation belongs at the protocol level
+        debug_assert!(al <= ar);
+
+        self.tracker.track_range(IRange(al, ar));
+    }
+
+    fn to_abs(&self, x: Wrapping<u16>) -> usize {
+        self.abs_window_start + (x - self.window_start).0 as usize
+    }
+
+    pub fn take(&mut self) -> Vec<IRange<Wrapping<u16>>> {
+        self.tracker.into_iter().map(|IRange(l,r)| {
+            IRange(
+                self.from_abs(l),
+                self.from_abs(r)
+            )
+        }).collect()
+    }
+
+    fn from_abs(&self, x: usize) -> Wrapping<u16> {
+        Wrapping((x % U16_MAX_P1) as u16) + self.window_start
     }
 }

@@ -270,7 +270,7 @@ macro_rules! gen_irange_len {
         impl IRange<$t> {
             pub fn len(&self) -> $t {
                 assert!(self.0 <= self.1);
-                self.1 - self.0 + 1 as $t
+                self.1.checked_sub(self.0).unwrap().checked_add(1).unwrap()
             }
         }
     );
@@ -281,7 +281,7 @@ macro_rules! gen_irange_len {
     )
 }
 
-gen_irange_len!(usize, u64, u32, u16, u8);
+gen_irange_len!(usize, u64, u32, u16, u8, isize, i64, i32, i16, i8);
 
 pub fn validate_stream_packet(
     packet_buff: &[u8],
