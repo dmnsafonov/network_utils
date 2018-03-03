@@ -1,17 +1,14 @@
-//# the data buffer is a binaryheap of indices into a ring buffer of payloads,
-//# sorted by stream positions (MAX-pos for it being a max-heap)
-//#     take ping6_datasend::stream::WindowedBuffer, remove window_size from it
-//#     to remake it into a general buffer; then make a wrapper
-//#     for the prio-queue logic
-//
-// the ack tracker gets every seqno, gives it to rangetracker,
-// gives out a stream of seqno ranges to ack every Duration by using
-// timeout_stream::Interval
-
+use ::std::cell::RefCell;
 use ::std::cmp::*;
 use ::std::collections::*;
 use ::std::num::Wrapping;
 use ::std::ops::Deref;
+use ::std::rc::Rc;
+use ::std::time::Duration;
+
+use ::errors::Error;
+use ::futures::prelude::*;
+use ::tokio_timer::*;
 
 use ::ping6_datacommon::*;
 
@@ -137,5 +134,34 @@ impl SeqnoTracker {
 
     fn from_abs(&self, x: usize) -> Wrapping<u16> {
         Wrapping((x % U16_MAX_P1) as u16) + self.window_start
+    }
+}
+
+pub struct TimedAckSeqnoGenerator {
+    tracker: Rc<RefCell<SeqnoTracker>>,
+    interval: Interval
+}
+
+impl TimedAckSeqnoGenerator {
+    fn new(tracker: Rc<RefCell<SeqnoTracker>>, timer: Timer, dur: Duration)
+            -> TimedAckSeqnoGenerator {
+        TimedAckSeqnoGenerator {
+            tracker: tracker,
+            interval: timer.interval(dur)
+        }
+    }
+}
+
+impl Stream for TimedAckSeqnoGenerator {
+    type Item = Vec<IRange<Wrapping<u16>>>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let ranges = self.tracker.borrow_mut().take();
+        Ok(if ranges.is_empty() {
+            Async::NotReady
+        } else {
+            Async::Ready(Some(ranges))
+        })
     }
 }
