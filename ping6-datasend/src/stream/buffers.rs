@@ -74,7 +74,7 @@ impl AckWaitlist {
 
     // safe to call multiple times with the same arguments
     pub fn remove_non_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
-        let mut theself = self.0.borrow_mut();
+        let theself = self.0.borrow();
 
         assert!(range.0 <= range.1);
         let tmpvecref = theself.tmpvec.clone();
@@ -82,7 +82,7 @@ impl AckWaitlist {
         debug_assert!(tmpvec.is_empty());
 
         {
-            let mut peekable = self.iter().0
+            let mut peekable = Self::iter_from_borrow(Ref::clone(&theself))
                 .map(|(ind,x)| (ind as u32, x))
                 .skip_while(|&(_,x)| x.seqno < range.0
                     || x.seqno > range.1)
@@ -105,6 +105,9 @@ impl AckWaitlist {
                 tmpvec.push(IRange(start_ind, last_ind));
             }
         }
+        drop(theself);
+
+        let mut theself = self.0.borrow_mut();
         for i in tmpvec.drain(..) {
             theself.del_tracker.track_range(i.into());
         }
@@ -118,20 +121,24 @@ impl AckWaitlist {
     }
 
     pub fn iter<'a>(&'a self) -> AckWaitlistIterator<'a> {
-        AckWaitlistIterator(AckWaitlistIteratorInternal(
-            OwningHandle::new_with_fn(self.0.clone(), |x| {
+        AckWaitlistIterator(OwningHandle::new_with_fn(self.0.clone(),
+            |x| unsafe { DerefWrapper(
+                Self::iter_from_borrow(x.as_ref().unwrap().borrow())
+            ) }
+        ))
+    }
+
+    fn iter_from_borrow<'a>(borrow: Ref<'a, AckWaitlistImpl>)
+    -> AckWaitlistIteratorInternal<'a> {
+        AckWaitlistIteratorInternal(OwningHandle::new_with_fn(borrow,
+            |x| {
                 let y = unsafe { x.as_ref().unwrap() };
-                OwningHandle::new_with_fn(y.borrow(),
-                    |z| {
-                        let w = unsafe { z.as_ref().unwrap() };
-                        DerefWrapper(AckWaitlistIteratorInternalImpl {
-                            tracker_iter: w.del_tracker.iter().peekable(),
-                            inner: w.inner.iter().enumerate(),
-                            _phantom: Default::default()
-                        })
-                    }
-                )
-            })
+                DerefWrapper(AckWaitlistIteratorInternalImpl {
+                    tracker_iter: y.del_tracker.iter().peekable(),
+                    inner: y.inner.iter().enumerate(),
+                    _phantom: Default::default()
+                })
+            }
         ))
     }
 }
@@ -153,11 +160,8 @@ impl<T> DerefMut for DerefWrapper<T> {
 
 struct AckWaitlistIteratorInternal<'a>(
     OwningHandle<
-        Rc<RefCell<AckWaitlistImpl>>,
-        OwningHandle<
-            Ref<'a, AckWaitlistImpl>,
-            DerefWrapper<AckWaitlistIteratorInternalImpl<'a>>
-        >
+        Ref<'a, AckWaitlistImpl>,
+        DerefWrapper<AckWaitlistIteratorInternalImpl<'a>>
     >
 );
 
@@ -195,7 +199,12 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
     }
 }
 
-pub struct AckWaitlistIterator<'a>(AckWaitlistIteratorInternal<'a>);
+pub struct AckWaitlistIterator<'a>(
+    OwningHandle<
+        Rc<RefCell<AckWaitlistImpl>>,
+        DerefWrapper<AckWaitlistIteratorInternal<'a>>
+    >
+);
 
 impl<'a> Iterator for AckWaitlistIterator<'a> {
     type Item = &'a AckWait;
