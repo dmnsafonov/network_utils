@@ -139,16 +139,25 @@ impl SeqnoTracker {
 
 pub struct TimedAckSeqnoGenerator {
     tracker: Rc<RefCell<SeqnoTracker>>,
-    interval: Interval
+    timer: Timer,
+    period: Duration,
+    interval: Option<Interval>
 }
 
 impl TimedAckSeqnoGenerator {
-    fn new(tracker: Rc<RefCell<SeqnoTracker>>, timer: Timer, dur: Duration)
+    pub fn new(tracker: Rc<RefCell<SeqnoTracker>>, timer: Timer, dur: Duration)
             -> TimedAckSeqnoGenerator {
         TimedAckSeqnoGenerator {
             tracker: tracker,
-            interval: timer.interval(dur)
+            timer: timer,
+            period: dur,
+            interval: None
         }
+    }
+
+    pub fn start(&mut self) {
+        assert!(self.interval.is_none());
+        self.interval = Some(self.timer.interval(self.period));
     }
 }
 
@@ -157,7 +166,10 @@ impl Stream for TimedAckSeqnoGenerator {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let interval = self.interval.as_mut().expect("a started ack interval");
         let ranges = self.tracker.borrow_mut().take();
+        try_ready!(interval.poll());
+
         Ok(if ranges.is_empty() {
             Async::NotReady
         } else {
