@@ -1,12 +1,13 @@
-use ::std::cell::RefCell;
+use ::std::cell::*;
 use ::std::net::*;
 use ::std::num::Wrapping;
 use ::std::rc::Rc;
 use ::std::time::Duration;
 
-use ::futures::future::join_all;
+use ::futures::future::*;
 use ::futures::prelude::*;
 use ::futures::stream::unfold;
+use ::futures::task::*;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
 use ::tokio_core::reactor::Handle;
@@ -60,37 +61,38 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendFinAck, SendFin))]
     WaitForPackets {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        active: ActiveStreamCommonState,
+        task: Rc<Cell<Option<Task>>>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
     SendFinAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(SendFinAck, ConnectionTerminated))]
     WaitForLastAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
     WaitForFinAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(ready)]
@@ -252,38 +254,50 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let WaitForAck { common, mut active, .. } = state.take();
 
+        let task = Rc::new(Cell::new(None));
+
         // stuff to move into spawned closure
-        let ack_gen = active.ack_gen.take().expect("an ack range generator");
+        let mut ack_gen = active.ack_gen.take().expect("an ack range generator");
+        ack_gen.start();
         let send_src = *common.src.ip();
         let send_dst = dst;
         let send_buf_full_ref = common.send_buf.clone();
         let send_sock = common.sock.clone();
+        let task_clone = task.clone();
+        let main_task = ::futures::task::current();
 
         common.handle.spawn(
-            ack_gen.map_err(|_| ()).for_each(move |ranges| {
-                // can not move out of the outer closure
-                let mut send_buf_full_ref = send_buf_full_ref.clone();
-                let mut send_sock = send_sock.clone();
-                join_all(ranges.into_iter().map(move |IRange(l,r)| {
-                    let send_buf_ref = send_buf_full_ref
-                        .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
+            lazy(move || {
+                // a hack to get the task handle out of spawn()
+                task_clone.set(Some(::futures::task::current()));
+                main_task.notify();
+                ok(())
+            }).and_then(move |_| {
+                ack_gen.map_err(|_| ()).for_each(move |ranges| {
+                    // can not move out of the outer closure
+                    let mut send_buf_full_ref = send_buf_full_ref.clone();
+                    let mut send_sock = send_sock.clone();
+                    join_all(ranges.into_iter().map(move |IRange(l,r)| {
+                        let send_buf_ref = send_buf_full_ref
+                            .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
-                    make_stream_server_icmpv6_packet(
-                        &mut send_buf_ref.borrow_mut(),
-                        send_src,
-                        *send_dst.ip(),
-                        l.0,
-                        r.0,
-                        StreamPacketFlags::Ack.into(),
-                        &[]
-                    );
+                        make_stream_server_icmpv6_packet(
+                            &mut send_buf_ref.borrow_mut(),
+                            send_src,
+                            *send_dst.ip(),
+                            l.0,
+                            r.0,
+                            StreamPacketFlags::Ack.into(),
+                            &[]
+                        );
 
-                    send_sock.sendto(
-                        send_buf_ref,
-                        send_dst,
-                        SendFlagSet::new()
-                    ).map_err(|_| ())
-                })).map(|_| ())
+                        send_sock.sendto(
+                            send_buf_ref,
+                            send_dst,
+                            SendFlagSet::new()
+                        ).map_err(|_| ())
+                    })).map(|_| ())
+                })
             })
         );
 
@@ -293,6 +307,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_wait_for_packets<'a>(
         state: &'a mut RentToOwn<'a, WaitForPackets<'s>>
     ) -> Poll<AfterWaitForPackets<'s>, Error> {
+        let task_opt = state.task.clone().take();
+        if task_opt.is_none() {
+            return Ok(Async::NotReady);
+        }
+        let task = task_opt.unwrap();
+
         unimplemented!()
     }
 
