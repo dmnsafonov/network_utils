@@ -1,4 +1,11 @@
 try the enumflags crate to replace the numeric_enums internal one.
+
 remake the async sockets using macros
+
 migrate to failure
+
 add packet number (u64) in the stream to the checksum
+
+move creating ack packet sender from
+/home/dimanss47/univ_proj/ping6-datarecv/src/stream/stm.rs to stream mode
+initialization
