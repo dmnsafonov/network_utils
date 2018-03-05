@@ -94,8 +94,7 @@ impl DataOrderer {
 
 pub struct SeqnoTracker {
     tracker: RangeTracker<NoParent, NoElement>,
-    window_start: Wrapping<u16>,
-    abs_window_start: usize
+    window_start: Wrapping<u16>
 }
 
 const U16_MAX_P1: usize = ::std::u16::MAX as usize + 1;
@@ -104,8 +103,7 @@ impl SeqnoTracker {
     pub fn new(next_seqno: Wrapping<u16>) -> SeqnoTracker {
         SeqnoTracker {
             tracker: RangeTracker::new(),
-            window_start: -next_seqno,
-            abs_window_start: 0
+            window_start: -next_seqno
         }
     }
 
@@ -115,16 +113,20 @@ impl SeqnoTracker {
     }
 
     fn to_abs(&self, x: Wrapping<u16>) -> usize {
-        self.abs_window_start + (x - self.window_start).0 as usize
+        (x - self.window_start).0 as usize
     }
 
     pub fn take(&mut self) -> Vec<IRange<Wrapping<u16>>> {
-        self.tracker.into_iter().map(|IRange(l,r)| {
+        let ret = self.tracker.into_iter().map(|IRange(l,r)| {
             IRange(
                 self.from_abs(l),
                 self.from_abs(r)
             )
-        }).collect()
+        }).collect();
+        if let Some(x) = self.tracker.take_range() {
+            self.window_start += Wrapping(x as u16) + Wrapping(1);
+        }
+        ret
     }
 
     fn from_abs(&self, x: usize) -> Wrapping<u16> {
