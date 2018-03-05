@@ -62,7 +62,8 @@ pub enum StreamMachine<'s> {
     WaitForPackets {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
-        task: Rc<Cell<Option<Task>>>
+        task: Rc<Cell<Option<Task>>>,
+        recv_stream: Box<StreamE<(futures::U8Slice,SocketAddrV6)>>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -252,7 +253,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
         };
 
-        let WaitForAck { common, mut active, .. } = state.take();
+        let WaitForAck { mut common, mut active, .. } = state.take();
 
         let task = Rc::new(Cell::new(None));
 
@@ -301,7 +302,30 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             })
         );
 
-        unimplemented!()
+        let seqno_tracker_ref = active.seqno_tracker.clone();
+        let window_size = common.window_size;
+        let recv_stream = Box::new(make_recv_packets_stream(&mut common).filter(
+            move |&(ref x,_)| {
+                let data = data_ref.borrow();
+                let packet = parse_stream_client_packet(&data);
+
+                let seqno = seqno_tracker_ref.borrow()
+                    .to_sequential(Wrapping(packet.seqno));
+
+                seqno < window_size as usize
+                    && !packet.flags.test(StreamPacketFlags::Syn.into())
+                    && !packet.flags.test(StreamPacketFlags::Ack.into())
+            }
+        ));
+
+        transition!(
+            WaitForPackets {
+                common: common,
+                active: active,
+                task: task,
+                recv_stream: recv_stream
+            }
+        )
     }
 
     fn poll_wait_for_packets<'a>(
@@ -312,6 +336,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             return Ok(Async::NotReady);
         }
         let task = task_opt.unwrap();
+
+        loop {
+            // write from sock stdout
+            unimplemented!()
+        }
 
         unimplemented!()
     }

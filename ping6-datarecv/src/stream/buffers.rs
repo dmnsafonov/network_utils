@@ -108,19 +108,19 @@ impl SeqnoTracker {
     }
 
     pub fn add(&mut self, x: Wrapping<u16>) {
-        let ax = self.to_abs(x);
+        let ax = self.to_sequential(x);
         self.tracker.track_range(IRange(ax, ax));
     }
 
-    fn to_abs(&self, x: Wrapping<u16>) -> usize {
+    pub fn to_sequential(&self, x: Wrapping<u16>) -> usize {
         (x - self.window_start).0 as usize
     }
 
     pub fn take(&mut self) -> Vec<IRange<Wrapping<u16>>> {
         let ret = self.tracker.into_iter().map(|IRange(l,r)| {
             IRange(
-                self.from_abs(l),
-                self.from_abs(r)
+                self.from_sequential(l),
+                self.from_sequential(r)
             )
         }).collect();
         if let Some(x) = self.tracker.take_range() {
@@ -129,7 +129,7 @@ impl SeqnoTracker {
         ret
     }
 
-    fn from_abs(&self, x: usize) -> Wrapping<u16> {
+    pub fn from_sequential(&self, x: usize) -> Wrapping<u16> {
         Wrapping((x % U16_MAX_P1) as u16) + self.window_start
     }
 }
