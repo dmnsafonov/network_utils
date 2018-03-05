@@ -56,7 +56,8 @@ pub fn stream_mode((config, bound_addr, sock): InitState) -> Result<()> {
         send_buf: SRcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
         // if we assumed default mtu, then the incoming packet size is unknown
         recv_buf: SRcRef::new(vec![0; ::std::u16::MAX as usize],
-            0 .. (::std::u16::MAX as usize))
+            0 .. (::std::u16::MAX as usize)),
+        handle: core_handle
     };
 
     let stm = StreamMachine::start(init_state);

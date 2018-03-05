@@ -4,10 +4,12 @@ use ::std::num::Wrapping;
 use ::std::rc::Rc;
 use ::std::time::Duration;
 
+use ::futures::future::join_all;
 use ::futures::prelude::*;
 use ::futures::stream::unfold;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
+use ::tokio_core::reactor::Handle;
 use ::tokio_timer::*;
 
 use ::linux_network::*;
@@ -149,11 +151,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 DataOrderer::new(common.window_size as usize)
             )),
             seqno_tracker: seqno_tracker,
-            ack_gen: TimedAckSeqnoGenerator::new(
+            ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
                 common.timer.clone(),
                 Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
-            )
+            ))
         };
 
         let send_future = make_syn_ack_future(
@@ -248,6 +250,43 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
         };
 
+        let WaitForAck { common, mut active, .. } = state.take();
+
+        // stuff to move into spawned closure
+        let ack_gen = active.ack_gen.take().expect("an ack range generator");
+        let send_src = *common.src.ip();
+        let send_dst = dst;
+        let send_buf_full_ref = common.send_buf.clone();
+        let send_sock = common.sock.clone();
+
+        common.handle.spawn(
+            ack_gen.map_err(|_| ()).for_each(move |ranges| {
+                // can not move out of the outer closure
+                let mut send_buf_full_ref = send_buf_full_ref.clone();
+                let mut send_sock = send_sock.clone();
+                join_all(ranges.into_iter().map(move |IRange(l,r)| {
+                    let send_buf_ref = send_buf_full_ref
+                        .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
+
+                    make_stream_server_icmpv6_packet(
+                        &mut send_buf_ref.borrow_mut(),
+                        send_src,
+                        *send_dst.ip(),
+                        l.0,
+                        r.0,
+                        StreamPacketFlags::Ack.into(),
+                        &[]
+                    );
+
+                    send_sock.sendto(
+                        send_buf_ref,
+                        send_dst,
+                        SendFlagSet::new()
+                    ).map_err(|_| ())
+                })).map(|_| ())
+            })
+        );
+
         unimplemented!()
     }
 
@@ -327,7 +366,7 @@ fn make_syn_ack_future<'a>(
         *dst.ip(),
         seqno_start,
         seqno_end,
-        StreamPacketFlags::Syn.into(),
+        StreamPacketFlags::Syn | StreamPacketFlags::Ack,
         &[]
     );
 
@@ -347,7 +386,8 @@ pub struct StreamCommonState<'a> {
     pub data_out: StdoutBytesWriter<'a>,
     pub timer: Timer,
     pub send_buf: SRcRef<Vec<u8>>,
-    pub recv_buf: SRcRef<Vec<u8>>
+    pub recv_buf: SRcRef<Vec<u8>>,
+    pub handle: Handle
 }
 
 pub struct ActiveStreamCommonState {
@@ -355,5 +395,5 @@ pub struct ActiveStreamCommonState {
     next_seqno: Wrapping<u16>,
     order: Rc<RefCell<DataOrderer>>,
     seqno_tracker: Rc<RefCell<SeqnoTracker>>,
-    ack_gen: TimedAckSeqnoGenerator
+    ack_gen: Option<TimedAckSeqnoGenerator>
 }
