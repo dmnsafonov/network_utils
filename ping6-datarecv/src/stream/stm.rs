@@ -1,6 +1,7 @@
 use ::std::cell::RefCell;
 use ::std::net::*;
 use ::std::num::Wrapping;
+use ::std::rc::Rc;
 use ::std::time::Duration;
 
 use ::futures::prelude::*;
@@ -16,6 +17,7 @@ use ::sliceable_rcref::SRcRef;
 use ::config::Config;
 use ::errors::{Error, ErrorKind};
 use ::stdout_iterator::StdoutBytesWriter;
+use ::stream::buffers::*;
 use ::stream::packet::*;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
@@ -37,19 +39,17 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(WaitForAck))]
     SendSynAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6,
-        next_seqno: Wrapping<u16>,
+        active: ActiveStreamCommonState,
         send_syn_ack: futures::IpV6RawSocketSendtoFuture,
-        next_action: Option<Box<StreamE<
-            TimedResult<(futures::U8Slice, SocketAddrV6)>
-        >>>
+        next_action: Option<Box<
+            StreamE<TimedResult<(futures::U8Slice,SocketAddrV6)>>
+        >>
     },
 
     #[state_machine_future(transitions(SendSynAck, WaitForPackets))]
     WaitForAck {
         common: StreamCommonState<'s>,
-        dst: SocketAddrV6,
-        next_seqno: Wrapping<u16>,
+        active: ActiveStreamCommonState,
         recv_stream: Box<StreamE<
             TimedResult<(futures::U8Slice, SocketAddrV6)>
         >>
@@ -136,6 +136,26 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let data = data_ref.borrow();
         let packet = parse_stream_client_packet(&data);
 
+        let next_seqno = Wrapping(packet.seqno) + Wrapping(1);
+        let seqno_tracker = Rc::new(RefCell::new(
+            SeqnoTracker::new(next_seqno)
+        ));
+
+        let seqno_tracker_clone = seqno_tracker.clone();
+        let active = ActiveStreamCommonState {
+            dst: dst,
+            next_seqno: next_seqno,
+            order: Rc::new(RefCell::new(
+                DataOrderer::new(common.window_size as usize)
+            )),
+            seqno_tracker: seqno_tracker,
+            ack_gen: TimedAckSeqnoGenerator::new(
+                seqno_tracker_clone,
+                common.timer.clone(),
+                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+            )
+        };
+
         let send_future = make_syn_ack_future(
             &mut common,
             dst,
@@ -145,8 +165,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         transition!(SendSynAck {
             common: common,
-            dst: dst,
-            next_seqno: Wrapping(packet.seqno) + Wrapping(1),
+            active: active,
             send_syn_ack: send_future,
             next_action: None
         })
@@ -158,18 +177,35 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let size = try_ready!(state.send_syn_ack.poll());
         debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
-        let SendSynAck { mut common, dst, next_seqno, next_action, .. }
+        let SendSynAck { mut common, active, next_action, .. }
             = state.take();
 
         let timed_packets = next_action.unwrap_or_else(|| {
-            let seqno = next_seqno;
+            let seqno = active.next_seqno;
+            let seqno_tracker_ref = active.seqno_tracker.clone();
+            let order_ref = active.order.clone();
             let packets = make_recv_packets_stream(&mut common)
-                .filter(move |&(ref x, _)| {
-                    let data_ref = x.borrow();
-                    let packet = parse_stream_client_packet(&data_ref);
+                .filter_map(move |(data_ref, dst)| {
+                    let pass = {
+                        let data = data_ref.borrow();
+                        let packet = parse_stream_client_packet(&data);
 
-                    packet.flags == StreamPacketFlags::Ack.into()
-                        && packet.seqno == seqno.0
+                        seqno_tracker_ref.borrow_mut()
+                            .add(Wrapping(packet.seqno));
+
+                        if packet.flags == StreamPacketFlags::Ack.into()
+                                && packet.seqno == seqno.0 {
+                            true
+                        } else {
+                            order_ref.borrow_mut().add(&data);
+                            false
+                        }
+                    };
+
+                    match pass {
+                        true => Some((data_ref, dst)),
+                        false => None
+                    }
                 });
             let timed = TimeoutResultStream::new(
                 &common.timer,
@@ -181,8 +217,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         transition!(WaitForAck {
             common: common,
-            dst: dst,
-            next_seqno: next_seqno,
+            active: active,
             recv_stream: timed_packets
         })
     }
@@ -196,17 +231,16 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
                 let mut st = state.take();
-                let seqno = st.next_seqno - Wrapping(1);
+                let seqno = st.active.next_seqno - Wrapping(1);
                 let send_future = make_syn_ack_future(
                     &mut st.common,
-                    st.dst,
+                    st.active.dst,
                     seqno.0,
                     seqno.0
                 );
                 transition!(SendSynAck {
                     common: st.common,
-                    dst: st.dst,
-                    next_seqno: st.next_seqno,
+                    active: st.active,
                     send_syn_ack: send_future,
                     next_action: Some(st.recv_stream)
                 })
@@ -307,10 +341,19 @@ fn make_syn_ack_future<'a>(
 pub struct StreamCommonState<'a> {
     pub config: &'a Config,
     pub src: SocketAddrV6,
+    pub window_size: u32,
     pub sock: futures::IpV6RawSocketAdapter,
     pub mtu: u16,
     pub data_out: StdoutBytesWriter<'a>,
     pub timer: Timer,
     pub send_buf: SRcRef<Vec<u8>>,
     pub recv_buf: SRcRef<Vec<u8>>
+}
+
+pub struct ActiveStreamCommonState {
+    dst: SocketAddrV6,
+    next_seqno: Wrapping<u16>,
+    order: Rc<RefCell<DataOrderer>>,
+    seqno_tracker: Rc<RefCell<SeqnoTracker>>,
+    ack_gen: TimedAckSeqnoGenerator
 }

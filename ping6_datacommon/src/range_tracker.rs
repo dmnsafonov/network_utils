@@ -1,9 +1,9 @@
-use super::*;
-
 use ::std::collections::*;
 use ::std::cmp::Ordering;
 use ::std::marker::PhantomData;
 use ::std::ops::Deref;
+
+use ::IRange;
 
 #[derive(Debug)]
 pub struct RangeTracker<P, E> {
@@ -175,19 +175,19 @@ impl<P, E> RangeTracker<P, E>
     }
 }
 
-fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool { unsafe {
+fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool {
     assert!(slice.len() > 0);
     assert!(sub.len() > 0);
     assert!(slice.len() <= ::std::isize::MAX as usize);
     assert!(sub.len() <= ::std::isize::MAX as usize);
 
     let slice_start = slice.as_ptr();
-    let slice_end = slice_start.offset(slice.len() as isize - 1);
+    let slice_end = slice[(slice.len() - 1) .. slice.len()].as_ptr();
     let sub_start = sub.as_ptr();
-    let sub_end = sub_start.offset(sub.len() as isize - 1);
+    let sub_end = sub[(sub.len() - 1) .. sub.len()].as_ptr();
 
     sub_start >= slice_start && sub_end <= slice_end
-}}
+}
 
 impl<'a, P, E> IntoIterator for &'a RangeTracker<P, E> {
     type Item = <RangeTrackerIterator<'a, P, E> as Iterator>::Item;

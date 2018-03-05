@@ -13,11 +13,11 @@ extern crate tokio_timer;
 extern crate linux_network;
 #[macro_use] extern crate numeric_enums;
 
-mod buffer;
-mod constants;
-mod errors;
-mod range_tracker;
-mod timeout;
+pub mod buffer;
+pub mod constants;
+pub mod errors;
+pub mod range_tracker;
+pub mod timeout;
 
 use std::cell::RefCell;
 use std::io;
@@ -37,7 +37,7 @@ use seccomp::*;
 
 use linux_network::*;
 
-pub use numeric_enums::*;
+pub use numeric_enums::{EnumFromNum, EnumToNum, NumEnumFlagSet};
 
 pub use buffer::*;
 pub use constants::*;

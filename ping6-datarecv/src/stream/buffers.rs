@@ -68,26 +68,26 @@ impl Deref for OrderedTrimmingBufferSlice {
 }
 
 impl DataOrderer {
-    fn new(size: usize) -> DataOrderer {
+    pub fn new(size: usize) -> DataOrderer {
         DataOrderer {
             buffer: TrimmingBuffer::new(size),
             order: BinaryHeap::with_capacity(size)
         }
     }
 
-    fn add<T>(&mut self, packet: T) where T: AsRef<[u8]> {
+    pub fn add<T>(&mut self, packet: T) where T: AsRef<[u8]> {
         let slice = self.buffer.add_slicing(packet);
         self.order.push(slice.into());
     }
 
-    fn peek_seqno(&self) -> Option<u16> {
+    pub fn peek_seqno(&self) -> Option<u16> {
         self.order.peek().map(|x| {
             let packet = parse_stream_client_packet(x);
             packet.seqno
         })
     }
 
-    fn take(&mut self) -> Option<TrimmingBufferSlice> {
+    pub fn take(&mut self) -> Option<TrimmingBufferSlice> {
         self.order.pop().map(|x| x.take())
     }
 }
@@ -101,22 +101,17 @@ pub struct SeqnoTracker {
 const U16_MAX_P1: usize = ::std::u16::MAX as usize + 1;
 
 impl SeqnoTracker {
-    pub fn new(next_seqno: u16) -> SeqnoTracker {
+    pub fn new(next_seqno: Wrapping<u16>) -> SeqnoTracker {
         SeqnoTracker {
             tracker: RangeTracker::new(),
-            window_start: -Wrapping(next_seqno),
+            window_start: -next_seqno,
             abs_window_start: 0
         }
     }
 
-    pub fn add(&mut self, IRange(l,r): IRange<Wrapping<u16>>) {
-        let al = self.to_abs(l);
-        let ar = self.to_abs(r);
-
-        // debug_assert because the validation belongs at the protocol level
-        debug_assert!(al <= ar);
-
-        self.tracker.track_range(IRange(al, ar));
+    pub fn add(&mut self, x: Wrapping<u16>) {
+        let ax = self.to_abs(x);
+        self.tracker.track_range(IRange(ax, ax));
     }
 
     fn to_abs(&self, x: Wrapping<u16>) -> usize {

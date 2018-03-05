@@ -13,7 +13,7 @@ use ::range_tracker::*;
 // destructor must run after all slices' destructors
 pub struct TrimmingBuffer(Rc<RefCell<TrimmingBufferImpl>>);
 
-pub struct TrimmingBufferImpl {
+struct TrimmingBufferImpl {
     inner: VecDeque<u8>,
     first_available: usize,
     del_tracker: RangeTracker<TrimmingBufferImplBufferGetter, u8>
@@ -99,10 +99,10 @@ impl TrimmingBuffer {
         let ret = {
             let (beginning, ending) = theself.inner.as_slices();
             let beg_len = beginning.len();
-            if range.0 < beg_len {
+            let inner = if range.0 < beg_len {
                 if range.0 + len <= beg_len {
                     let ind = range.0;
-                    TrimmingBufferSlice::Direct {
+                    TrimmingBufferSliceImpl::Direct {
                         parent: self.0.clone(),
                         start: beginning[ind .. ind + 1].as_ptr(),
                         len: len
@@ -120,16 +120,17 @@ impl TrimmingBuffer {
                         theself.del_tracker.slice_to_range(end_slice)
                     ));
 
-                    TrimmingBufferSlice::Owning(ret.into())
+                    TrimmingBufferSliceImpl::Owning(ret.into())
                 }
             } else {
                 let ind = range.0 - beg_len;
-                TrimmingBufferSlice::Direct {
+                TrimmingBufferSliceImpl::Direct {
                     parent: self.0.clone(),
                     start: ending[ind .. ind + 1].as_ptr(),
                     len: len
                 }
-            }
+            };
+            TrimmingBufferSlice(inner)
         };
 
         if let Some((one, two)) = ranges_to_free {
@@ -149,7 +150,9 @@ impl TrimmingBuffer {
     }
 }
 
-pub enum TrimmingBufferSlice {
+pub struct TrimmingBufferSlice(TrimmingBufferSliceImpl);
+
+enum TrimmingBufferSliceImpl {
     Direct {
         parent: Rc<RefCell<TrimmingBufferImpl>>,
         start: *const u8,
@@ -160,8 +163,8 @@ pub enum TrimmingBufferSlice {
 
 impl Drop for TrimmingBufferSlice {
     fn drop(&mut self) {
-        if let &mut TrimmingBufferSlice::Direct { ref parent, start, len, .. }
-                = self { unsafe {
+        if let TrimmingBufferSliceImpl::Direct { ref parent, start, len, .. }
+                = self.0 { unsafe {
             let mut borrow = parent.borrow_mut();
             borrow.del_tracker.track_slice(slice::from_raw_parts(start, len));
         }}
@@ -171,11 +174,11 @@ impl Drop for TrimmingBufferSlice {
 impl Deref for TrimmingBufferSlice {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
-        match *self {
-            TrimmingBufferSlice::Direct { start, len, .. } => { unsafe {
+        match self.0 {
+            TrimmingBufferSliceImpl::Direct { start, len, .. } => { unsafe {
                 slice::from_raw_parts(start, len)
             }},
-            TrimmingBufferSlice::Owning(ref boxed) => boxed.as_ref()
+            TrimmingBufferSliceImpl::Owning(ref boxed) => boxed.as_ref()
         }
     }
 }

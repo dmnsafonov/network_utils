@@ -21,11 +21,13 @@ pub struct DatagramConfig {
 }
 
 pub struct StreamConfig {
-    pub message: Option<OsString>
+    pub message: Option<OsString>,
+    pub window_size: u32
 }
 
 pub fn get_config() -> Config {
     let matches = get_args();
+
     Config {
         bind_address: matches.value_of("bind").map(str::to_string),
         bind_interface: matches.value_of("bind-to-interface")
@@ -33,7 +35,15 @@ pub fn get_config() -> Config {
         mode: if matches.is_present("stream") {
                 ModeConfig::Stream(StreamConfig {
                     message: matches.value_of_os("message")
-                        .map(OsStr::to_os_string)
+                        .map(OsStr::to_os_string),
+                    window_size: {
+                        let ws = matches.value_of("window_size").unwrap()
+                            .parse().expect("window size must be a number");
+                        if ws < 1 && ws > 65536 {
+                            panic!("window size must lie between 1 and 65536");
+                        }
+                        ws
+                    }
                 })
             } else {
                 ModeConfig::Datagram(DatagramConfig {
@@ -82,9 +92,17 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
         ).arg(Arg::with_name("message")
             .long("message")
             .short("m")
-            .help("Send a short (fitting in a single packet) message \
+            .help("Sends a short (fitting in a single packet) message \
                 to the sender simulteneously with accepting connection \
                 in stream mode")
             .requires("stream")
+        ).arg(Arg::with_name("window-size")
+            .long("window-size")
+            .short("w")
+            .help("Sets the stream mode transmission window size between \
+                1 and 65536 inclusive.  Default is highly arbitrary \
+                 value \"1000\"")
+            .requires("stream")
+            .default_value("1000")
         ).get_matches()
 }

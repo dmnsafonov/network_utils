@@ -48,6 +48,7 @@ pub fn stream_mode((config, bound_addr, sock): InitState) -> Result<()> {
             config.bind_address.as_ref().unwrap(),
             Resolve::No
         )?,
+        window_size: stream_conf.window_size,
         sock: async_sock,
         mtu: mtu,
         data_out: data_out,
