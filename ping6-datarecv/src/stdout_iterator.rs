@@ -78,7 +78,7 @@ impl<'a> AsyncWrite for StdoutBytesWriter<'a> {
 
 impl<'a> Drop for StdoutBytesWriter<'a> {
     fn drop(&mut self) {
-        let mut theself = self.0.borrow_mut();
+        let theself = self.0.borrow();
         if theself.drop_nonblock {
             set_fd_nonblock(&io::stdout(), Nonblock::No).unwrap();
         }

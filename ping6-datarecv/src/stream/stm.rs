@@ -144,7 +144,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let mut common = state.take().common;
 
         let recv_future = make_recv_packets_stream(&mut common)
-            .filter(|&(ref x, src)| {
+            .filter(|&(ref x, _)| {
                 let data_ref = x.borrow();
                 let packet = parse_stream_client_packet(&data_ref);
 
@@ -263,7 +263,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_wait_for_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForAck<'s>>
     ) -> Poll<AfterWaitForAck<'s>, Error> {
-        let (data_ref, dst) = match state.recv_stream.poll() {
+        let (_,_) = match state.recv_stream.poll() {
             Err(e) => bail!(e),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
@@ -294,7 +294,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let mut ack_gen = active.ack_gen.take().expect("an ack range generator");
         ack_gen.start();
         let send_src = *common.src.ip();
-        let send_dst = dst;
+        let send_dst = active.dst;
         let send_buf_full_ref = common.send_buf.clone();
         let send_sock = common.sock.clone();
         let task_clone = task.clone();
@@ -340,7 +340,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let window_size = common.window_size;
         let recv_stream = Box::new(make_recv_packets_stream(&mut common).filter(
             move |&(ref x,_)| {
-                let data = data_ref.borrow();
+                let data = x.borrow();
                 let packet = parse_stream_client_packet(&data);
 
                 let seqno = seqno_tracker_ref.borrow()
@@ -414,8 +414,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
 
             if write_future.is_none() {
-                let mut peeked_seqno = state.active.order.borrow()
-                    .peek_seqno();
+                let peeked_seqno = state.active.order.borrow().peek_seqno();
                 if peeked_seqno == Some(state.active.next_seqno.0) {
                     state.active.next_seqno += Wrapping(1);
                     write_future = Some(WriteBorrowing::new(
