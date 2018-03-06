@@ -230,7 +230,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                                 && packet.seqno == seqno.0 {
                             true
                         } else {
-                            order_ref.borrow_mut().add(&data);
+                            order_ref.borrow_mut().add(data_ref.clone());
                             false
                         }
                     };
@@ -372,26 +372,47 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         }
         state.write_future = None;
 
-        loop {
-            let (dataref, dst) = try_ready!(state.recv_stream.poll()).unwrap();
+        let mut activity = true;
+        while activity {
+            activity = false;
 
-            let range = {
-                let data = dataref.borrow();
+            if let Async::Ready(Some((data_ref,_)))
+                    = state.recv_stream.poll()? {
+                let data = data_ref.borrow();
                 let packet = parse_stream_client_packet(&data);
-                let ind = packet.payload.as_ptr() as usize
-                    - data.as_ptr() as usize;
-                ind .. data.len()
-            };
 
-            state.write_future = Some(WriteBorrowing::new(
-                state.common.data_out.clone(),
-                dataref.range(range)
-            ));
+                state.active.seqno_tracker.borrow_mut()
+                    .add(Wrapping(packet.seqno));
+                state.active.order.borrow_mut().add(data_ref.clone());
 
-            try_ready!(state.write_future.poll());
+                activity = true;
+            }
+
+            let mut write_future = state.write_future.take();
+            if write_future.is_some() {
+                if let Async::Ready(_)
+                        = write_future.as_mut().unwrap().poll()? {
+                    activity = true;
+                    write_future = None;
+                }
+            }
+
+            if write_future.is_none() {
+                let mut peeked_seqno = state.active.order.borrow()
+                    .peek_seqno();
+                if peeked_seqno == Some(state.active.next_seqno.0) {
+                    state.active.next_seqno += Wrapping(1);
+                    write_future = Some(WriteBorrowing::new(
+                        state.common.data_out.clone(),
+                        state.active.order.borrow_mut().take().unwrap()
+                    ));
+                }
+            }
+
+            state.write_future = write_future;
         }
 
-        unimplemented!()
+        Ok(Async::NotReady)
     }
 
     fn poll_send_fin_ack<'a>(

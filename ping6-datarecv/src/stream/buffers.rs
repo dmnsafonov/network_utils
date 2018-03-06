@@ -10,58 +10,64 @@ use ::errors::Error;
 use ::futures::prelude::*;
 use ::tokio_timer::*;
 
+use ::linux_network::futures::U8Slice;
 use ::ping6_datacommon::*;
 
 use ::stream::packet::parse_stream_client_packet;
 
 pub struct DataOrderer {
-    buffer: TrimmingBuffer,
-    order: BinaryHeap<OrderedTrimmingBufferSlice>
+    order: BinaryHeap<OrderedBufferRef>
 }
 
-struct OrderedTrimmingBufferSlice(TrimmingBufferSlice);
+struct OrderedBufferRef(U8Slice);
 
-impl OrderedTrimmingBufferSlice {
-    fn take(self) -> TrimmingBufferSlice {
+impl OrderedBufferRef {
+    fn take(self) -> U8Slice {
         self.0
     }
 }
 
-impl<'a> PartialEq for OrderedTrimmingBufferSlice {
-    fn eq(&self, other: &OrderedTrimmingBufferSlice) -> bool {
-        let l = parse_stream_client_packet(&self.0).seqno;
-        let r = parse_stream_client_packet(&other.0).seqno;
+impl<'a> PartialEq for OrderedBufferRef {
+    fn eq(&self, other: &OrderedBufferRef) -> bool {
+        let lbuf = self.0.borrow();
+        let rbuf = other.0.borrow();
+
+        let l = parse_stream_client_packet(&lbuf).seqno;
+        let r = parse_stream_client_packet(&rbuf).seqno;
 
         l == r
     }
 }
 
-impl Eq for OrderedTrimmingBufferSlice {}
+impl Eq for OrderedBufferRef {}
 
-impl PartialOrd for OrderedTrimmingBufferSlice {
-    fn partial_cmp(&self, other: &OrderedTrimmingBufferSlice)
+impl PartialOrd for OrderedBufferRef {
+    fn partial_cmp(&self, other: &OrderedBufferRef)
             -> Option<Ordering> {
-        let l = parse_stream_client_packet(&self.0).seqno;
-        let r = parse_stream_client_packet(&other.0).seqno;
+        let lbuf = self.0.borrow();
+        let rbuf = other.0.borrow();
+
+        let l = parse_stream_client_packet(&lbuf).seqno;
+        let r = parse_stream_client_packet(&rbuf).seqno;
 
         Reverse(l).partial_cmp(&Reverse(r))
     }
 }
 
-impl Ord for OrderedTrimmingBufferSlice {
-    fn cmp(&self, other: &OrderedTrimmingBufferSlice) -> Ordering {
+impl Ord for OrderedBufferRef {
+    fn cmp(&self, other: &OrderedBufferRef) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl From<TrimmingBufferSlice> for OrderedTrimmingBufferSlice {
-    fn from(x: TrimmingBufferSlice) -> Self {
-        OrderedTrimmingBufferSlice(x)
+impl From<U8Slice> for OrderedBufferRef {
+    fn from(x: U8Slice) -> Self {
+        OrderedBufferRef(x)
     }
 }
 
-impl Deref for OrderedTrimmingBufferSlice {
-    type Target = TrimmingBufferSlice;
+impl Deref for OrderedBufferRef {
+    type Target = U8Slice;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -70,24 +76,23 @@ impl Deref for OrderedTrimmingBufferSlice {
 impl DataOrderer {
     pub fn new(size: usize) -> DataOrderer {
         DataOrderer {
-            buffer: TrimmingBuffer::new(size),
             order: BinaryHeap::with_capacity(size)
         }
     }
 
-    pub fn add<T>(&mut self, packet: T) where T: AsRef<[u8]> {
-        let slice = self.buffer.add_slicing(packet);
-        self.order.push(slice.into());
+    pub fn add(&mut self, packet: U8Slice) {
+        self.order.push(packet.into());
     }
 
     pub fn peek_seqno(&self) -> Option<u16> {
         self.order.peek().map(|x| {
-            let packet = parse_stream_client_packet(x);
+            let packet_ref = x.borrow();
+            let packet = parse_stream_client_packet(&packet_ref);
             packet.seqno
         })
     }
 
-    pub fn take(&mut self) -> Option<TrimmingBufferSlice> {
+    pub fn take(&mut self) -> Option<U8Slice> {
         self.order.pop().map(|x| x.take())
     }
 }
