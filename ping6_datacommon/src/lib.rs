@@ -22,6 +22,7 @@ pub mod timeout;
 use std::cell::RefCell;
 use std::io;
 use std::net::*;
+use std::ops::*;
 use std::os::unix::prelude::*;
 use std::sync::atomic::*;
 
@@ -319,4 +320,19 @@ pub fn validate_stream_packet(
     }
 
     return true;
+}
+
+pub struct DerefWrapper<T>(pub T);
+
+impl<T> Deref for DerefWrapper<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for DerefWrapper<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
 }

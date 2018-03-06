@@ -143,21 +143,6 @@ impl AckWaitlist {
     }
 }
 
-struct DerefWrapper<T>(T);
-
-impl<T> Deref for DerefWrapper<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for DerefWrapper<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.0
-    }
-}
-
 struct AckWaitlistIteratorInternal<'a>(
     OwningHandle<
         Ref<'a, AckWaitlistImpl>,

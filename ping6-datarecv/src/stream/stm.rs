@@ -1,4 +1,5 @@
 use ::std::cell::*;
+use ::std::io;
 use ::std::net::*;
 use ::std::num::Wrapping;
 use ::std::rc::Rc;
@@ -8,14 +9,18 @@ use ::futures::future::*;
 use ::futures::prelude::*;
 use ::futures::stream::unfold;
 use ::futures::task::*;
+use ::owning_ref::*;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
 use ::tokio_core::reactor::Handle;
+use ::tokio_io::AsyncWrite;
+use ::tokio_io::io::*;
 use ::tokio_timer::*;
 
 use ::linux_network::*;
+use ::linux_network::futures::U8Slice;
 use ::ping6_datacommon::*;
-use ::sliceable_rcref::SRcRef;
+use ::sliceable_rcref::*;
 
 use ::config::Config;
 use ::errors::{Error, ErrorKind};
@@ -36,7 +41,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendSynAck))]
     WaitForFirstSyn {
         common: StreamCommonState<'s>,
-        recv_first_syn: Box<FutureE<(futures::U8Slice, SocketAddrV6)>>
+        recv_first_syn: Box<FutureE<(U8Slice, SocketAddrV6)>>
     },
 
     #[state_machine_future(transitions(WaitForAck))]
@@ -45,7 +50,7 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         send_syn_ack: futures::IpV6RawSocketSendtoFuture,
         next_action: Option<Box<
-            StreamE<TimedResult<(futures::U8Slice,SocketAddrV6)>>
+            StreamE<TimedResult<(U8Slice,SocketAddrV6)>>
         >>
     },
 
@@ -54,7 +59,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         recv_stream: Box<StreamE<
-            TimedResult<(futures::U8Slice, SocketAddrV6)>
+            TimedResult<(U8Slice, SocketAddrV6)>
         >>
     },
 
@@ -63,7 +68,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         task: Rc<Cell<Option<Task>>>,
-        recv_stream: Box<StreamE<(futures::U8Slice,SocketAddrV6)>>
+        recv_stream: Box<StreamE<(U8Slice,SocketAddrV6)>>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -106,6 +111,29 @@ pub enum StreamMachine<'s> {
 pub enum TerminationReason {
     DataReceived,
     Interrupted
+}
+
+struct WriteBorrowing<'a, T>(WriteAll<T, OwningSRcRefBorrow<'a, Vec<u8>>>);
+
+impl<'a, T> WriteBorrowing<'a, T> where T: AsyncWrite {
+    fn new(write: T, buf: U8Slice) -> WriteBorrowing<'a, T> {
+        WriteBorrowing(
+            write_all(write, buf.into_borrow())
+        )
+    }
+}
+
+impl<'a, T> Future for WriteBorrowing<'a, T> where T: AsyncWrite {
+    type Item = ();
+    type Error = io::Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        self.0.poll().map(|res| {
+            match res {
+                Async::Ready(_) => Async::Ready(()),
+                Async::NotReady => Async::NotReady
+            }
+        })
+    }
 }
 
 impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
@@ -267,6 +295,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let task_clone = task.clone();
         let main_task = ::futures::task::current();
 
+        // spawn the ack packet sending task
         common.handle.spawn(
             lazy(move || {
                 // a hack to get the task handle out of spawn()
@@ -276,7 +305,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }).and_then(move |_| {
                 ack_gen.map_err(|_| ()).for_each(move |ranges| {
                     // can not move out of the outer closure
-                    let mut send_buf_full_ref = send_buf_full_ref.clone();
+                    let send_buf_full_ref = send_buf_full_ref.clone();
                     let mut send_sock = send_sock.clone();
                     join_all(ranges.into_iter().map(move |IRange(l,r)| {
                         let send_buf_ref = send_buf_full_ref
@@ -338,7 +367,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let task = task_opt.unwrap();
 
         loop {
-            // write from sock stdout
+            let (dataref, dst) = try_ready!(state.recv_stream.poll()).unwrap();
             unimplemented!()
         }
 
@@ -378,7 +407,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
 fn make_recv_packets_stream<'a>(
     common: &mut StreamCommonState<'a>
-) -> Box<StreamE<(futures::U8Slice, SocketAddrV6)>> {
+) -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
     let csrc = common.src;
 
     Box::new(unfold((

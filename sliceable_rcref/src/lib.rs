@@ -1,6 +1,6 @@
 extern crate owning_ref;
 
-use std::cell::RefCell;
+use std::cell::*;
 use std::ops::*;
 use std::rc::Rc;
 
@@ -9,7 +9,7 @@ use owning_ref::*;
 type Range = std::ops::Range<usize>;
 
 #[derive(Clone)]
-pub struct SRcRef<T> where T: Index<Range> {
+pub struct SRcRef<T> {
     inner: Rc<RefCell<T>>,
     range: Range
 }
@@ -49,11 +49,82 @@ impl<T> SRcRef<T> where T: Index<Range> {
         RefRef::new(self.inner.borrow())
             .map(|x| x.index(self.range.clone()))
     }
+
+    pub fn into_borrow<'a>(self) -> OwningSRcRefBorrow<'a, T> {
+        OwningSRcRefBorrow {
+            borrow: OwningHandle::new_with_fn(RcRef::new(self.inner),
+                |x| unsafe {
+                    x.as_ref().unwrap().borrow()
+                }
+            ),
+            range: self.range
+        }
+    }
 }
 
 impl<T> SRcRef<T> where T: IndexMut<Range> {
     pub fn borrow_mut(&self) -> RefMutRefMut<T, <T as Index<Range>>::Output> {
         RefMutRefMut::new(self.inner.borrow_mut())
             .map_mut(|x| x.index_mut(self.range.clone()))
+    }
+
+    pub fn into_borrow_mut<'a>(self) -> OwningSRcRefMutBorrow<'a, T> {
+        OwningSRcRefMutBorrow {
+            borrow: OwningHandle::new_with_fn(RcRef::new(self.inner),
+                |x| unsafe {
+                    x.as_ref().unwrap().borrow_mut()
+                }
+            ),
+            range: self.range
+        }
+    }
+}
+
+// useful because it is impossible implement Deref for SRcRef
+// to use OwningHandle
+pub struct OwningSRcRefBorrow<'a, T> where T: 'a {
+    borrow: OwningHandle<RcRef<RefCell<T>>, Ref<'a, T>>,
+    range: Range
+}
+
+impl<'a, T> Deref for OwningSRcRefBorrow<'a, T> where T: Index<Range> {
+    type Target = <T as Index<Range>>::Output;
+    fn deref(&self) -> &Self::Target {
+        self.borrow.index(self.range.clone())
+    }
+}
+
+impl<'a, T> AsRef<<T as Index<Range>>::Output> for OwningSRcRefBorrow<'a, T>
+        where T: Index<Range> {
+    fn as_ref(&self) -> &<T as Index<Range>>::Output {
+        &**self
+    }
+}
+
+// useful because it is impossible implement Deref for SRcRef
+// to use OwningHandle
+pub struct OwningSRcRefMutBorrow<'a, T> where T: 'a {
+    borrow: OwningHandle<RcRef<RefCell<T>>, RefMut<'a, T>>,
+    range: Range
+}
+
+impl<'a, T> Deref for OwningSRcRefMutBorrow<'a, T> where T: Index<Range> {
+    type Target = <T as Index<Range>>::Output;
+    fn deref(&self) -> &Self::Target {
+        self.borrow.index(self.range.clone())
+    }
+}
+
+impl<'a, T> DerefMut for OwningSRcRefMutBorrow<'a, T>
+        where T: IndexMut<Range> {
+    fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
+        self.borrow.index_mut(self.range.clone())
+    }
+}
+
+impl<'a, T> AsMut<<T as Index<Range>>::Output> for OwningSRcRefMutBorrow<'a, T>
+        where T: IndexMut<Range> {
+    fn as_mut(&mut self) -> &mut <T as Index<Range>>::Output {
+        &mut **self
     }
 }
