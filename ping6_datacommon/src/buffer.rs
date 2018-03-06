@@ -182,3 +182,9 @@ impl Deref for TrimmingBufferSlice {
         }
     }
 }
+
+impl AsRef<[u8]> for TrimmingBufferSlice {
+    fn as_ref(&self) -> &[u8] {
+        &*self
+    }
+}

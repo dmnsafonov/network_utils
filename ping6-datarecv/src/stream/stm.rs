@@ -68,7 +68,7 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         task: Rc<Cell<Option<Task>>>,
         recv_stream: Box<StreamE<(U8Slice, SocketAddrV6)>>,
-        write_future: Option<WriteBorrowing<'s, StdoutBytesWriter<'s>>>
+        write_future: Option<WriteBorrowing<StdoutBytesWriter<'s>>>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -113,17 +113,17 @@ pub enum TerminationReason {
     Interrupted
 }
 
-pub struct WriteBorrowing<'a, T>(WriteAll<T, OwningSRcRefBorrow<'a, Vec<u8>>>);
+pub struct WriteBorrowing<T>(WriteAll<T, TrimmingBufferSlice>);
 
-impl<'a, T> WriteBorrowing<'a, T> where T: AsyncWrite {
-    fn new(write: T, buf: U8Slice) -> WriteBorrowing<'a, T> {
+impl<T> WriteBorrowing<T> where T: AsyncWrite {
+    fn new(write: T, buf: TrimmingBufferSlice) -> WriteBorrowing<T> {
         WriteBorrowing(
-            write_all(write, buf.into_borrow())
+            write_all(write, buf)
         )
     }
 }
 
-impl<'a, T> Future for WriteBorrowing<'a, T> where T: AsyncWrite {
+impl<T> Future for WriteBorrowing<T> where T: AsyncWrite {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -230,7 +230,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                                 && packet.seqno == seqno.0 {
                             true
                         } else {
-                            order_ref.borrow_mut().add(data_ref.clone());
+                            order_ref.borrow_mut().add(&data);
                             false
                         }
                     };
@@ -381,9 +381,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 let data = data_ref.borrow();
                 let packet = parse_stream_client_packet(&data);
 
+                if packet.flags.test(StreamPacketFlags::Fin) {
+                    unimplemented!()
+                }
+
                 state.active.seqno_tracker.borrow_mut()
                     .add(Wrapping(packet.seqno));
-                state.active.order.borrow_mut().add(data_ref.clone());
+                state.active.order.borrow_mut().add(&data);
 
                 activity = true;
             }
