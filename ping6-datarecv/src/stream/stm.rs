@@ -218,7 +218,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             let seqno_tracker_ref = active.seqno_tracker.clone();
             let order_ref = active.order.clone();
             let packets = make_recv_packets_stream(&mut common)
-                .filter_map(move |(data_ref, dst)| {
+                .and_then(move |(data_ref, dst)| {
                     let pass = {
                         let data = data_ref.borrow();
                         let packet = parse_stream_client_packet(&data);
@@ -230,16 +230,20 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                                 && packet.seqno == seqno.0 {
                             true
                         } else {
+                            let order = order_ref.borrow_mut();
+                            if order.get_space_left() < data.len() {
+                                bail!(ErrorKind::RecvBufferOverrunOnStart);
+                            }
                             order_ref.borrow_mut().add(&data);
                             false
                         }
                     };
 
                     match pass {
-                        true => Some((data_ref, dst)),
-                        false => None
+                        true => Ok(Some((data_ref, dst))),
+                        false => Ok(None)
                     }
-                });
+                }).filter_map(|x| x);
             let timed = TimeoutResultStream::new(
                 &common.timer,
                 packets,
@@ -376,20 +380,27 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         while activity {
             activity = false;
 
-            if let Async::Ready(Some((data_ref,_)))
-                    = state.recv_stream.poll()? {
-                let data = data_ref.borrow();
-                let packet = parse_stream_client_packet(&data);
+            if state.active.order.borrow().get_space_left()
+                    >= state.common.mtu as usize {
+                if let Async::Ready(Some((data_ref,_)))
+                        = state.recv_stream.poll()? {
+                    let data = data_ref.borrow();
+                    let packet = parse_stream_client_packet(&data);
 
-                if packet.flags.test(StreamPacketFlags::Fin) {
-                    unimplemented!()
+                    if data.len() > state.common.mtu as usize {
+                        bail!(ErrorKind::MtuLessThanReal(data.len() as u16));
+                    }
+
+                    if packet.flags.test(StreamPacketFlags::Fin) {
+                        unimplemented!()
+                    }
+
+                    state.active.seqno_tracker.borrow_mut()
+                        .add(Wrapping(packet.seqno));
+                    state.active.order.borrow_mut().add(&data);
+
+                    activity = true;
                 }
-
-                state.active.seqno_tracker.borrow_mut()
-                    .add(Wrapping(packet.seqno));
-                state.active.order.borrow_mut().add(&data);
-
-                activity = true;
             }
 
             let mut write_future = state.write_future.take();

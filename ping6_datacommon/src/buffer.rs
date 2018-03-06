@@ -46,7 +46,8 @@ impl TrimmingBuffer {
     pub fn add<T>(&mut self, data: T) where T: AsRef<[u8]> {
         let mut theself = self.0.borrow_mut();
         let dataref = data.as_ref();
-        assert!(theself.inner.len().checked_add(dataref.len()).is_some());
+        let res_len = theself.inner.len().checked_add(dataref.len()).unwrap();
+        assert!(res_len <= theself.inner.capacity());
         theself.inner.extend(dataref[..].iter());
     }
 

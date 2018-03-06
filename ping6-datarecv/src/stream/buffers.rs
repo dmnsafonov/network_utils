@@ -80,6 +80,10 @@ impl DataOrderer {
         self.order.push(slice.into());
     }
 
+    pub fn get_space_left(&self) -> usize {
+        self.buffer.get_space_left()
+    }
+
     pub fn peek_seqno(&self) -> Option<u16> {
         self.order.peek().map(|x| {
             let packet = parse_stream_client_packet(x);

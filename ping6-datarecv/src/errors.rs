@@ -1,5 +1,17 @@
 error_chain!(
     errors {
+        RecvBufferOverrunOnStart {
+            description("receive buffer space depleted before completing \
+                handshake")
+        }
+
+        MtuLessThanReal(packet_size: u16) {
+            description("received packet greater then the assumed mtu")
+            display("Received packet larger than the assumed MTU ({}).  \
+                Consider specifying the interface to listen on.  \
+                Default MTU is the safe guess of 1280.", packet_size)
+        }
+
         TimedOut {
             description("operation timed out")
         }
