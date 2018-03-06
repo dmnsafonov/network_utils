@@ -68,7 +68,8 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         task: Rc<Cell<Option<Task>>>,
         recv_stream: Box<StreamE<(U8Slice, SocketAddrV6)>>,
-        write_future: Option<WriteBorrowing<StdoutBytesWriter<'s>>>
+        write_future: Option<WriteBorrowing<StdoutBytesWriter<'s>>>,
+        timeout: Interval
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -351,13 +352,16 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
         ));
 
+        let timeout = make_connection_timeout(&common);
+
         transition!(
             WaitForPackets {
                 common: common,
                 active: active,
                 task: task,
                 recv_stream: recv_stream,
-                write_future: None
+                write_future: None,
+                timeout: timeout
             }
         )
     }
@@ -371,11 +375,6 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         }
         let task = task_opt.unwrap();
 
-        if let Some(ref mut write) = state.write_future {
-            try_ready!(write.poll());
-        }
-        state.write_future = None;
-
         let mut activity = true;
         while activity {
             activity = false;
@@ -384,6 +383,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     >= state.common.mtu as usize {
                 if let Async::Ready(Some((data_ref,_)))
                         = state.recv_stream.poll()? {
+                    state.timeout = make_connection_timeout(&state.common);
+
                     let data = data_ref.borrow();
                     let packet = parse_stream_client_packet(&data);
 
@@ -425,6 +426,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
 
             state.write_future = write_future;
+        }
+
+        if let Async::Ready(_) = state.timeout.poll()? {
+            bail!(ErrorKind::TimedOut);
         }
 
         Ok(Async::NotReady)
@@ -509,6 +514,13 @@ fn make_syn_ack_future<'a>(
         dst,
         SendFlagSet::new()
     )
+}
+
+fn make_connection_timeout<'a>(common: &StreamCommonState<'a>)
+        -> Interval {
+    common.timer.interval(Duration::from_millis(
+        PACKET_LOSS_TIMEOUT as u64 * RETRANSMISSIONS_NUMBER as u64
+    ))
 }
 
 pub struct StreamCommonState<'a> {
