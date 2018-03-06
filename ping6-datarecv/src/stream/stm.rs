@@ -373,7 +373,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         if task_opt.is_none() {
             return Ok(Async::NotReady);
         }
-        let task = task_opt.unwrap();
+        let ack_sending_task = task_opt.unwrap();
 
         let mut activity = true;
         while activity {
@@ -399,6 +399,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     state.active.seqno_tracker.borrow_mut()
                         .add(Wrapping(packet.seqno));
                     state.active.order.borrow_mut().add(&data);
+
+                    ack_sending_task.notify();
 
                     activity = true;
                 }
