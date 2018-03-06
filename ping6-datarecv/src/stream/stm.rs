@@ -53,7 +53,7 @@ pub enum StreamMachine<'s> {
         >>
     },
 
-    #[state_machine_future(transitions(SendSynAck, WaitForPackets))]
+    #[state_machine_future(transitions(SendSynAck, ReceivePackets))]
     WaitForAck {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
@@ -63,7 +63,7 @@ pub enum StreamMachine<'s> {
     },
 
     #[state_machine_future(transitions(SendFinAck, SendFin))]
-    WaitForPackets {
+    ReceivePackets {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         task: Rc<Cell<Option<Task>>>,
@@ -355,7 +355,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let timeout = make_connection_timeout(&common);
 
         transition!(
-            WaitForPackets {
+            ReceivePackets {
                 common: common,
                 active: active,
                 task: task,
@@ -366,9 +366,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         )
     }
 
-    fn poll_wait_for_packets<'a>(
-        state: &'a mut RentToOwn<'a, WaitForPackets<'s>>
-    ) -> Poll<AfterWaitForPackets<'s>, Error> {
+    fn poll_receive_packets<'a>(
+        state: &'a mut RentToOwn<'a, ReceivePackets<'s>>
+    ) -> Poll<AfterReceivePackets<'s>, Error> {
         let task_opt = state.task.clone().take();
         if task_opt.is_none() {
             return Ok(Async::NotReady);
