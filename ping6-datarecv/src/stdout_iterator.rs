@@ -1,6 +1,8 @@
+use ::std::cell::RefCell;
 use ::std::io;
 use ::std::io::prelude::*;
 use ::std::os::unix::prelude::*;
+use ::std::rc::Rc;
 
 use ::futures::prelude::*;
 use ::mio;
@@ -34,7 +36,10 @@ impl<'a> AsRawFd for StdoutLockWrapper<'a> {
 
 gen_evented_eventedfd_lifetimed!(StdoutLockWrapper<'gen_lifetime>);
 
-pub struct StdoutBytesWriter<'a> {
+#[derive(Clone)]
+pub struct StdoutBytesWriter<'a>(Rc<RefCell<StdoutBytesWriterImpl<'a>>>);
+
+struct StdoutBytesWriterImpl<'a> {
     stdout: PollEvented<StdoutLockWrapper<'a>>,
     drop_nonblock: bool
 }
@@ -43,20 +48,25 @@ impl<'a> StdoutBytesWriter<'a> {
     pub fn new(handle: &Handle, stdout: io::StdoutLock<'a>)
             -> Result<StdoutBytesWriter<'a>> {
         let old = set_fd_nonblock(&io::stdout(), Nonblock::Yes)?;
-        Ok(StdoutBytesWriter {
-            stdout: PollEvented::new(StdoutLockWrapper(stdout), handle)?,
-            drop_nonblock: !old
-        })
+        let ret = Rc::new(RefCell::new(
+            StdoutBytesWriterImpl {
+                stdout: PollEvented::new(StdoutLockWrapper(stdout), handle)?,
+                drop_nonblock: !old
+            }
+        ));
+        Ok(StdoutBytesWriter(ret))
     }
 }
 
 impl<'a> Write for StdoutBytesWriter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.stdout.get_mut().write(buf)
+        let mut theself = self.0.borrow_mut();
+        theself.stdout.get_mut().write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.stdout.get_mut().flush()
+        let mut theself = self.0.borrow_mut();
+        theself.stdout.get_mut().flush()
     }
 }
 
@@ -68,7 +78,8 @@ impl<'a> AsyncWrite for StdoutBytesWriter<'a> {
 
 impl<'a> Drop for StdoutBytesWriter<'a> {
     fn drop(&mut self) {
-        if self.drop_nonblock {
+        let mut theself = self.0.borrow_mut();
+        if theself.drop_nonblock {
             set_fd_nonblock(&io::stdout(), Nonblock::No).unwrap();
         }
     }

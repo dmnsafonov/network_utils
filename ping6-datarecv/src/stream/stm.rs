@@ -1,5 +1,4 @@
 use ::std::cell::*;
-use ::std::io;
 use ::std::net::*;
 use ::std::num::Wrapping;
 use ::std::rc::Rc;
@@ -68,7 +67,8 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         task: Rc<Cell<Option<Task>>>,
-        recv_stream: Box<StreamE<(U8Slice,SocketAddrV6)>>
+        recv_stream: Box<StreamE<(U8Slice, SocketAddrV6)>>,
+        write_future: Option<WriteBorrowing<'s, StdoutBytesWriter<'s>>>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -113,7 +113,7 @@ pub enum TerminationReason {
     Interrupted
 }
 
-struct WriteBorrowing<'a, T>(WriteAll<T, OwningSRcRefBorrow<'a, Vec<u8>>>);
+pub struct WriteBorrowing<'a, T>(WriteAll<T, OwningSRcRefBorrow<'a, Vec<u8>>>);
 
 impl<'a, T> WriteBorrowing<'a, T> where T: AsyncWrite {
     fn new(write: T, buf: U8Slice) -> WriteBorrowing<'a, T> {
@@ -125,14 +125,14 @@ impl<'a, T> WriteBorrowing<'a, T> where T: AsyncWrite {
 
 impl<'a, T> Future for WriteBorrowing<'a, T> where T: AsyncWrite {
     type Item = ();
-    type Error = io::Error;
+    type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         self.0.poll().map(|res| {
             match res {
                 Async::Ready(_) => Async::Ready(()),
                 Async::NotReady => Async::NotReady
             }
-        })
+        }).map_err(|e| e.into())
     }
 }
 
@@ -352,7 +352,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 common: common,
                 active: active,
                 task: task,
-                recv_stream: recv_stream
+                recv_stream: recv_stream,
+                write_future: None
             }
         )
     }
@@ -366,9 +367,28 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         }
         let task = task_opt.unwrap();
 
+        if let Some(ref mut write) = state.write_future {
+            try_ready!(write.poll());
+        }
+        state.write_future = None;
+
         loop {
             let (dataref, dst) = try_ready!(state.recv_stream.poll()).unwrap();
-            unimplemented!()
+
+            let range = {
+                let data = dataref.borrow();
+                let packet = parse_stream_client_packet(&data);
+                let ind = packet.payload.as_ptr() as usize
+                    - data.as_ptr() as usize;
+                ind .. data.len()
+            };
+
+            state.write_future = Some(WriteBorrowing::new(
+                state.common.data_out.clone(),
+                dataref.range(range)
+            ));
+
+            try_ready!(state.write_future.poll());
         }
 
         unimplemented!()
