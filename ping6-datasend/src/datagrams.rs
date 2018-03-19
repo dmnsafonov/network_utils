@@ -96,8 +96,8 @@ pub fn make_packet(descr: &Icmpv6, src: Ipv6Addr, dst: Ipv6Addr)
 
     let cm = icmpv6::checksum(
         &packet.to_immutable(),
-        src,
-        dst
+        &src,
+        &dst
     );
     packet.set_checksum(cm);
 

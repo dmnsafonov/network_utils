@@ -22,7 +22,7 @@ pub fn validate_icmpv6(
     assert_eq!(icmp.icmpv6_type, Icmpv6Types::EchoRequest);
 
     if let Some(dest_addr) = dst {
-        let cm = icmpv6::checksum(&packet, src, dest_addr);
+        let cm = icmpv6::checksum(&packet, &src, &dest_addr);
         if icmp.checksum != cm {
             info!("wrong icmp checksum {}, correct is {}",
                 icmp.checksum,

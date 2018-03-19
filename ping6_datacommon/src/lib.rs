@@ -298,7 +298,7 @@ pub fn validate_stream_packet(
 
     if let Some((src,dst)) = addrs {
         if packet.get_checksum()
-            != icmpv6::checksum(&packet, src, dst) {
+            != icmpv6::checksum(&packet, &src, &dst) {
             return false;
         }
     }

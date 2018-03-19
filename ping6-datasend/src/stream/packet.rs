@@ -39,7 +39,7 @@ pub fn make_stream_client_icmpv6_packet<'a>(
         payload_buff[0..2].copy_from_slice(&u16_to_bytes_be(checksum));
     }
 
-    let cm = icmpv6::checksum(&packet.to_immutable(), src, dst);
+    let cm = icmpv6::checksum(&packet.to_immutable(), &src, &dst);
     packet.set_checksum(cm);
 
     packet.consume_to_immutable()

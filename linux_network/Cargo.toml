@@ -16,7 +16,7 @@ mio = { version = "^0.6.12", optional = true }
 nix = "^0.9.0"
 numeric_enums = { path = "../numeric_enums" }
 owning_ref = { version = "^0.3.3", optional = true }
-pnet_packet = "^0.20.0"
+pnet_packet = "^0.21.0"
 seccomp = { version = "^0.1.1", optional = true }
 sliceable_rcref = { path = "../sliceable_rcref", optional = true }
 tokio-core = { version = "^0.1.12", optional = true }
