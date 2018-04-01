@@ -360,7 +360,7 @@ macro_rules! _gen_flag_set_impl {
             type Output = $name;
 
             fn bitor(self, rhs: $name) -> Self::Output {
-                $name((self.0 | rhs.0))
+                $name(self.0 | rhs.0)
             }
         }
 
