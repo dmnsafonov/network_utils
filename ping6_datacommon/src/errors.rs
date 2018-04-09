@@ -10,7 +10,7 @@ error_chain!(
         IoError(::std::io::Error);
         NixError(::nix::Error);
         Seccomp(::seccomp::SeccompError);
-        TimerError(::tokio_timer::TimerError);
+        TimerError(::tokio_timer::Error);
     }
 
     links {

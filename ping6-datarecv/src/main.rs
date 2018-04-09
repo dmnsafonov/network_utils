@@ -12,8 +12,7 @@ extern crate owning_ref;
 extern crate pnet_packet;
 extern crate seccomp;
 #[macro_use] extern crate state_machine_future;
-extern crate tokio_core;
-#[macro_use] extern crate tokio_io;
+extern crate tokio;
 extern crate tokio_timer;
 
 #[macro_use] extern crate boolean_enums;

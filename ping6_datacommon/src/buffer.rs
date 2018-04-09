@@ -1,17 +1,18 @@
-use ::std::cell::RefCell;
 use ::std::collections::VecDeque;
 use ::std::cmp::min;
 use ::std::slice;
 use ::std::ops::*;
-use ::std::rc::Rc;
+use ::std::sync::*;
 
-use ::owning_ref::RefRef;
+use ::owning_ref::RwLockReadGuardRef;
 
 use ::IRange;
 use ::range_tracker::*;
 
 // destructor must run after all slices' destructors
-pub struct TrimmingBuffer(Rc<RefCell<TrimmingBufferImpl>>);
+pub struct TrimmingBuffer(Arc<RwLock<TrimmingBufferImpl>>);
+unsafe impl Send for TrimmingBuffer {}
+unsafe impl Sync for TrimmingBuffer {}
 
 struct TrimmingBufferImpl {
     inner: VecDeque<u8>,
@@ -20,23 +21,23 @@ struct TrimmingBufferImpl {
 }
 
 #[derive(Clone)]
-struct TrimmingBufferImplBufferGetter(Rc<RefCell<TrimmingBufferImpl>>);
+struct TrimmingBufferImplBufferGetter(Arc<RwLock<TrimmingBufferImpl>>);
 
 impl<'a> RangeTrackerParentHandle<'a, u8> for TrimmingBufferImplBufferGetter {
-    type Borrowed = RefRef<'a, TrimmingBufferImpl, VecDeque<u8>>;
+    type Borrowed = RwLockReadGuardRef<'a, TrimmingBufferImpl, VecDeque<u8>>;
     fn borrow(&'a self) -> Self::Borrowed {
-        RefRef::new(self.0.borrow()).map(|x| &x.inner)
+        RwLockReadGuardRef::new(self.0.read().unwrap()).map(|x| &x.inner)
     }
 }
 
 impl TrimmingBuffer {
     pub fn new(size: usize) -> TrimmingBuffer {
-        let ret = TrimmingBuffer(Rc::new(RefCell::new(TrimmingBufferImpl {
+        let ret = TrimmingBuffer(Arc::new(RwLock::new(TrimmingBufferImpl {
             inner: VecDeque::with_capacity(size),
             first_available: 0,
             del_tracker: unsafe { ::std::mem::uninitialized() }
         })));
-        ret.0.borrow_mut().del_tracker = RangeTracker::new_with_parent(
+        ret.0.write().unwrap().del_tracker = RangeTracker::new_with_parent(
             TrimmingBufferImplBufferGetter(ret.0.clone())
         );
 
@@ -44,7 +45,7 @@ impl TrimmingBuffer {
     }
 
     pub fn add<T>(&mut self, data: T) where T: AsRef<[u8]> {
-        let mut theself = self.0.borrow_mut();
+        let mut theself = self.0.write().unwrap();
         let dataref = data.as_ref();
         let res_len = theself.inner.len().checked_add(dataref.len()).unwrap();
         assert!(res_len <= theself.inner.capacity());
@@ -54,22 +55,22 @@ impl TrimmingBuffer {
     pub fn add_slicing<T>(&mut self, data: T) -> TrimmingBufferSlice
             where T: AsRef<[u8]> {
         let range = {
-            let first_ind = self.0.borrow().inner.len() - 1;
+            let first_ind = self.0.read().unwrap().inner.len() - 1;
             let dataref = data.as_ref();
             self.add(dataref);
-            let last_ind = self.0.borrow().inner.len() - 1;
+            let last_ind = self.0.read().unwrap().inner.len() - 1;
             IRange(first_ind, last_ind)
         };
         self.take_range(range)
     }
 
     pub fn get_space_left(&self) -> usize {
-        let theself = self.0.borrow();
+        let theself = self.0.read().unwrap();
         theself.inner.capacity() - theself.inner.len()
     }
 
     pub fn get_available(&self) -> usize {
-        let theself = self.0.borrow();
+        let theself = self.0.read().unwrap();
         theself.inner.len() - theself.first_available
     }
 
@@ -79,13 +80,13 @@ impl TrimmingBuffer {
             return None;
         }
 
-        let first = self.0.borrow().first_available;
+        let first = self.0.read().unwrap().first_available;
 
         Some(self.take_range(IRange(first, first + len - 1)))
     }
 
     fn take_range(&mut self, range: IRange<usize>) -> TrimmingBufferSlice {
-        let mut theself = self.0.borrow_mut();
+        let mut theself = self.0.write().unwrap();
 
         let ilen = theself.inner.len();
         let len = range.len();
@@ -143,7 +144,7 @@ impl TrimmingBuffer {
     }
 
     pub fn cleanup(&mut self) {
-        let mut theself = self.0.borrow_mut();
+        let mut theself = self.0.write().unwrap();
         let ind = theself.del_tracker.take_range();
         if let Some(ind) = ind {
             theself.inner.drain(0 .. ind + 1);
@@ -152,10 +153,12 @@ impl TrimmingBuffer {
 }
 
 pub struct TrimmingBufferSlice(TrimmingBufferSliceImpl);
+unsafe impl Send for TrimmingBufferSlice {}
+unsafe impl Sync for TrimmingBufferSlice {}
 
 enum TrimmingBufferSliceImpl {
     Direct {
-        parent: Rc<RefCell<TrimmingBufferImpl>>,
+        parent: Arc<RwLock<TrimmingBufferImpl>>,
         start: *const u8,
         len: usize
     },
@@ -166,7 +169,7 @@ impl Drop for TrimmingBufferSlice {
     fn drop(&mut self) {
         if let TrimmingBufferSliceImpl::Direct { ref parent, start, len, .. }
                 = self.0 { unsafe {
-            let mut borrow = parent.borrow_mut();
+            let mut borrow = parent.write().unwrap();
             borrow.del_tracker.track_slice(slice::from_raw_parts(start, len));
         }}
     }

@@ -12,6 +12,10 @@ error_chain!(
                 Default MTU is the safe guess of 1280.", packet_size)
         }
 
+        SpawnError {
+            description("failed to spawn task on the thread pool")
+        }
+
         TimedOut {
             description("operation timed out")
         }
@@ -22,7 +26,7 @@ error_chain!(
         IoError(::std::io::Error);
         LogInit(::log::SetLoggerError);
         Seccomp(::seccomp::SeccompError);
-        TimerError(::tokio_timer::TimerError);
+        TimerError(::tokio_timer::Error);
     }
 
     links {

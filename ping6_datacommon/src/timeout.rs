@@ -1,14 +1,15 @@
-use ::std::time::Duration;
+use ::std::time::*;
 
-use ::futures::prelude::*;
-use ::tokio_timer::*;
+use ::tokio::prelude::*;
+use ::tokio::timer::*;
 
 use ::errors::Error;
 
 pub struct TimeoutResultStream<S> {
     stream: Option<S>,
     duration: Duration,
-    sleep: Sleep
+    next_tick: Instant,
+    sleep: Delay
 }
 
 pub enum TimedResult<T> {
@@ -19,12 +20,14 @@ pub enum TimedResult<T> {
 impl<S,E> TimeoutResultStream<S> where
         S: Stream<Error = E>,
         E: From<Error> {
-    pub fn new(timer: &Timer, stream: S, duration: Duration)
+    pub fn new(stream: S, duration: Duration)
             -> TimeoutResultStream<S> {
+        let next_tick = Instant::now() + duration;
         TimeoutResultStream {
             stream: Some(stream),
             duration: duration,
-            sleep: timer.sleep(duration)
+            next_tick,
+            sleep: Delay::new(next_tick)
         }
     }
 }
@@ -40,8 +43,8 @@ impl<S,E> Stream for TimeoutResultStream<S> where
                 .expect("not consumed TimeoutResultStream").poll() {
             Ok(Async::NotReady) => (),
             Ok(Async::Ready(x)) => {
-                let timer = self.sleep.timer().clone();
-                self.sleep = timer.sleep(self.duration);
+                self.next_tick += self.duration;
+                self.sleep = Delay::new(self.next_tick);
 
                 return Ok(Async::Ready(x.map(TimedResult::InTime)))
             },
@@ -51,8 +54,8 @@ impl<S,E> Stream for TimeoutResultStream<S> where
         match self.sleep.poll() {
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Ok(Async::Ready(_)) => {
-                let timer = self.sleep.timer().clone();
-                self.sleep = timer.sleep(self.duration);
+                self.next_tick += self.duration;
+                self.sleep = Delay::new(self.next_tick);
 
                 Ok(Async::Ready(Some(TimedResult::TimedOut)))
             },

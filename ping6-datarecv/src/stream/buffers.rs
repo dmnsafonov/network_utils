@@ -1,14 +1,13 @@
-use ::std::cell::RefCell;
 use ::std::cmp::*;
 use ::std::collections::*;
 use ::std::num::Wrapping;
 use ::std::ops::Deref;
-use ::std::rc::Rc;
-use ::std::time::Duration;
+use ::std::sync::*;
+use ::std::time::*;
 
 use ::errors::Error;
 use ::futures::prelude::*;
-use ::tokio_timer::*;
+use ::tokio::timer::Interval;
 
 use ::ping6_datacommon::*;
 
@@ -139,18 +138,16 @@ impl SeqnoTracker {
 }
 
 pub struct TimedAckSeqnoGenerator {
-    tracker: Rc<RefCell<SeqnoTracker>>,
-    timer: Timer,
+    tracker: Arc<Mutex<SeqnoTracker>>,
     period: Duration,
     interval: Option<Interval>
 }
 
 impl TimedAckSeqnoGenerator {
-    pub fn new(tracker: Rc<RefCell<SeqnoTracker>>, timer: Timer, dur: Duration)
+    pub fn new(tracker: Arc<Mutex<SeqnoTracker>>, dur: Duration)
             -> TimedAckSeqnoGenerator {
         TimedAckSeqnoGenerator {
             tracker: tracker,
-            timer: timer,
             period: dur,
             interval: None
         }
@@ -158,7 +155,7 @@ impl TimedAckSeqnoGenerator {
 
     pub fn start(&mut self) {
         assert!(self.interval.is_none());
-        self.interval = Some(self.timer.interval(self.period));
+        self.interval = Some(Interval::new(Instant::now(), self.period));
     }
 }
 
@@ -168,7 +165,7 @@ impl Stream for TimedAckSeqnoGenerator {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let interval = self.interval.as_mut().expect("a started ack interval");
-        let ranges = self.tracker.borrow_mut().take();
+        let ranges = self.tracker.lock().unwrap().take();
         try_ready!(interval.poll());
 
         Ok(if ranges.is_empty() {

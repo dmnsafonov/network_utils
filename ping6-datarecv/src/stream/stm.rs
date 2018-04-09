@@ -1,8 +1,10 @@
 use ::std::cell::*;
 use ::std::net::*;
 use ::std::num::Wrapping;
+use ::std::ops::*;
 use ::std::rc::Rc;
-use ::std::time::Duration;
+use ::std::sync::{atomic::{fence, Ordering}, *};
+use ::std::time::*;
 
 use ::futures::future::*;
 use ::futures::prelude::*;
@@ -11,10 +13,9 @@ use ::futures::task::*;
 use ::owning_ref::*;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
-use ::tokio_core::reactor::Handle;
-use ::tokio_io::AsyncWrite;
-use ::tokio_io::io::*;
-use ::tokio_timer::*;
+use ::tokio::io::*;
+use ::tokio::prelude::*;
+use ::tokio::timer::*;
 
 use ::linux_network::*;
 use ::linux_network::futures::U8Slice;
@@ -30,6 +31,35 @@ use ::stream::packet::*;
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
 type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
 
+pub struct SendBox<T>(Box<T>) where T: ?Sized;
+unsafe impl<T> Send for SendBox<T> where T: ?Sized {}
+
+impl<T> SendBox<T> where T: ?Sized {
+    fn new(x: Box<T>) -> SendBox<T> {
+        fence(Ordering::Release);
+        SendBox(x)
+    }
+
+    fn into_box(self) -> Box<T> {
+        fence(Ordering::Acquire);
+        self.0
+    }
+}
+
+impl<T> Deref for SendBox<T> where T: ?Sized {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        fence(Ordering::Acquire);
+        &*self.0
+    }
+}
+
+impl<T> DerefMut for SendBox<T> where T: ?Sized {
+    fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
+        &mut *self.0
+    }
+}
+
 #[derive(StateMachineFuture)]
 pub enum StreamMachine<'s> {
     #[state_machine_future(start, transitions(WaitForFirstSyn))]
@@ -40,7 +70,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendSynAck))]
     WaitForFirstSyn {
         common: StreamCommonState<'s>,
-        recv_first_syn: Box<FutureE<(U8Slice, SocketAddrV6)>>
+        recv_first_syn: SendBox<FutureE<(U8Slice, SocketAddrV6)>>
     },
 
     #[state_machine_future(transitions(WaitForAck))]
@@ -48,7 +78,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         send_syn_ack: futures::IpV6RawSocketSendtoFuture,
-        next_action: Option<Box<
+        next_action: Option<SendBox<
             StreamE<TimedResult<(U8Slice,SocketAddrV6)>>
         >>
     },
@@ -57,7 +87,7 @@ pub enum StreamMachine<'s> {
     WaitForAck {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
-        recv_stream: Box<StreamE<
+        recv_stream: SendBox<StreamE<
             TimedResult<(U8Slice, SocketAddrV6)>
         >>
     },
@@ -66,10 +96,10 @@ pub enum StreamMachine<'s> {
     ReceivePackets {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
-        task: Rc<Cell<Option<Task>>>,
-        recv_stream: Box<StreamE<(U8Slice, SocketAddrV6)>>,
+        task: Arc<Mutex<Cell<Option<Task>>>>,
+        recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
         write_future: Option<WriteBorrowing<StdoutBytesWriter<'s>>>,
-        timeout: Interval
+        timeout: Delay
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -145,7 +175,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let recv_future = make_recv_packets_stream(&mut common)
             .filter(|&(ref x, _)| {
-                let data_ref = x.borrow();
+                let data_ref = x.lock();
                 let packet = parse_stream_client_packet(&data_ref);
 
                 packet.flags == StreamPacketFlags::Syn.into()
@@ -156,7 +186,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         transition!(WaitForFirstSyn {
             common: common,
-            recv_first_syn: Box::new(recv_future)
+            recv_first_syn: SendBox::new(Box::new(recv_future))
         })
     }
 
@@ -167,11 +197,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let mut common = state.take().common;
 
-        let data = data_ref.borrow();
+        let data = data_ref.lock();
         let packet = parse_stream_client_packet(&data);
 
         let next_seqno = Wrapping(packet.seqno) + Wrapping(1);
-        let seqno_tracker = Rc::new(RefCell::new(
+        let seqno_tracker = Arc::new(Mutex::new(
             SeqnoTracker::new(next_seqno)
         ));
 
@@ -179,13 +209,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let active = ActiveStreamCommonState {
             dst: dst,
             next_seqno: next_seqno,
-            order: Rc::new(RefCell::new(
+            order: Arc::new(Mutex::new(
                 DataOrderer::new(common.window_size as usize)
             )),
             seqno_tracker: seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
-                common.timer.clone(),
                 Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
             ))
         };
@@ -221,21 +250,21 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             let packets = make_recv_packets_stream(&mut common)
                 .and_then(move |(data_ref, dst)| {
                     let pass = {
-                        let data = data_ref.borrow();
+                        let data = data_ref.lock();
                         let packet = parse_stream_client_packet(&data);
 
-                        seqno_tracker_ref.borrow_mut()
+                        seqno_tracker_ref.lock().unwrap()
                             .add(Wrapping(packet.seqno));
 
                         if packet.flags == StreamPacketFlags::Ack.into()
                                 && packet.seqno == seqno.0 {
                             true
                         } else {
-                            let order = order_ref.borrow_mut();
+                            let order = order_ref.lock().unwrap();
                             if order.get_space_left() < data.len() {
                                 bail!(ErrorKind::RecvBufferOverrunOnStart);
                             }
-                            order_ref.borrow_mut().add(&data);
+                            order_ref.lock().unwrap().add(&data);
                             false
                         }
                     };
@@ -246,11 +275,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     }
                 }).filter_map(|x| x);
             let timed = TimeoutResultStream::new(
-                &common.timer,
                 packets,
                 Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
             );
-            Box::new(timed.take(RETRANSMISSIONS_NUMBER as u64))
+            SendBox::new(Box::new(timed.take(RETRANSMISSIONS_NUMBER as u64)))
         });
 
         transition!(WaitForAck {
@@ -288,7 +316,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let WaitForAck { mut common, mut active, .. } = state.take();
 
-        let task = Rc::new(Cell::new(None));
+        let task = Arc::new(Mutex::new(Cell::new(None)));
 
         // stuff to move into spawned closure
         let mut ack_gen = active.ack_gen.take().expect("an ack range generator");
@@ -304,7 +332,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         common.handle.spawn(
             lazy(move || {
                 // a hack to get the task handle out of spawn()
-                task_clone.set(Some(::futures::task::current()));
+                task_clone.lock().unwrap()
+                    .set(Some(::futures::task::current()));
                 main_task.notify();
                 ok(())
             }).and_then(move |_| {
@@ -340,10 +369,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let window_size = common.window_size;
         let recv_stream = Box::new(make_recv_packets_stream(&mut common).filter(
             move |&(ref x,_)| {
-                let data = x.borrow();
+                let data = x.lock();
                 let packet = parse_stream_client_packet(&data);
 
-                let seqno = seqno_tracker_ref.borrow()
+                let seqno = seqno_tracker_ref.lock().unwrap()
                     .to_sequential(Wrapping(packet.seqno));
 
                 seqno < window_size as usize
@@ -359,7 +388,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 common: common,
                 active: active,
                 task: task,
-                recv_stream: recv_stream,
+                recv_stream: SendBox::new(Box::new(recv_stream)),
                 write_future: None,
                 timeout: timeout
             }
@@ -369,23 +398,26 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_receive_packets<'a>(
         state: &'a mut RentToOwn<'a, ReceivePackets<'s>>
     ) -> Poll<AfterReceivePackets<'s>, Error> {
-        let task_opt = state.task.clone().take();
-        if task_opt.is_none() {
-            return Ok(Async::NotReady);
-        }
-        let ack_sending_task = task_opt.unwrap();
+        let ack_sending_task = {
+            let task_guard = state.task.lock().unwrap();
+            let task_opt = task_guard.take();
+            if task_opt.is_none() {
+                return Ok(Async::NotReady);
+            }
+            task_opt.unwrap()
+        };
 
         let mut activity = true;
         while activity {
             activity = false;
 
-            if state.active.order.borrow().get_space_left()
+            if state.active.order.lock().unwrap().get_space_left()
                     >= state.common.mtu as usize {
                 if let Async::Ready(Some((data_ref,_)))
                         = state.recv_stream.poll()? {
                     state.timeout = make_connection_timeout(&state.common);
 
-                    let data = data_ref.borrow();
+                    let data = data_ref.lock();
                     let packet = parse_stream_client_packet(&data);
 
                     if data.len() > state.common.mtu as usize {
@@ -396,9 +428,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         unimplemented!()
                     }
 
-                    state.active.seqno_tracker.borrow_mut()
+                    state.active.seqno_tracker.lock().unwrap()
                         .add(Wrapping(packet.seqno));
-                    state.active.order.borrow_mut().add(&data);
+                    state.active.order.lock().unwrap().add(&data);
 
                     ack_sending_task.notify();
 
@@ -416,12 +448,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
 
             if write_future.is_none() {
-                let peeked_seqno = state.active.order.borrow().peek_seqno();
+                let peeked_seqno = state.active.order.lock().unwrap()
+                    .peek_seqno();
                 if peeked_seqno == Some(state.active.next_seqno.0) {
                     state.active.next_seqno += Wrapping(1);
                     write_future = Some(WriteBorrowing::new(
                         state.common.data_out.clone(),
-                        state.active.order.borrow_mut().take().unwrap()
+                        state.active.order.lock().unwrap().take().unwrap()
                     ));
                 }
             }
@@ -485,7 +518,7 @@ fn make_recv_packets_stream<'a>(
         }
     ).filter(move |&(ref x, src)| {
         validate_stream_packet(
-            &x.borrow(),
+            &x.lock(),
             Some((*src.ip(), *csrc.ip()))
         )
     }))
@@ -518,8 +551,8 @@ fn make_syn_ack_future<'a>(
 }
 
 fn make_connection_timeout<'a>(common: &StreamCommonState<'a>)
-        -> Interval {
-    common.timer.interval(Duration::from_millis(
+        -> Delay {
+    Delay::new(Instant::now() + Duration::from_millis(
         PACKET_LOSS_TIMEOUT as u64 * RETRANSMISSIONS_NUMBER as u64
     ))
 }
@@ -531,16 +564,15 @@ pub struct StreamCommonState<'a> {
     pub sock: futures::IpV6RawSocketAdapter,
     pub mtu: u16,
     pub data_out: StdoutBytesWriter<'a>,
-    pub timer: Timer,
-    pub send_buf: SRcRef<Vec<u8>>,
-    pub recv_buf: SRcRef<Vec<u8>>,
-    pub handle: Handle
+    pub send_buf: SArcRef<Vec<u8>>,
+    pub recv_buf: SArcRef<Vec<u8>>,
+    pub handle: ::tokio::runtime::TaskExecutor
 }
 
 pub struct ActiveStreamCommonState {
     dst: SocketAddrV6,
     next_seqno: Wrapping<u16>,
-    order: Rc<RefCell<DataOrderer>>,
-    seqno_tracker: Rc<RefCell<SeqnoTracker>>,
+    order: Arc<Mutex<DataOrderer>>,
+    seqno_tracker: Arc<Mutex<SeqnoTracker>>,
     ack_gen: Option<TimedAckSeqnoGenerator>
 }

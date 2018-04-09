@@ -25,7 +25,7 @@ macro_rules! n1try {
     })
 }
 
-#[cfg(feature = "futures")]
+#[cfg(feature = "async")]
 macro_rules! try_async_val {
     ($e:expr) => (
         match $e {
@@ -40,7 +40,7 @@ macro_rules! try_async_val {
     )
 }
 
-#[cfg(feature = "futures")]
+#[cfg(feature = "async")]
 macro_rules! try_async {
     ($e:expr) => (
         Ok(Async::Ready(try_async_val!($e)))
@@ -75,6 +75,7 @@ pub fn log_if_err<T,E>(x: ::std::result::Result<T,E>)
     }
 }
 
+#[cfg(feature = "async")]
 #[macro_export]
 macro_rules! gen_evented_eventedfd {
     ($name:ident) => (
@@ -142,4 +143,16 @@ macro_rules! gen_evented_eventedfd_lifetimed {
             }
         }
     )
+}
+
+#[cfg(feature = "async")]
+#[macro_export]
+macro_rules! try_nb {
+    ($e:expr) => (match $e {
+        Ok(t) => t,
+        Err(ref e) if e.kind() == ::std::io::ErrorKind::WouldBlock => {
+            return Ok(::futures::Async::NotReady)
+        }
+        Err(e) => return Err(e.into()),
+    })
 }
