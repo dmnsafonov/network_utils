@@ -5,6 +5,10 @@ error_chain!(
             display("packet payload size {} is too big", size)
         }
 
+        SpawnError {
+            description("failed to spawn task on the thread pool")
+        }
+
         TimedOut {
             description("operation timed out")
         }

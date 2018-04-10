@@ -11,6 +11,7 @@ extern crate mio;
 extern crate owning_ref;
 extern crate pnet_packet;
 extern crate seccomp;
+extern crate send_box;
 #[macro_use] extern crate state_machine_future;
 extern crate tokio;
 extern crate tokio_timer;

@@ -2,7 +2,6 @@ use ::std::cell::*;
 use ::std::net::*;
 use ::std::num::Wrapping;
 use ::std::ops::*;
-use ::std::rc::Rc;
 use ::std::sync::{atomic::{fence, Ordering}, *};
 use ::std::time::*;
 
@@ -20,6 +19,7 @@ use ::tokio::timer::*;
 use ::linux_network::*;
 use ::linux_network::futures::U8Slice;
 use ::ping6_datacommon::*;
+use ::send_box::SendBox;
 use ::sliceable_rcref::*;
 
 use ::config::Config;
@@ -30,35 +30,6 @@ use ::stream::packet::*;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
 type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
-
-pub struct SendBox<T>(Box<T>) where T: ?Sized;
-unsafe impl<T> Send for SendBox<T> where T: ?Sized {}
-
-impl<T> SendBox<T> where T: ?Sized {
-    fn new(x: Box<T>) -> SendBox<T> {
-        fence(Ordering::Release);
-        SendBox(x)
-    }
-
-    fn into_box(self) -> Box<T> {
-        fence(Ordering::Acquire);
-        self.0
-    }
-}
-
-impl<T> Deref for SendBox<T> where T: ?Sized {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        fence(Ordering::Acquire);
-        &*self.0
-    }
-}
-
-impl<T> DerefMut for SendBox<T> where T: ?Sized {
-    fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
-        &mut *self.0
-    }
-}
 
 #[derive(StateMachineFuture)]
 pub enum StreamMachine<'s> {
@@ -186,7 +157,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         transition!(WaitForFirstSyn {
             common: common,
-            recv_first_syn: SendBox::new(Box::new(recv_future))
+            recv_first_syn: unsafe { SendBox::new(Box::new(recv_future)) }
         })
     }
 
@@ -278,7 +249,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 packets,
                 Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
             );
-            SendBox::new(Box::new(timed.take(RETRANSMISSIONS_NUMBER as u64)))
+            unsafe {
+                SendBox::new(Box::new(
+                    timed.take(RETRANSMISSIONS_NUMBER as u64)
+                ))
+            }
         });
 
         transition!(WaitForAck {
@@ -388,7 +363,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 common: common,
                 active: active,
                 task: task,
-                recv_stream: SendBox::new(Box::new(recv_stream)),
+                recv_stream: unsafe { SendBox::new(Box::new(recv_stream)) },
                 write_future: None,
                 timeout: timeout
             }

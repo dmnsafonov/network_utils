@@ -12,10 +12,11 @@ use ::tokio_timer::*;
 
 use ::linux_network::*;
 use ::ping6_datacommon::*;
-use ::sliceable_rcref::SRcRef;
+use ::sliceable_rcref::SArcRef;
 
 use ::config::Config;
 use ::errors::{Error, ErrorKind};
+use ::send_box::SendBox;
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::packet::*;
 
@@ -33,7 +34,7 @@ pub enum StreamMachine<'s> {
     SendFirstSyn {
         common: StreamCommonState<'s>,
         send: futures::IpV6RawSocketSendtoFuture,
-        next_action: Option<Box<StreamE<
+        next_action: Option<SendBox<StreamE<
             TimedResult<(futures::U8Slice, SocketAddrV6)>
         >>>
     },
@@ -41,7 +42,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendFirstSyn, SendAck))]
     WaitForSynAck {
         common: StreamCommonState<'s>,
-        recv_stream: Box<StreamE<
+        recv_stream: SendBox<StreamE<
             TimedResult<(futures::U8Slice, SocketAddrV6)>
         >>
     },
@@ -132,7 +133,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             let seqno = common.next_seqno;
             let packets = make_recv_packets_stream(&mut common)
                 .filter(move |&(ref x, _)| {
-                    let data_ref = x.borrow();
+                    let data_ref = x.lock();
                     let packet = parse_stream_server_packet(&data_ref);
 
                     packet.flags.test(StreamPacketFlags::Syn)
@@ -142,11 +143,14 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         && packet.seqno_start == seqno.0
                 });
             let timed = TimeoutResultStream::new(
-                &common.timer,
                 packets,
                 Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
             );
-            Box::new(timed.take(RETRANSMISSIONS_NUMBER as u64))
+            unsafe {
+                SendBox::new(Box::new(
+                    timed.take(RETRANSMISSIONS_NUMBER as u64)
+                ))
+            }
         });
 
         transition!(WaitForSynAck {
@@ -182,7 +186,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let src = *common.src.ip();
 
-        let data = data_ref.borrow();
+        let data = data_ref.lock();
         let packet = parse_stream_server_packet(&data);
 
         if packet.seqno_start != packet.seqno_end
@@ -321,7 +325,7 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
     ).filter(move |&(ref x, src)| {
         src == cdst
             && validate_stream_packet(
-                &x.borrow(),
+                &x.lock(),
                 Some((*cdst.ip(), *src.ip()))
             )
     }))
@@ -334,8 +338,7 @@ pub struct StreamCommonState<'a> {
     pub sock: futures::IpV6RawSocketAdapter,
     pub mtu: u16,
     pub data_source: StdinBytesReader<'a>,
-    pub timer: Timer,
-    pub send_buf: SRcRef<Vec<u8>>,
-    pub recv_buf: SRcRef<Vec<u8>>,
+    pub send_buf: SArcRef<Vec<u8>>,
+    pub recv_buf: SArcRef<Vec<u8>>,
     pub next_seqno: Wrapping<u16>
 }

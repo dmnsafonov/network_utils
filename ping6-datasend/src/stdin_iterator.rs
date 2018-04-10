@@ -1,13 +1,16 @@
 use ::std::io;
 use ::std::io::prelude::*;
 use ::std::os::unix::prelude::*;
+use ::std::sync::*;
 
 use ::mio;
 use ::mio::*;
 use ::mio::event::Evented;
 use ::mio::unix::EventedFd;
-use ::tokio_core::reactor::*;
-use ::tokio_io::AsyncRead;
+//use ::tokio_core::reactor::*;
+//use ::tokio_io::AsyncRead;
+use ::tokio::prelude::*;
+use ::tokio::reactor::*;
 
 use ::ping6_datacommon::*;
 use ::linux_network::*;
@@ -72,8 +75,12 @@ impl<'a> AsRawFd for StdinLockWrapper<'a> {
 
 gen_evented_eventedfd_lifetimed!(StdinLockWrapper<'gen_lifetime>);
 
-pub struct StdinBytesReader<'a> {
-    stdin: PollEvented<StdinLockWrapper<'a>>,
+pub struct StdinBytesReader<'a>(Arc<Mutex<StdinBytesReaderImpl<'a>>>);
+unsafe impl<'a> Send for StdinBytesReader<'a> {}
+unsafe impl<'a> Sync for StdinBytesReader<'a> {}
+
+struct StdinBytesReaderImpl<'a> {
+    stdin: PollEvented2<StdinLockWrapper<'a>>,
     drop_nonblock: bool
 }
 
@@ -81,16 +88,19 @@ impl<'a> StdinBytesReader<'a> {
     pub fn new(handle: &Handle, stdin: io::StdinLock<'a>)
             -> Result<StdinBytesReader<'a>> {
         let old = set_fd_nonblock(&io::stdin(), Nonblock::Yes)?;
-        Ok(StdinBytesReader {
-            stdin: PollEvented::new(StdinLockWrapper(stdin), handle)?,
+        Ok(StdinBytesReader(Arc::new(Mutex::new(StdinBytesReaderImpl {
+            stdin: PollEvented2::new_with_handle(
+                StdinLockWrapper(stdin),
+                handle
+            )?,
             drop_nonblock: !old
-        })
+        }))))
     }
 }
 
 impl<'a> Read for StdinBytesReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.stdin.get_mut().read(buf)
+        self.0.lock().unwrap().stdin.get_mut().read(buf)
     }
 }
 
@@ -98,7 +108,7 @@ impl<'a> AsyncRead for StdinBytesReader<'a> {}
 
 impl<'a> Drop for StdinBytesReader<'a> {
     fn drop(&mut self) {
-        if self.drop_nonblock {
+        if self.0.lock().unwrap().drop_nonblock {
             set_fd_nonblock(&io::stdin(), Nonblock::No).unwrap();
         }
     }

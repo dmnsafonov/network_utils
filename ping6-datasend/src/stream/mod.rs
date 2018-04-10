@@ -2,16 +2,19 @@ mod buffers;
 mod packet;
 mod stm;
 
+use ::std::io;
 use ::std::num::Wrapping;
 
 use ::rand::*;
 
+use ::tokio::prelude::*;
+
 use ::linux_network::*;
 use ::ping6_datacommon::*;
-use ::sliceable_rcref::SRcRef;
+use ::sliceable_rcref::SArcRef;
 
 use ::config::*;
-use ::errors::Result;
+use ::errors::{ErrorKind, Result};
 use ::stdin_iterator::StdinBytesReader;
 use ::util::InitState;
 
@@ -21,8 +24,12 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
     let _stream_conf = extract!(ModeConfig::Stream(_), config.mode.clone())
         .unwrap();
 
-    let mut core = ::tokio_core::reactor::Core::new()?;
-    let core_handle = core.handle();
+    let mut rt = ::tokio::runtime::Builder::new()
+        .threadpool_builder({
+            let mut builder = ::tokio::executor::thread_pool::Builder::new();
+            builder.pool_size(1);
+            builder
+        }).build()?;
 
     let mtu = match config.bind_interface {
         Some(ref s) => {
@@ -37,30 +44,42 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
         None => IPV6_MIN_MTU
     };
 
-    let async_sock = futures::IpV6RawSocketAdapter::new(&core_handle, sock)?;
-    let stdin = ::std::io::stdin();
-    let data = StdinBytesReader::new(&core_handle, stdin.lock())?;
-    let timer = ::tokio_timer::wheel()
-        .num_slots(::std::u16::MAX as usize + 1)
-        .build();
+    let async_sock = futures::IpV6RawSocketAdapter::new(rt.reactor(), sock)?;
+    let stdin = io::stdin();
+    let data = StdinBytesReader::new(
+        rt.reactor(),
+        unsafe { (&stdin as *const io::Stdin).as_ref().unwrap().lock() }
+    )?;
+
     let init_state = StreamCommonState {
-        config: &config,
+        config: unsafe { (&config as *const Config).as_ref().unwrap() },
         src: src,
         dst: dst,
         sock: async_sock,
         mtu: mtu,
         data_source: data,
-        timer: timer,
-        send_buf: SRcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
+        send_buf: SArcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
         // if we assumed default mtu, then the incoming packet size is unknown
-        recv_buf: SRcRef::new(vec![0; ::std::u16::MAX as usize],
+        recv_buf: SArcRef::new(vec![0; ::std::u16::MAX as usize],
             0 .. (::std::u16::MAX as usize)),
         next_seqno: Wrapping(thread_rng().gen())
     };
 
-    let stm = StreamMachine::start(init_state);
-    match core.run(stm)? {
-        TerminationReason::DataSent => unimplemented!(),
-        TerminationReason::ServerFin => unimplemented!()
-    }
+    let mut stm = StreamMachine::start(init_state);
+    rt.spawn(future::poll_fn(move || {
+        match stm.poll() {
+            Err(e) => {
+                error!("{}", e);
+                Err(())
+            },
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Ok(Async::Ready(TerminationReason::DataSent)) =>
+                unimplemented!(),
+            Ok(Async::Ready(TerminationReason::ServerFin)) =>
+                unimplemented!()
+        }
+    }));
+
+    rt.shutdown_on_idle().wait().map_err(|_| ErrorKind::SpawnError)?;
+    Ok(())
 }

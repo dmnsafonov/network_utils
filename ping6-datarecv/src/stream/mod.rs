@@ -28,7 +28,6 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
             builder.pool_size(1);
             builder
         }).build()?;
-    //let reactor_handle = rt.reactor();
 
     let mtu = match config.bind_interface {
         Some(ref s) => {

@@ -29,6 +29,7 @@ impl<'a> Write for StdoutLockWrapper<'a> {
 
 impl<'a> AsRawFd for StdoutLockWrapper<'a> {
     fn as_raw_fd(&self) -> RawFd {
+        // safe, because it essencially returns STDOUT_FILENO without locking
         io::stdout().as_raw_fd()
     }
 }

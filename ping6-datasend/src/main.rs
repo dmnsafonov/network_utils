@@ -12,10 +12,10 @@ extern crate owning_ref;
 extern crate pnet_packet;
 extern crate rand;
 extern crate seccomp;
+extern crate send_box;
 extern crate sliceable_rcref;
 #[macro_use] extern crate state_machine_future;
-extern crate tokio_core;
-extern crate tokio_io;
+extern crate tokio;
 extern crate tokio_timer;
 
 #[macro_use] extern crate boolean_enums;

@@ -21,11 +21,11 @@ ping6_datacommon = { path = "../ping6_datacommon" }
 pnet_packet = "^0.21.0"
 rand = "^0.4.2"
 seccomp = "^0.1.1"
+send_box = { path = "../send_box" }
 sliceable_rcref = { path = "../sliceable_rcref" }
 state_machine_future = "^0.1.5"
-tokio-core = "^0.1.12"
-tokio-io = "^0.1.4"
-tokio-timer = "^0.1.2"
+tokio = "^0.1.5"
+tokio-timer = "^0.2.0"
 
 [dependencies.linux_network]
 features = ["async", "seccomp"]
