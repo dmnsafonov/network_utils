@@ -37,7 +37,7 @@ pub fn get_config() -> Config {
                     message: matches.value_of_os("message")
                         .map(OsStr::to_os_string),
                     window_size: {
-                        let ws = matches.value_of("window_size").unwrap()
+                        let ws = matches.value_of("window-size").unwrap()
                             .parse().expect("window size must be a number");
                         if ws < 1 && ws > 65536 {
                             panic!("window size must lie between 1 and 65536");

@@ -1,3 +1,4 @@
+use ::std::collections::VecDeque;
 use ::std::net::SocketAddrV6;
 use ::std::num::Wrapping;
 use ::std::time::Duration;
@@ -8,7 +9,6 @@ use ::futures::Stream;
 use ::futures::stream::*;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
-use ::tokio_timer::*;
 
 use ::linux_network::*;
 use ::ping6_datacommon::*;
@@ -57,19 +57,16 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
     SendData {
         common: StreamCommonState<'s>,
-        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
     WaitForAck {
         common: StreamCommonState<'s>,
-        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(SendFinAck))]
     ReceivedServerFin {
         common: StreamCommonState<'s>,
-        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, WaitForLastAck))]
@@ -342,9 +339,7 @@ pub struct StreamCommonState<'a> {
     pub data_source: StdinBytesReader<'a>,
     pub send_buf: SArcRef<Vec<u8>>,
     pub recv_buf: SArcRef<Vec<u8>>,
-    pub next_seqno: Wrapping<u16>
-}
-
-pub struct ActiveStreamCommonState {
+    pub next_seqno: Wrapping<u16>,
+    pub read_buf: TrimmingBuffer,
     pub ack_wait: AckWaitlist
 }

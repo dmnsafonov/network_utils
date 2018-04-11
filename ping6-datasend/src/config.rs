@@ -23,7 +23,10 @@ pub struct DatagramConfig {
 }
 
 #[derive(Clone)]
-pub struct StreamConfig;
+pub struct StreamConfig {
+    pub window_size: u32,
+    pub read_buffer_size: usize
+}
 
 pub fn get_config() -> Config {
     let matches = get_args();
@@ -39,7 +42,13 @@ pub fn get_config() -> Config {
         bind_interface: matches.value_of("bind-to-interface")
             .map(str::to_string),
         mode: if matches.is_present("stream") {
-                ModeConfig::Stream(StreamConfig)
+                ModeConfig::Stream(StreamConfig {
+                    window_size: matches.value_of("window-size").unwrap()
+                        .parse().expect("window size must be a number"),
+                    read_buffer_size: matches.value_of("read-buffer-size")
+                        .unwrap()
+                        .parse().expect("read buffer size must be a number")
+                })
             } else {
                 ModeConfig::Datagram(DatagramConfig {
                     raw: matches.is_present("raw"),
@@ -95,5 +104,19 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
             .help("Sets stream mode on: messages are to be read as \
                 a continuous stream from stdin")
             .requires("use-stdin")
+        ).arg(Arg::with_name("window-size")
+            .long("window-size")
+            .short("w")
+            .help("Sets the stream mode transmission window size between \
+                1 and 65536 inclusive.  Default is highly arbitrary \
+                 value \"1000\"")
+            .requires("stream")
+            .default_value("1000")
+        ).arg(Arg::with_name("read-buffer-size")
+            .long("read-buffer-size")
+            .help("Sets stream mode read buffer size, in KiB.  \
+                Default is 2048.")
+            .requires("stream")
+            .default_value("2048")
         ).get_matches()
 }
