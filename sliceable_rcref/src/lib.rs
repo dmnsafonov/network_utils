@@ -36,7 +36,7 @@ impl<T> SRcRef<T> where T: Index<Range> {
         assert!(r.start <= r.end);
         let self_len = self.range.end - self.range.start;
         let len = r.end - r.start;
-        assert!(r.start + len < self_len);
+        assert!(r.start + len <= self_len);
         let new_range = (self.range.start + r.start)
             .. (self.range.start + len);
 
@@ -157,7 +157,7 @@ impl<T> SArcRef<T> where T: Index<Range> {
         assert!(r.start <= r.end);
         let self_len = self.range.end - self.range.start;
         let len = r.end - r.start;
-        assert!(r.start + len < self_len);
+        assert!(r.start + len <= self_len);
         let new_range = (self.range.start + r.start)
             .. (self.range.start + len);
 
