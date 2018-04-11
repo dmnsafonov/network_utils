@@ -5,14 +5,14 @@ use ::std::iter::*;
 use ::std::marker::PhantomData;
 use ::std::mem::uninitialized;
 use ::std::num::Wrapping;
-use ::std::ops::*;
-use ::std::rc::Rc;
+use ::std::ops::Deref;
+use ::std::sync::*;
 
 use ::owning_ref::*;
 
 use ::ping6_datacommon::*;
 
-pub struct AckWaitlist(Rc<RefCell<AckWaitlistImpl>>);
+pub struct AckWaitlist(Arc<Mutex<AckWaitlistImpl>>);
 
 struct AckWaitlistImpl {
     inner: VecDeque<AckWait>,
@@ -26,32 +26,32 @@ pub struct AckWait {
 }
 
 #[derive(Clone)]
-struct AckWaitlistImplBufferGetter(Rc<RefCell<AckWaitlistImpl>>);
+struct AckWaitlistImplBufferGetter(Arc<Mutex<AckWaitlistImpl>>);
 
 impl<'a> RangeTrackerParentHandle<'a, AckWait>
         for AckWaitlistImplBufferGetter {
-    type Borrowed = RefRef<'a, AckWaitlistImpl, VecDeque<AckWait>>;
+    type Borrowed = MutexGuardRef<'a, AckWaitlistImpl, VecDeque<AckWait>>;
     fn borrow(&'a self) -> Self::Borrowed {
-        RefRef::new(self.0.borrow()).map(|x| &x.inner)
+        MutexGuardRef::new(self.0.lock().unwrap()).map(|x| &x.inner)
     }
 }
 
 impl AckWaitlist {
     pub fn new(window_size: u32) -> AckWaitlist {
         assert!(window_size <= ::std::u16::MAX as u32 + 1);
-        let ret = AckWaitlist(Rc::new(RefCell::new(AckWaitlistImpl {
+        let ret = AckWaitlist(Arc::new(Mutex::new(AckWaitlistImpl {
             inner: VecDeque::with_capacity(window_size as usize),
             del_tracker: unsafe { uninitialized() },
             tmpvec: RefCell::new(Vec::with_capacity(window_size as usize))
         })));
-        ret.0.borrow_mut().del_tracker = RangeTracker::new_with_parent(
+        ret.0.lock().unwrap().del_tracker = RangeTracker::new_with_parent(
             AckWaitlistImplBufferGetter(ret.0.clone())
         );
         ret
     }
 
     pub fn add(&mut self, wait: AckWait) {
-        let mut theself = self.0.borrow_mut();
+        let mut theself = self.0.lock().unwrap();
         debug_assert!(theself.inner.is_empty()
             || wait.seqno > theself.inner.back().unwrap().seqno
             || (theself.inner.back().unwrap().seqno.0 == ::std::u16::MAX
@@ -74,15 +74,17 @@ impl AckWaitlist {
 
     // safe to call multiple times with the same arguments
     pub fn remove_non_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
-        let theself = self.0.borrow();
+        let theself = self.0.lock().unwrap();
 
         assert!(range.0 <= range.1);
-        let tmpvecref = theself.tmpvec.clone();
-        let mut tmpvec = tmpvecref.borrow_mut();
+
+        let tmpvec_ref = theself.tmpvec.clone();
+        let mut tmpvec = tmpvec_ref.borrow_mut();
         debug_assert!(tmpvec.is_empty());
 
         {
-            let mut peekable = Self::iter_from_borrow(Ref::clone(&theself))
+            let mut peekable = Self::iter_from_lock(
+                    OwnOrBorrow::new_borrowed(&theself))
                 .map(|(ind,x)| (ind as u32, x))
                 .skip_while(|&(_,x)| x.seqno < range.0
                     || x.seqno > range.1)
@@ -105,16 +107,15 @@ impl AckWaitlist {
                 tmpvec.push(IRange(start_ind, last_ind));
             }
         }
-        drop(theself);
 
-        let mut theself = self.0.borrow_mut();
+        let mut theself = self.0.lock().unwrap();
         for i in tmpvec.drain(..) {
             theself.del_tracker.track_range(i.into());
         }
     }
 
     pub fn cleanup(&mut self) {
-        let mut theself = self.0.borrow_mut();
+        let mut theself = self.0.lock().unwrap();
         if let Some(ind) = theself.del_tracker.take_range() {
             theself.inner.drain(0 .. ind as usize + 1);
         }
@@ -123,14 +124,19 @@ impl AckWaitlist {
     pub fn iter<'a>(&'a self) -> AckWaitlistIterator<'a> {
         AckWaitlistIterator(OwningHandle::new_with_fn(self.0.clone(),
             |x| unsafe { DerefWrapper(
-                Self::iter_from_borrow(x.as_ref().unwrap().borrow())
+                Self::iter_from_lock(
+                    OwnOrBorrow::new_owned(
+                        x.as_ref().unwrap().lock().unwrap()
+                    )
+                )
             ) }
         ))
     }
 
-    fn iter_from_borrow<'a>(borrow: Ref<'a, AckWaitlistImpl>)
-    -> AckWaitlistIteratorInternal<'a> {
-        AckWaitlistIteratorInternal(OwningHandle::new_with_fn(borrow,
+    fn iter_from_lock<'a>(
+        lock: OwnOrBorrow<'a, MutexGuard<'a, AckWaitlistImpl>>
+    ) -> AckWaitlistIteratorInternal<'a> {
+        AckWaitlistIteratorInternal(OwningHandle::new_with_fn(lock,
             |x| {
                 let y = unsafe { x.as_ref().unwrap() };
                 DerefWrapper(AckWaitlistIteratorInternalImpl {
@@ -145,7 +151,7 @@ impl AckWaitlist {
 
 struct AckWaitlistIteratorInternal<'a>(
     OwningHandle<
-        Ref<'a, AckWaitlistImpl>,
+        OwnOrBorrow<'a, MutexGuard<'a, AckWaitlistImpl>>,
         DerefWrapper<AckWaitlistIteratorInternalImpl<'a>>
     >
 );
@@ -186,7 +192,7 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
 
 pub struct AckWaitlistIterator<'a>(
     OwningHandle<
-        Rc<RefCell<AckWaitlistImpl>>,
+        Arc<Mutex<AckWaitlistImpl>>,
         DerefWrapper<AckWaitlistIteratorInternal<'a>>
     >
 );
@@ -198,3 +204,31 @@ impl<'a> Iterator for AckWaitlistIterator<'a> {
         self.0.next().map(|(_,x)| x)
     }
 }
+
+enum OwnOrBorrow<'a, T> where T: 'a {
+    Own(T),
+    Borrow(&'a T)
+}
+
+impl<'a, T> OwnOrBorrow<'a, T> {
+    fn new_borrowed(x: &'a T) -> OwnOrBorrow<'a, T> {
+        OwnOrBorrow::Borrow(x)
+    }
+
+    fn new_owned(x: T) -> OwnOrBorrow<'a, T> {
+        OwnOrBorrow::Own(x)
+    }
+}
+
+impl<'a, T> Deref for OwnOrBorrow<'a, T> where T: Deref {
+    type Target = <T as Deref>::Target;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            OwnOrBorrow::Own(ref x) => x,
+            OwnOrBorrow::Borrow(x) => x
+        }
+    }
+}
+
+unsafe impl<'a, T> StableAddress for OwnOrBorrow<'a, T>
+    where T: StableAddress {}

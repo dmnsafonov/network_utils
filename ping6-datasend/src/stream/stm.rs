@@ -18,6 +18,7 @@ use ::config::Config;
 use ::errors::{Error, ErrorKind};
 use ::send_box::SendBox;
 use ::stdin_iterator::StdinBytesReader;
+use ::stream::buffers::AckWaitlist;
 use ::stream::packet::*;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
@@ -56,17 +57,19 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
     SendData {
         common: StreamCommonState<'s>,
-
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
     WaitForAck {
-        common: StreamCommonState<'s>
+        common: StreamCommonState<'s>,
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(SendFinAck))]
     ReceivedServerFin {
-        common: StreamCommonState<'s>
+        common: StreamCommonState<'s>,
+        active: ActiveStreamCommonState
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, WaitForLastAck))]
@@ -309,7 +312,6 @@ fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
         -> Box<StreamE<(futures::U8Slice, SocketAddrV6)>> {
     let cdst = common.dst;
-    let csrc = common.src;
 
     Box::new(unfold((
             common.sock.clone(),
@@ -341,4 +343,8 @@ pub struct StreamCommonState<'a> {
     pub send_buf: SArcRef<Vec<u8>>,
     pub recv_buf: SArcRef<Vec<u8>>,
     pub next_seqno: Wrapping<u16>
+}
+
+pub struct ActiveStreamCommonState {
+    pub ack_wait: AckWaitlist
 }
