@@ -25,6 +25,15 @@ pub struct AckWait {
     pub data: TrimmingBufferSlice
 }
 
+impl AckWait {
+    pub fn new(seqno: Wrapping<u16>, data: TrimmingBufferSlice) -> AckWait {
+        AckWait {
+            seqno,
+            data
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AckWaitlistImplBufferGetter(Arc<Mutex<AckWaitlistImpl>>);
 

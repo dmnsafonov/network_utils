@@ -63,8 +63,7 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
         recv_buf: SArcRef::new(vec![0; ::std::u16::MAX as usize],
             0 .. (::std::u16::MAX as usize)),
         next_seqno: Wrapping(thread_rng().gen()),
-        read_buf: TrimmingBuffer::new(stream_conf.read_buffer_size),
-        ack_wait: ::stream::buffers::AckWaitlist::new(stream_conf.window_size)
+        read_buf: TrimmingBuffer::new(stream_conf.read_buffer_size)
     };
 
     let mut stm = StreamMachine::start(init_state);

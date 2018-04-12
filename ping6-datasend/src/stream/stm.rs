@@ -7,19 +7,20 @@ use ::futures::future;
 use ::futures::prelude::*;
 use ::futures::Stream;
 use ::futures::stream::*;
-use ::pnet_packet::Packet;
+use ::pnet_packet::PacketSize;
 use ::state_machine_future::RentToOwn;
 use ::tokio::prelude::*;
 
 use ::linux_network::*;
+use ::linux_network::futures;
 use ::ping6_datacommon::*;
 use ::sliceable_rcref::SArcRef;
 
-use ::config::Config;
+use ::config::*;
 use ::errors::{Error, ErrorKind};
 use ::send_box::SendBox;
 use ::stdin_iterator::StdinBytesReader;
-use ::stream::buffers::AckWaitlist;
+use ::stream::buffers::*;
 use ::stream::packet::*;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
@@ -62,7 +63,9 @@ pub enum StreamMachine<'s> {
     SendData {
         common: StreamCommonState<'s>,
         tmp_buf: RefCell<Vec<u8>>,
-        next_data: Cell<Option<TrimmingBufferSlice>>
+        next_data: Cell<Option<TrimmingBufferSlice>>,
+        send_fut: RefCell<Option<futures::IpV6RawSocketSendtoFuture>>,
+        ack_wait: AckWaitlist
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
@@ -237,24 +240,28 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendAck<'s>, Error> {
         let size = try_ready!(state.send_ack.poll());
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+
+        let window_size =
+            if let ModeConfig::Stream(ref sc) = state.common.config.mode {
+                sc.window_size
+            } else {
+                unreachable!()
+            };
+
         transition!(SendData {
             common: state.take().common,
             tmp_buf: RefCell::new(vec![0; TMP_BUFFER_SIZE]),
-            next_data: Cell::new(None)
+            next_data: Cell::new(None),
+            send_fut: RefCell::new(None),
+            ack_wait: AckWaitlist::new(window_size)
         })
     }
 
     fn poll_send_data<'a>(
         state: &'a mut RentToOwn<'a, SendData<'s>>
     ) -> Poll<AfterSendData<'s>, Error> {
-        let common = &state.common;
-
-        let mut data_source = common.data_source.clone();
-
-        let tmp_buf_ref = state.tmp_buf.clone();
-        let mut tmp_buf = tmp_buf_ref.borrow_mut();
-
-        let mut read_buf = common.read_buf.clone();
+        let mut data_source = state.common.data_source.clone();
+        let mut read_buf = state.common.read_buf.clone();
 
         let mut activity = true;
         while activity {
@@ -262,16 +269,20 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
             let buffer_space = {
                 let sp = read_buf.get_space_left();
-                if sp < common.mtu as usize {
+                if sp < state.common.mtu as usize {
                     read_buf.cleanup();
                     read_buf.get_space_left()
                 } else {
                     sp
                 }
             };
-            let to_read = ::std::cmp::min(buffer_space, tmp_buf.len());
+            let to_read = ::std::cmp::min(
+                buffer_space,
+                state.tmp_buf.borrow().len()
+            );
 
             if to_read != 0 {
+                let mut tmp_buf = state.tmp_buf.borrow_mut();
                 if let Async::Ready(size) =
                         data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
                     read_buf.add(&tmp_buf[0..size]);
@@ -279,7 +290,48 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 }
             }
 
-            unimplemented!()
+            if let ref mut send_fut@Some(_) = *state.send_fut.borrow_mut() {
+                if let Async::Ready(_)
+                        = send_fut.as_mut().unwrap().poll()? {
+                    send_fut.take();
+                    activity = true;
+                }
+            }
+
+            let data_opt = state.next_data.take().or_else(|| {
+                read_buf.take(state.common.mtu as usize)
+            });
+
+            if let Some(data) = data_opt {
+                let size = {
+                    let mut send_buf = state.common.send_buf.borrow_mut();
+                    let packet = make_stream_client_icmpv6_packet(
+                        &mut send_buf,
+                        *state.common.src.ip(),
+                        *state.common.dst.ip(),
+                        state.common.next_seqno.0,
+                        StreamPacketFlagSet::new(),
+                        &data
+                    );
+                    packet.packet_size()
+                };
+
+                let buf_to_send = state.common.send_buf.range(0 .. size);
+                let dst = state.common.dst;
+                let fut = state.common.sock.sendto(
+                    buf_to_send,
+                    dst,
+                    SendFlagSet::new()
+                );
+                state.send_fut.replace(Some(fut));
+
+                let next_seqno = state.common.next_seqno;
+                state.ack_wait.add(AckWait::new(next_seqno, data));
+
+                state.common.next_seqno += Wrapping(1);
+            }
+
+            // TODO: ack waiting
         }
 
         unimplemented!()
@@ -384,6 +436,5 @@ pub struct StreamCommonState<'a> {
     pub send_buf: SArcRef<Vec<u8>>,
     pub recv_buf: SArcRef<Vec<u8>>,
     pub next_seqno: Wrapping<u16>,
-    pub read_buf: TrimmingBuffer,
-    pub ack_wait: AckWaitlist
+    pub read_buf: TrimmingBuffer
 }
