@@ -11,3 +11,6 @@ move creating ack packet sender from
 initialization
 
 remake async socket interface to accept Borrow, not just U8Slice
+
+retransmit lost ack's: send two equal seqno ack with the window start
+as from the point of the receiver
