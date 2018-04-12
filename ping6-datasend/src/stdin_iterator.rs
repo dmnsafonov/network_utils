@@ -75,6 +75,7 @@ impl<'a> AsRawFd for StdinLockWrapper<'a> {
 
 gen_evented_eventedfd_lifetimed!(StdinLockWrapper<'gen_lifetime>);
 
+#[derive(Clone)]
 pub struct StdinBytesReader<'a>(Arc<Mutex<StdinBytesReaderImpl<'a>>>);
 unsafe impl<'a> Send for StdinBytesReader<'a> {}
 unsafe impl<'a> Sync for StdinBytesReader<'a> {}

@@ -1,4 +1,4 @@
-use ::std::collections::VecDeque;
+use ::std::cell::*;
 use ::std::net::SocketAddrV6;
 use ::std::num::Wrapping;
 use ::std::time::Duration;
@@ -9,6 +9,7 @@ use ::futures::Stream;
 use ::futures::stream::*;
 use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
+use ::tokio::prelude::*;
 
 use ::linux_network::*;
 use ::ping6_datacommon::*;
@@ -23,6 +24,9 @@ use ::stream::packet::*;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
 type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
+
+// TODO: tune or make configurable
+const TMP_BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(StateMachineFuture)]
 pub enum StreamMachine<'s> {
@@ -57,6 +61,8 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
     SendData {
         common: StreamCommonState<'s>,
+        tmp_buf: RefCell<Vec<u8>>,
+        next_data: Cell<Option<TrimmingBufferSlice>>
     },
 
     #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
@@ -231,13 +237,51 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendAck<'s>, Error> {
         let size = try_ready!(state.send_ack.poll());
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
-
-        unimplemented!()
+        transition!(SendData {
+            common: state.take().common,
+            tmp_buf: RefCell::new(vec![0; TMP_BUFFER_SIZE]),
+            next_data: Cell::new(None)
+        })
     }
 
     fn poll_send_data<'a>(
         state: &'a mut RentToOwn<'a, SendData<'s>>
     ) -> Poll<AfterSendData<'s>, Error> {
+        let common = &state.common;
+
+        let mut data_source = common.data_source.clone();
+
+        let tmp_buf_ref = state.tmp_buf.clone();
+        let mut tmp_buf = tmp_buf_ref.borrow_mut();
+
+        let mut read_buf = common.read_buf.clone();
+
+        let mut activity = true;
+        while activity {
+            activity = false;
+
+            let buffer_space = {
+                let sp = read_buf.get_space_left();
+                if sp < common.mtu as usize {
+                    read_buf.cleanup();
+                    read_buf.get_space_left()
+                } else {
+                    sp
+                }
+            };
+            let to_read = ::std::cmp::min(buffer_space, tmp_buf.len());
+
+            if to_read != 0 {
+                if let Async::Ready(size) =
+                        data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
+                    read_buf.add(&tmp_buf[0..size]);
+                    activity = true;
+                }
+            }
+
+            unimplemented!()
+        }
+
         unimplemented!()
     }
 

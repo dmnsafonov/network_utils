@@ -10,6 +10,7 @@ use ::IRange;
 use ::range_tracker::*;
 
 // destructor must run after all slices' destructors
+#[derive(Clone)]
 pub struct TrimmingBuffer(Arc<RwLock<TrimmingBufferImpl>>);
 unsafe impl Send for TrimmingBuffer {}
 unsafe impl Sync for TrimmingBuffer {}

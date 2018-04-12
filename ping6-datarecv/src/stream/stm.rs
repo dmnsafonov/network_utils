@@ -69,7 +69,7 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         task: Arc<Mutex<Cell<Option<Task>>>>,
         recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
-        write_future: Option<WriteBorrowing<StdoutBytesWriter<'s>>>,
+        write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
         timeout: Delay
     },
 
@@ -115,17 +115,17 @@ pub enum TerminationReason {
     Interrupted
 }
 
-pub struct WriteBorrowing<T>(WriteAll<T, TrimmingBufferSlice>);
+pub struct WriteBorrow<T>(WriteAll<T, TrimmingBufferSlice>);
 
-impl<T> WriteBorrowing<T> where T: AsyncWrite {
-    fn new(write: T, buf: TrimmingBufferSlice) -> WriteBorrowing<T> {
-        WriteBorrowing(
+impl<T> WriteBorrow<T> where T: AsyncWrite {
+    fn new(write: T, buf: TrimmingBufferSlice) -> WriteBorrow<T> {
+        WriteBorrow(
             write_all(write, buf)
         )
     }
 }
 
-impl<T> Future for WriteBorrowing<T> where T: AsyncWrite {
+impl<T> Future for WriteBorrow<T> where T: AsyncWrite {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -413,6 +413,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 }
             }
 
+            // TODO: WRONG: stop losing data each NotReady, do cleanups
             let mut write_future = state.write_future.take();
             if write_future.is_some() {
                 if let Async::Ready(_)
@@ -427,7 +428,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     .peek_seqno();
                 if peeked_seqno == Some(state.active.next_seqno.0) {
                     state.active.next_seqno += Wrapping(1);
-                    write_future = Some(WriteBorrowing::new(
+                    write_future = Some(WriteBorrow::new(
                         state.common.data_out.clone(),
                         state.active.order.lock().unwrap().take().unwrap()
                     ));
