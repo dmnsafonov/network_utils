@@ -1,15 +1,15 @@
 use ::std::cell::*;
 use ::std::net::SocketAddrV6;
 use ::std::num::Wrapping;
-use ::std::time::Duration;
+use ::std::time::*;
 
-use ::futures::future;
 use ::futures::prelude::*;
 use ::futures::Stream;
 use ::futures::stream::*;
 use ::pnet_packet::PacketSize;
 use ::state_machine_future::RentToOwn;
 use ::tokio::prelude::*;
+use ::tokio::timer::Delay;
 
 use ::linux_network::*;
 use ::linux_network::futures;
@@ -59,18 +59,17 @@ pub enum StreamMachine<'s> {
         send_ack: futures::IpV6RawSocketSendtoFuture
     },
 
-    #[state_machine_future(transitions(ReceivedServerFin, SendFin, WaitForAck))]
+    #[state_machine_future(transitions(ReceivedServerFin, SendFin))]
     SendData {
         common: StreamCommonState<'s>,
         tmp_buf: RefCell<Vec<u8>>,
         next_data: Cell<Option<TrimmingBufferSlice>>,
         send_fut: RefCell<Option<futures::IpV6RawSocketSendtoFuture>>,
-        ack_wait: AckWaitlist
-    },
-
-    #[state_machine_future(transitions(ReceivedServerFin, SendData, SendFin))]
-    WaitForAck {
-        common: StreamCommonState<'s>,
+        recv_stream: RefCell<SendBox<
+            StreamE<(futures::U8Slice, SocketAddrV6)>
+        >>,
+        ack_wait: AckWaitlist,
+        ack_timer: Delay
     },
 
     #[state_machine_future(transitions(SendFinAck))]
@@ -248,12 +247,17 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 unreachable!()
             };
 
+        let recv_stream = RefCell::new(unsafe {
+            SendBox::new(make_recv_ack_or_fin(&mut state.common))
+        });
         transition!(SendData {
             common: state.take().common,
             tmp_buf: RefCell::new(vec![0; TMP_BUFFER_SIZE]),
             next_data: Cell::new(None),
             send_fut: RefCell::new(None),
-            ack_wait: AckWaitlist::new(window_size)
+            recv_stream: recv_stream,
+            ack_wait: AckWaitlist::new(window_size),
+            ack_timer: make_packet_loss_delay()
         })
     }
 
@@ -331,15 +335,23 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 state.common.next_seqno += Wrapping(1);
             }
 
-            // TODO: ack waiting
+            let recv_async = state.recv_stream.borrow_mut().poll()?;
+            if let Async::Ready(Some((x, _))) = recv_async {
+                let packet_buff = x.lock();
+                let packet = parse_stream_server_packet(&packet_buff);
+                state.ack_wait.remove(
+                    IRange(
+                        Wrapping(packet.seqno_start),
+                        Wrapping(packet.seqno_end)
+                    )
+                );
+                state.ack_timer = make_packet_loss_delay();
+                activity = true;
+            }
+
+            // TODO: retransmit
         }
 
-        unimplemented!()
-    }
-
-    fn poll_wait_for_ack<'a>(
-        state: &'a mut RentToOwn<'a, WaitForAck<'s>>
-    ) -> Poll<AfterWaitForAck<'s>, Error> {
         unimplemented!()
     }
 
@@ -424,6 +436,23 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
                 Some((*cdst.ip(), *src.ip()))
             )
     }))
+}
+
+fn make_packet_loss_delay() -> Delay {
+    Delay::new(Instant::now()
+        + Duration::from_millis(PACKET_LOSS_TIMEOUT as u64))
+}
+
+fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
+        -> Box<StreamE<(futures::U8Slice, SocketAddrV6)>> {
+    Box::new(make_recv_packets_stream(common)
+        .filter(|&(ref x, _)| {
+            let packet_buff = x.lock();
+            let packet = parse_stream_server_packet(&packet_buff);
+            (packet.flags.test(StreamPacketFlags::Ack)
+                    || packet.flags.test(StreamPacketFlags::Fin))
+                && !packet.flags.test(StreamPacketFlags::Syn)
+        }))
 }
 
 pub struct StreamCommonState<'a> {
