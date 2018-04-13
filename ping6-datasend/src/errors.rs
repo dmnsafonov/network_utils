@@ -24,6 +24,7 @@ error_chain!(
         IoError(::std::io::Error);
         LogInit(::log::SetLoggerError);
         Seccomp(::seccomp::SeccompError);
+        TimerError(::tokio_timer::Error);
     }
 
     links {

@@ -1,6 +1,8 @@
 use ::std::cell::*;
+use ::std::collections::VecDeque;
 use ::std::net::SocketAddrV6;
 use ::std::num::Wrapping;
+use ::std::ops::*;
 use ::std::time::*;
 
 use ::futures::prelude::*;
@@ -12,18 +14,17 @@ use ::tokio::prelude::*;
 use ::tokio::timer::Delay;
 
 use ::linux_network::*;
-use ::linux_network::futures;
+use ::linux_network::futures::U8Slice;
 use ::ping6_datacommon::*;
 use ::sliceable_rcref::SArcRef;
 
 use ::config::*;
-use ::errors::{Error, ErrorKind};
+use ::errors::{Error, ErrorKind, Result};
 use ::send_box::SendBox;
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::buffers::*;
 use ::stream::packet::*;
 
-type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
 type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
 
 // TODO: tune or make configurable
@@ -41,7 +42,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         send: futures::IpV6RawSocketSendtoFuture,
         next_action: Option<SendBox<StreamE<
-            TimedResult<(futures::U8Slice, SocketAddrV6)>
+            TimedResult<(U8Slice, SocketAddrV6)>
         >>>
     },
 
@@ -49,7 +50,7 @@ pub enum StreamMachine<'s> {
     WaitForSynAck {
         common: StreamCommonState<'s>,
         recv_stream: SendBox<StreamE<
-            TimedResult<(futures::U8Slice, SocketAddrV6)>
+            TimedResult<(U8Slice, SocketAddrV6)>
         >>
     },
 
@@ -63,10 +64,11 @@ pub enum StreamMachine<'s> {
     SendData {
         common: StreamCommonState<'s>,
         tmp_buf: RefCell<Vec<u8>>,
-        next_data: Cell<Option<TrimmingBufferSlice>>,
+        next_data: RefCell<Option<NextData>>,
+        retransmit_queue: RefCell<VecDeque<(Vec<u8>, u16)>>,
         send_fut: RefCell<Option<futures::IpV6RawSocketSendtoFuture>>,
         recv_stream: RefCell<SendBox<
-            StreamE<(futures::U8Slice, SocketAddrV6)>
+            StreamE<(U8Slice, SocketAddrV6)>
         >>,
         ack_wait: AckWaitlist,
         ack_timer: Delay
@@ -112,6 +114,31 @@ pub enum StreamMachine<'s> {
 pub enum TerminationReason {
     DataSent,
     ServerFin
+}
+
+pub enum NextData {
+    Input(TrimmingBufferSlice),
+    Retransmission(Vec<u8>, u16)
+}
+
+impl NextData {
+    fn from_tb_slice(slice: TrimmingBufferSlice) -> NextData {
+        NextData::Input(slice)
+    }
+
+    fn from_retransmission(payload: Vec<u8>, seqno: u16) -> NextData {
+        NextData::Retransmission(payload, seqno)
+    }
+}
+
+impl Deref for NextData {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            NextData::Input(x) => &x,
+            NextData::Retransmission(x, _) => &x
+        }
+    }
 }
 
 impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
@@ -253,7 +280,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         transition!(SendData {
             common: state.take().common,
             tmp_buf: RefCell::new(vec![0; TMP_BUFFER_SIZE]),
-            next_data: Cell::new(None),
+            next_data: RefCell::new(None),
+            retransmit_queue: RefCell::new(VecDeque::new()),
             send_fut: RefCell::new(None),
             recv_stream: recv_stream,
             ack_wait: AckWaitlist::new(window_size),
@@ -264,92 +292,43 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_data<'a>(
         state: &'a mut RentToOwn<'a, SendData<'s>>
     ) -> Poll<AfterSendData<'s>, Error> {
-        let mut data_source = state.common.data_source.clone();
-        let mut read_buf = state.common.read_buf.clone();
-
         let mut activity = true;
         while activity {
-            activity = false;
-
-            let buffer_space = {
-                let sp = read_buf.get_space_left();
-                if sp < state.common.mtu as usize {
-                    read_buf.cleanup();
-                    read_buf.get_space_left()
-                } else {
-                    sp
-                }
+            activity = {
+                let tmp_buf_ref = state.tmp_buf.clone();
+                let ret = fill_read_buf(
+                    &mut state.common,
+                    tmp_buf_ref.borrow_mut()
+                )?;
+                ret
             };
-            let to_read = ::std::cmp::min(
-                buffer_space,
-                state.tmp_buf.borrow().len()
-            );
 
-            if to_read != 0 {
-                let mut tmp_buf = state.tmp_buf.borrow_mut();
-                if let Async::Ready(size) =
-                        data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
-                    read_buf.add(&tmp_buf[0..size]);
-                    activity = true;
+            activity = activity || poll_send_fut(state.send_fut.borrow_mut())?;
+
+            fill_next_data(&mut *state);
+
+            if state.next_data.borrow().is_some() {
+                make_data_send_fut(&mut *state);
+            }
+
+            activity = activity || poll_receive_packets(&mut *state)?;
+
+            if let Async::Ready(_) = state.ack_timer.poll()? {
+                {
+                    let mut retransmit_queue =
+                        state.retransmit_queue.borrow_mut();
+                    if !retransmit_queue.is_empty() {
+                        bail!(ErrorKind::TimedOut);
+                    }
+                    for i in state.ack_wait.iter() {
+                        retransmit_queue.push_back((
+                            (*i.data).into(),
+                            i.seqno.0
+                        ));
+                    }
                 }
-            }
-
-            if let ref mut send_fut@Some(_) = *state.send_fut.borrow_mut() {
-                if let Async::Ready(_)
-                        = send_fut.as_mut().unwrap().poll()? {
-                    send_fut.take();
-                    activity = true;
-                }
-            }
-
-            let data_opt = state.next_data.take().or_else(|| {
-                read_buf.take(state.common.mtu as usize)
-            });
-
-            if let Some(data) = data_opt {
-                let size = {
-                    let mut send_buf = state.common.send_buf.borrow_mut();
-                    let packet = make_stream_client_icmpv6_packet(
-                        &mut send_buf,
-                        *state.common.src.ip(),
-                        *state.common.dst.ip(),
-                        state.common.next_seqno.0,
-                        StreamPacketFlagSet::new(),
-                        &data
-                    );
-                    packet.packet_size()
-                };
-
-                let buf_to_send = state.common.send_buf.range(0 .. size);
-                let dst = state.common.dst;
-                let fut = state.common.sock.sendto(
-                    buf_to_send,
-                    dst,
-                    SendFlagSet::new()
-                );
-                state.send_fut.replace(Some(fut));
-
-                let next_seqno = state.common.next_seqno;
-                state.ack_wait.add(AckWait::new(next_seqno, data));
-
-                state.common.next_seqno += Wrapping(1);
-            }
-
-            let recv_async = state.recv_stream.borrow_mut().poll()?;
-            if let Async::Ready(Some((x, _))) = recv_async {
-                let packet_buff = x.lock();
-                let packet = parse_stream_server_packet(&packet_buff);
-                state.ack_wait.remove(
-                    IRange(
-                        Wrapping(packet.seqno_start),
-                        Wrapping(packet.seqno_end)
-                    )
-                );
                 state.ack_timer = make_packet_loss_delay();
-                activity = true;
             }
-
-            // TODO: retransmit
         }
 
         unimplemented!()
@@ -415,7 +394,7 @@ fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
 }
 
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
-        -> Box<StreamE<(futures::U8Slice, SocketAddrV6)>> {
+        -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
     let cdst = common.dst;
 
     Box::new(unfold((
@@ -444,7 +423,7 @@ fn make_packet_loss_delay() -> Delay {
 }
 
 fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
-        -> Box<StreamE<(futures::U8Slice, SocketAddrV6)>> {
+        -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
     Box::new(make_recv_packets_stream(common)
         .filter(|&(ref x, _)| {
             let packet_buff = x.lock();
@@ -453,6 +432,136 @@ fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
                     || packet.flags.test(StreamPacketFlags::Fin))
                 && !packet.flags.test(StreamPacketFlags::Syn)
         }))
+}
+
+fn fill_read_buf(
+    common: &StreamCommonState,
+    mut tmp_buf: RefMut<Vec<u8>>
+) -> Result<bool> {
+    let mut read_buf = common.read_buf.clone();
+    let mut data_source = common.data_source.clone();
+
+    let buffer_space = {
+        let sp = read_buf.get_space_left();
+        if sp < common.mtu as usize {
+            read_buf.cleanup();
+            read_buf.get_space_left()
+        } else {
+            sp
+        }
+    };
+    let to_read = ::std::cmp::min(
+        buffer_space,
+        tmp_buf.len()
+    );
+
+    if to_read != 0 {
+        if let Async::Ready(size) =
+                data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
+            read_buf.add(&tmp_buf[0..size]);
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn poll_send_fut(
+    mut send_fut_opt: RefMut<Option<futures::IpV6RawSocketSendtoFuture>>
+) -> Result<bool> {
+    if let ref mut send_fut@Some(_) = *send_fut_opt {
+        if let Async::Ready(_)
+                = send_fut.as_mut().unwrap().poll()? {
+            send_fut.take();
+            return Ok(true);
+        }
+    }
+    return Ok(false)
+}
+
+fn make_data_send_fut<'s>(
+    state: &mut SendData<'s>,
+) {
+    let data = state.next_data.replace(None).unwrap();
+
+    let seqno = match data {
+        NextData::Input(_) => state.common.next_seqno.0,
+        NextData::Retransmission(_, s) => s
+    };
+
+    let size = {
+        let mut send_buf = state.common.send_buf.borrow_mut();
+        let packet = make_stream_client_icmpv6_packet(
+            &mut send_buf,
+            *state.common.src.ip(),
+            *state.common.dst.ip(),
+            seqno,
+            StreamPacketFlagSet::new(),
+            &data
+        );
+        packet.packet_size()
+    };
+
+    let buf_to_send = state.common.send_buf.range(0 .. size);
+    let dst = state.common.dst;
+    let fut = state.common.sock.sendto(
+        buf_to_send,
+        dst,
+        SendFlagSet::new()
+    );
+    state.send_fut.replace(Some(fut));
+
+    if let NextData::Input(slice) = data {
+        let next_seqno = state.common.next_seqno;
+        state.ack_wait.add(AckWait::new(next_seqno, slice));
+
+        state.common.next_seqno += Wrapping(1);
+    }
+}
+
+fn fill_next_data(state: &mut SendData) {
+    let mut read_buf = state.common.read_buf.clone();
+
+    if state.next_data.borrow().is_none() {
+        let mut retransmit_queue = state.retransmit_queue.borrow_mut();
+        if retransmit_queue.is_empty() {
+            if let Some(slice) =
+                    read_buf.take((state.common.mtu
+                        - STREAM_CLIENT_FULL_HEADER_SIZE) as usize) {
+                state.next_data.replace(Some(
+                    NextData::from_tb_slice(slice)
+                ));
+            }
+        } else {
+            let (payload, seqno) =
+                retransmit_queue.pop_front().unwrap();
+            state.next_data.replace(Some(
+                NextData::from_retransmission(payload, seqno)
+            ));
+        }
+    }
+}
+
+fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
+    let recv_async = state.recv_stream.borrow_mut().poll()?;
+    if let Async::Ready(Some((x, _))) = recv_async {
+        let packet_buff = x.lock();
+        let packet = parse_stream_server_packet(&packet_buff);
+        state.ack_wait.remove(
+            IRange(
+                Wrapping(packet.seqno_start),
+                Wrapping(packet.seqno_end)
+            )
+        );
+
+        state.ack_wait.cleanup();
+
+        state.ack_timer = make_packet_loss_delay();
+
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 pub struct StreamCommonState<'a> {
