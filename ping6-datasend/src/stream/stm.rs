@@ -302,33 +302,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 )?;
                 ret
             };
-
             activity = activity || poll_send_fut(state.send_fut.borrow_mut())?;
-
             fill_next_data(&mut *state);
-
             if state.next_data.borrow().is_some() {
                 make_data_send_fut(&mut *state);
             }
-
             activity = activity || poll_receive_packets(&mut *state)?;
-
-            if let Async::Ready(_) = state.ack_timer.poll()? {
-                {
-                    let mut retransmit_queue =
-                        state.retransmit_queue.borrow_mut();
-                    if !retransmit_queue.is_empty() {
-                        bail!(ErrorKind::TimedOut);
-                    }
-                    for i in state.ack_wait.iter() {
-                        retransmit_queue.push_back((
-                            (*i.data).into(),
-                            i.seqno.0
-                        ));
-                    }
-                }
-                state.ack_timer = make_packet_loss_delay();
-            }
+            activity = activity || poll_timeout(&mut *state)?;
         }
 
         unimplemented!()
@@ -556,6 +536,29 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
 
         state.ack_wait.cleanup();
 
+        state.ack_timer = make_packet_loss_delay();
+
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn poll_timeout(state: &mut SendData) -> Result<bool> {
+    if let Async::Ready(_) = state.ack_timer.poll()? {
+        {
+            let mut retransmit_queue =
+                state.retransmit_queue.borrow_mut();
+            if !retransmit_queue.is_empty() {
+                bail!(ErrorKind::TimedOut);
+            }
+            for i in state.ack_wait.iter() {
+                retransmit_queue.push_back((
+                    (*i.data).into(),
+                    i.seqno.0
+                ));
+            }
+        }
         state.ack_timer = make_packet_loss_delay();
 
         return Ok(true);
