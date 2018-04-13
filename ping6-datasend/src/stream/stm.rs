@@ -63,6 +63,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(ReceivedServerFin, SendFin))]
     SendData {
         common: StreamCommonState<'s>,
+        read_buf: TrimmingBuffer,
         tmp_buf: RefCell<Vec<u8>>,
         next_data: RefCell<Option<NextData>>,
         retransmit_queue: RefCell<VecDeque<(Vec<u8>, u16)>>,
@@ -267,9 +268,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let size = try_ready!(state.send_ack.poll());
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 
-        let window_size =
+        let (window_size, read_buffer_size) =
             if let ModeConfig::Stream(ref sc) = state.common.config.mode {
-                sc.window_size
+                (sc.window_size, sc.read_buffer_size)
             } else {
                 unreachable!()
             };
@@ -279,11 +280,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         });
         transition!(SendData {
             common: state.take().common,
+            read_buf: TrimmingBuffer::new(read_buffer_size),
             tmp_buf: RefCell::new(vec![0; TMP_BUFFER_SIZE]),
             next_data: RefCell::new(None),
             retransmit_queue: RefCell::new(VecDeque::new()),
             send_fut: RefCell::new(None),
-            recv_stream: recv_stream,
+            recv_stream,
             ack_wait: AckWaitlist::new(window_size),
             ack_timer: make_packet_loss_delay()
         })
@@ -295,11 +297,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let mut activity = true;
         while activity {
             activity = {
-                let tmp_buf_ref = state.tmp_buf.clone();
-                let ret = fill_read_buf(
-                    &mut state.common,
-                    tmp_buf_ref.borrow_mut()
-                )?;
+                let ret = fill_read_buf(&mut *state)?;
                 ret
             };
             activity = activity || poll_send_fut(state.send_fut.borrow_mut())?;
@@ -415,17 +413,15 @@ fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
 }
 
 fn fill_read_buf(
-    common: &StreamCommonState,
-    mut tmp_buf: RefMut<Vec<u8>>
+    state: &mut SendData,
 ) -> Result<bool> {
-    let mut read_buf = common.read_buf.clone();
-    let mut data_source = common.data_source.clone();
+    let mut tmp_buf = state.tmp_buf.borrow_mut();
 
     let buffer_space = {
-        let sp = read_buf.get_space_left();
-        if sp < common.mtu as usize {
-            read_buf.cleanup();
-            read_buf.get_space_left()
+        let sp = state.read_buf.get_space_left();
+        if sp < state.common.mtu as usize {
+            state.read_buf.cleanup();
+            state.read_buf.get_space_left()
         } else {
             sp
         }
@@ -437,8 +433,8 @@ fn fill_read_buf(
 
     if to_read != 0 {
         if let Async::Ready(size) =
-                data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
-            read_buf.add(&tmp_buf[0..size]);
+                state.common.data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
+            state.read_buf.add(&tmp_buf[0..size]);
             return Ok(true);
         }
     }
@@ -500,13 +496,11 @@ fn make_data_send_fut<'s>(
 }
 
 fn fill_next_data(state: &mut SendData) {
-    let mut read_buf = state.common.read_buf.clone();
-
     if state.next_data.borrow().is_none() {
         let mut retransmit_queue = state.retransmit_queue.borrow_mut();
         if retransmit_queue.is_empty() {
             if let Some(slice) =
-                    read_buf.take((state.common.mtu
+                    state.read_buf.take((state.common.mtu
                         - STREAM_CLIENT_FULL_HEADER_SIZE) as usize) {
                 state.next_data.replace(Some(
                     NextData::from_tb_slice(slice)
@@ -577,5 +571,4 @@ pub struct StreamCommonState<'a> {
     pub send_buf: SArcRef<Vec<u8>>,
     pub recv_buf: SArcRef<Vec<u8>>,
     pub next_seqno: Wrapping<u16>,
-    pub read_buf: TrimmingBuffer
 }
