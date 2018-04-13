@@ -111,12 +111,12 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
                 1 and 65536 inclusive.  Default is highly arbitrary \
                  value \"1000\"")
             .requires("stream")
-            .default_value("1000")
+            .default_value_if("stream", None, "1000")
         ).arg(Arg::with_name("read-buffer-size")
             .long("read-buffer-size")
             .help("Sets stream mode read buffer size, in KiB.  \
                 Default is 2048.")
             .requires("stream")
-            .default_value("2048")
+            .default_value_if("stream", None, "2048")
         ).get_matches()
 }
