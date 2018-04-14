@@ -42,7 +42,7 @@ impl<P, E> RangeTracker<P, E> {
             debug_assert!((i.0 < offset_range.0 && i.1 < offset_range.0)
                 || (i.0 > offset_range.1 && i.1 > offset_range.1));
 
-            if i.1 == offset_range.0 - 1 {
+            if offset_range.0 != 0 && i.1 == offset_range.0 - 1 {
                 merge_left = Some(*i);
             }
             if i.0 == offset_range.1 + 1 {
@@ -157,7 +157,7 @@ impl<P, E> RangeTracker<P, E>
 
         if is_subslice(beginning, slice) {
             let beg_ptr = beginning.as_ptr() as usize;
-            let start = beg_ptr - ptr;
+            let start = ptr - beg_ptr;
             let end = start + len - 1;
             IRange(start, end)
         } else {

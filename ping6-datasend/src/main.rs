@@ -89,7 +89,6 @@ fn init() -> Result<InitState> {
     Ok((config, src, dst, sock))
 }
 
-gen_boolean_enum!(UseStreamMode);
 gen_boolean_enum!(StdinUse);
 
 fn setup_seccomp<T>(

@@ -3,7 +3,7 @@ use ::std::collections::vec_deque;
 use ::std::collections::VecDeque;
 use ::std::iter::*;
 use ::std::marker::PhantomData;
-use ::std::mem::uninitialized;
+use ::std::mem::*;
 use ::std::num::Wrapping;
 use ::std::ops::Deref;
 use ::std::sync::*;
@@ -53,9 +53,12 @@ impl AckWaitlist {
             del_tracker: unsafe { uninitialized() },
             tmpvec: RefCell::new(Vec::with_capacity(window_size as usize))
         })));
-        ret.0.lock().unwrap().del_tracker = RangeTracker::new_with_parent(
-            AckWaitlistImplBufferGetter(ret.0.clone())
-        );
+        forget(replace(
+            &mut ret.0.lock().unwrap().del_tracker,
+            RangeTracker::new_with_parent(
+                AckWaitlistImplBufferGetter(ret.0.clone())
+            )
+        ));
         ret
     }
 

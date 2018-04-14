@@ -159,6 +159,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_first_syn<'a>(
         state: &'a mut RentToOwn<'a, SendFirstSyn<'s>>
     ) -> Poll<AfterSendFirstSyn<'s>, Error> {
+        debug!("sending first SYN packet");
         let size = try_ready!(state.send.poll());
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 
@@ -198,6 +199,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_wait_for_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForSynAck<'s>>
     ) -> Poll<AfterWaitForSynAck<'s>, Error> {
+        debug!("waiting for SYN+ACK");
         let (data_ref, dst) = match state.recv_stream.poll() {
             Err(e) => bail!(e),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -265,6 +267,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_ack<'a>(
         state: &'a mut RentToOwn<'a, SendAck<'s>>
     ) -> Poll<AfterSendAck<'s>, Error> {
+        debug!("sending first ACK");
         let size = try_ready!(state.send_ack.poll());
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 

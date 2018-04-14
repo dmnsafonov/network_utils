@@ -8,7 +8,6 @@ use ::errors::Error;
 pub struct TimeoutResultStream<S> {
     stream: Option<S>,
     duration: Duration,
-    next_tick: Instant,
     sleep: Delay
 }
 
@@ -26,7 +25,6 @@ impl<S,E> TimeoutResultStream<S> where
         TimeoutResultStream {
             stream: Some(stream),
             duration: duration,
-            next_tick,
             sleep: Delay::new(next_tick)
         }
     }
@@ -43,8 +41,8 @@ impl<S,E> Stream for TimeoutResultStream<S> where
                 .expect("not consumed TimeoutResultStream").poll() {
             Ok(Async::NotReady) => (),
             Ok(Async::Ready(x)) => {
-                self.next_tick += self.duration;
-                self.sleep = Delay::new(self.next_tick);
+                let instant = Delay::deadline(&self.sleep) + self.duration;
+                self.sleep.reset(instant);
 
                 return Ok(Async::Ready(x.map(TimedResult::InTime)))
             },
@@ -54,8 +52,8 @@ impl<S,E> Stream for TimeoutResultStream<S> where
         match self.sleep.poll() {
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Ok(Async::Ready(_)) => {
-                self.next_tick += self.duration;
-                self.sleep = Delay::new(self.next_tick);
+                let instant = Delay::deadline(&self.sleep) + self.duration;
+                self.sleep.reset(instant);
 
                 Ok(Async::Ready(Some(TimedResult::TimedOut)))
             },

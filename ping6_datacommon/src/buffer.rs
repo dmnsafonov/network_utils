@@ -1,10 +1,9 @@
 use ::std::collections::VecDeque;
 use ::std::cmp::min;
-use ::std::slice;
+use ::std::mem::*;
 use ::std::ops::*;
+use ::std::slice;
 use ::std::sync::*;
-
-use ::owning_ref::RwLockReadGuardRef;
 
 use ::IRange;
 use ::range_tracker::*;
@@ -22,12 +21,18 @@ struct TrimmingBufferImpl {
 }
 
 #[derive(Clone)]
-struct TrimmingBufferImplBufferGetter(Arc<RwLock<TrimmingBufferImpl>>);
+struct TrimmingBufferImplBufferGetter(
+    Arc<RwLock<TrimmingBufferImpl>>,
+    *const TrimmingBufferImpl
+);
 
 impl<'a> RangeTrackerParentHandle<'a, u8> for TrimmingBufferImplBufferGetter {
-    type Borrowed = RwLockReadGuardRef<'a, TrimmingBufferImpl, VecDeque<u8>>;
+    type Borrowed = &'a VecDeque<u8>;
     fn borrow(&'a self) -> Self::Borrowed {
-        RwLockReadGuardRef::new(self.0.read().unwrap()).map(|x| &x.inner)
+        // safe, because we already have a lock in the calling method
+        unsafe {
+            &self.1.as_ref().unwrap().inner
+        }
     }
 }
 
@@ -36,11 +41,19 @@ impl TrimmingBuffer {
         let ret = TrimmingBuffer(Arc::new(RwLock::new(TrimmingBufferImpl {
             inner: VecDeque::with_capacity(size),
             first_available: 0,
-            del_tracker: unsafe { ::std::mem::uninitialized() }
+            del_tracker: unsafe { uninitialized() }
         })));
-        ret.0.write().unwrap().del_tracker = RangeTracker::new_with_parent(
-            TrimmingBufferImplBufferGetter(ret.0.clone())
-        );
+
+        {
+            let mut lock = ret.0.write().unwrap();
+            let ptr = (&*lock) as *const TrimmingBufferImpl;
+            forget(replace(
+                &mut lock.del_tracker,
+                RangeTracker::new_with_parent(
+                    TrimmingBufferImplBufferGetter(ret.0.clone(), ptr)
+                )
+            ));
+        }
 
         ret
     }
@@ -56,7 +69,7 @@ impl TrimmingBuffer {
     pub fn add_slicing<T>(&mut self, data: T) -> TrimmingBufferSlice
             where T: AsRef<[u8]> {
         let range = {
-            let first_ind = self.0.read().unwrap().inner.len() - 1;
+            let first_ind = self.0.read().unwrap().inner.len();
             let dataref = data.as_ref();
             self.add(dataref);
             let last_ind = self.0.read().unwrap().inner.len() - 1;

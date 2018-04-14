@@ -112,7 +112,10 @@ impl SeqnoTracker {
 
     pub fn add(&mut self, x: Wrapping<u16>) {
         let ax = self.to_sequential(x);
-        self.tracker.track_range(IRange(ax, ax));
+        let range = IRange(ax, ax);
+        if !self.tracker.is_range_tracked(range).unwrap() {
+            self.tracker.track_range(IRange(ax, ax));
+        }
     }
 
     pub fn to_sequential(&self, x: Wrapping<u16>) -> usize {

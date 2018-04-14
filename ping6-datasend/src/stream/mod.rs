@@ -79,6 +79,7 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
                 unimplemented!()
         }
     }));
+    debug!("protocol state machine spawned");
 
     rt.shutdown_on_idle().wait().map_err(|_| ErrorKind::SpawnError)?;
     Ok(())

@@ -87,13 +87,22 @@ fn init() -> Result<InitState> {
 
     setup_signal_handler()?;
 
-    setup_seccomp(&sock, StdoutUse::Yes)?;
+    setup_seccomp(&sock, StdoutUse::Yes,
+        (config.mode.kind() == ModeConfigKind::Stream).into())?;
 
     Ok((config, bound_addr, sock))
 }
 
-fn setup_seccomp<T>(sock: &T, use_stdout: StdoutUse)
-        -> Result<()> where T: SocketCommon {
+fn setup_seccomp<T>(
+    sock: &T,
+    use_stdout: StdoutUse,
+    use_stream_mode: UseStreamMode
+) -> Result<()> where T: SocketCommon {
+    // tokio libs syscall use is not documented
+    if use_stream_mode.into() {
+        return Ok(())
+    }
+
     let mut ctx = allow_defaults()?;
     allow_console_out(&mut ctx, use_stdout)?;
     sock.allow_receiving(&mut ctx)?;

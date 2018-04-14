@@ -37,7 +37,7 @@ pub fn parse_stream_client_packet_payload<'a>(
     payload: &'a [u8]
 ) -> StreamClientPacket<'a> {
     let flags = unsafe {
-        StreamPacketFlagSet::from_num(payload[2])
+        StreamPacketFlagSet::from_num(payload[3])
     };
 
     StreamClientPacket {

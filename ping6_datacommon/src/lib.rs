@@ -47,6 +47,8 @@ pub use errors::*;
 pub use range_tracker::*;
 pub use timeout::*;
 
+gen_boolean_enum!(pub UseStreamMode);
+
 gen_boolean_enum!(pub Resolve);
 
 pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve)
@@ -292,14 +294,16 @@ pub fn validate_stream_packet(
     let packet = Icmpv6Packet::new(packet_buff)
         .expect("a valid length icmpv6 packet");
 
-    if packet.get_icmpv6_type() != Icmpv6Types::EchoReply
+    if packet.get_icmpv6_type() != Icmpv6Types::EchoRequest
             || packet.get_icmpv6_code() != Icmpv6Codes::NoCode {
+        debug!("invalid icmpv6 type or code field");
         return false;
     }
 
     if let Some((src,dst)) = addrs {
         if packet.get_checksum()
-            != icmpv6::checksum(&packet, &src, &dst) {
+                != icmpv6::checksum(&packet, &src, &dst) {
+            debug!("invalid icmpv6 checksum");
             return false;
         }
     }
@@ -308,15 +312,18 @@ pub fn validate_stream_packet(
     let checksum = u16_from_bytes_be(&payload[0..2]);
 
     if checksum != ping6_data_checksum(&payload[2..]) {
+        debug!("invalid protocol checksum");
         return false;
     }
 
     let x = payload[3];
     if x & !ALL_STREAM_PACKET_FLAGS != 0 {
+        debug!("invalid protocol flags");
         return false;
     }
 
     if payload[2] != !0 {
+        debug!("invalid reserved field value");
         return false;
     }
 

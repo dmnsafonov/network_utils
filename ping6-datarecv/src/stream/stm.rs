@@ -1,19 +1,15 @@
 use ::std::cell::*;
 use ::std::net::*;
 use ::std::num::Wrapping;
-use ::std::ops::*;
-use ::std::sync::{atomic::{fence, Ordering}, *};
+use ::std::sync::*;
 use ::std::time::*;
 
 use ::futures::future::*;
 use ::futures::prelude::*;
 use ::futures::stream::unfold;
 use ::futures::task::*;
-use ::owning_ref::*;
-use ::pnet_packet::Packet;
 use ::state_machine_future::RentToOwn;
 use ::tokio::io::*;
-use ::tokio::prelude::*;
 use ::tokio::timer::*;
 
 use ::linux_network::*;
@@ -54,7 +50,7 @@ pub enum StreamMachine<'s> {
         >>
     },
 
-    #[state_machine_future(transitions(SendSynAck, ReceivePackets))]
+    #[state_machine_future(transitions(WaitForFirstSyn, ReceivePackets))]
     WaitForAck {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
@@ -142,28 +138,17 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_init_state<'a>(
         state: &'a mut RentToOwn<'a, InitState<'s>>
     ) -> Poll<AfterInitState<'s>, Error> {
-        let mut common = state.take().common;
-
-        let recv_future = make_recv_packets_stream(&mut common)
-            .filter(|&(ref x, _)| {
-                let data_ref = x.lock();
-                let packet = parse_stream_client_packet(&data_ref);
-
-                packet.flags == StreamPacketFlags::Syn.into()
-            })
-            .into_future()
-            .map(|(x,_)| x.unwrap())
-            .map_err(|(e,_)| e);
-
+        let recv_future = make_recv_first_syn(&mut state.common);
         transition!(WaitForFirstSyn {
-            common: common,
-            recv_first_syn: unsafe { SendBox::new(Box::new(recv_future)) }
+            common: state.take().common,
+            recv_first_syn: recv_future
         })
     }
 
     fn poll_wait_for_first_syn<'a>(
         state: &'a mut RentToOwn<'a, WaitForFirstSyn<'s>>
     ) -> Poll<AfterWaitForFirstSyn<'s>, Error> {
+        debug!("waiting for first SYN");
         let (data_ref, dst) = try_ready!(state.recv_first_syn.poll());
 
         let mut common = state.take().common;
@@ -208,6 +193,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, SendSynAck<'s>>
     ) -> Poll<AfterSendSynAck<'s>, Error> {
+        debug!("sending SYN+ACK");
         let size = try_ready!(state.send_syn_ack.poll());
         debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
@@ -231,11 +217,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                                 && packet.seqno == seqno.0 {
                             true
                         } else {
-                            let order = order_ref.lock().unwrap();
+                            let mut order = order_ref.lock().unwrap();
                             if order.get_space_left() < data.len() {
                                 bail!(ErrorKind::RecvBufferOverrunOnStart);
                             }
-                            order_ref.lock().unwrap().add(&data);
+                            order.add(&data);
                             false
                         }
                     };
@@ -251,7 +237,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             );
             unsafe {
                 SendBox::new(Box::new(
-                    timed.take(RETRANSMISSIONS_NUMBER as u64)
+                    timed.take(2)
                 ))
             }
         });
@@ -266,27 +252,22 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_wait_for_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForAck<'s>>
     ) -> Poll<AfterWaitForAck<'s>, Error> {
+        debug!("waiting for first ACK");
         let (_,_) = match state.recv_stream.poll() {
             Err(e) => bail!(e),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
-                let mut st = state.take();
-                let seqno = st.active.next_seqno - Wrapping(1);
-                let send_future = make_syn_ack_future(
-                    &mut st.common,
-                    st.active.dst,
-                    seqno.0,
-                    seqno.0
-                );
-                transition!(SendSynAck {
-                    common: st.common,
-                    active: st.active,
-                    send_syn_ack: send_future,
-                    next_action: Some(st.recv_stream)
-                })
+                return Ok(Async::NotReady);
             }
-            Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
+            Ok(Async::Ready(None)) => {
+                let mut st = state.take();
+                let recv_first_syn = make_recv_first_syn(&mut st.common);
+                transition!(WaitForFirstSyn {
+                    common: st.common,
+                    recv_first_syn
+                });
+            }
         };
 
         let WaitForAck { mut common, mut active, .. } = state.take();
@@ -356,7 +337,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
         ));
 
-        let timeout = make_connection_timeout(&common);
+        let timeout = make_connection_timeout();
 
         transition!(
             ReceivePackets {
@@ -373,6 +354,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_receive_packets<'a>(
         state: &'a mut RentToOwn<'a, ReceivePackets<'s>>
     ) -> Poll<AfterReceivePackets<'s>, Error> {
+        debug!("receiving packets");
+
         let ack_sending_task = {
             let task_guard = state.task.lock().unwrap();
             let task_opt = task_guard.take();
@@ -390,7 +373,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     >= state.common.mtu as usize {
                 if let Async::Ready(Some((data_ref,_)))
                         = state.recv_stream.poll()? {
-                    state.timeout = make_connection_timeout(&state.common);
+                    state.timeout = make_connection_timeout();
 
                     let data = data_ref.lock();
                     let packet = parse_stream_client_packet(&data);
@@ -493,11 +476,36 @@ fn make_recv_packets_stream<'a>(
             )
         }
     ).filter(move |&(ref x, src)| {
-        validate_stream_packet(
+        let res = validate_stream_packet(
             &x.lock(),
             Some((*src.ip(), *csrc.ip()))
-        )
+        );
+        if res {
+            debug!("valid packet received");
+        } else {
+            debug!("invalid packet filtered out");
+        }
+        res
     }))
+}
+
+fn make_recv_first_syn(common: &mut StreamCommonState)
+        -> SendBox<FutureE<(U8Slice, SocketAddrV6)>> {
+    let recv_future = make_recv_packets_stream(common)
+        .filter(|&(ref x, _)| {
+            let data_ref = x.lock();
+            let packet = parse_stream_client_packet(&data_ref);
+
+            let res = packet.flags == StreamPacketFlags::Syn.into();
+            if !res {
+                debug!("not a SYN packet, dropping");
+            }
+            res
+        })
+        .into_future()
+        .map(|(x,_)| x.unwrap())
+        .map_err(|(e,_)| e);
+    unsafe { SendBox::new(Box::new(recv_future)) }
 }
 
 fn make_syn_ack_future<'a>(
@@ -526,10 +534,10 @@ fn make_syn_ack_future<'a>(
     )
 }
 
-fn make_connection_timeout<'a>(common: &StreamCommonState<'a>)
+fn make_connection_timeout<'a>()
         -> Delay {
     Delay::new(Instant::now() + Duration::from_millis(
-        PACKET_LOSS_TIMEOUT as u64 * RETRANSMISSIONS_NUMBER as u64
+        PACKET_LOSS_TIMEOUT as u64
     ))
 }
 
