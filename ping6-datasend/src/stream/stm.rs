@@ -277,6 +277,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let recv_stream = RefCell::new(unsafe {
             SendBox::new(make_recv_ack_or_fin(&mut state.common))
         });
+        let mtu = state.common.mtu;
         transition!(SendData {
             common: state.take().common,
             read_buf: TrimmingBuffer::new(read_buffer_size),
@@ -285,7 +286,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             retransmit_queue: RefCell::new(VecDeque::new()),
             send_fut: RefCell::new(None),
             recv_stream,
-            ack_wait: AckWaitlist::new(window_size),
+            ack_wait: AckWaitlist::new(window_size, mtu),
             ack_timer: make_packet_loss_delay(),
             reached_input_eof: false
         })
@@ -294,6 +295,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_data<'a>(
         state: &'a mut RentToOwn<'a, SendData<'s>>
     ) -> Poll<AfterSendData<'s>, Error> {
+        debug!("sending data");
+
         let mut activity = true;
         while activity {
             activity = {
@@ -312,11 +315,14 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         }
 
         if state.reached_input_eof && state.next_data.borrow().is_none() {
-            let common = state.take().common;
-            transition!(SendFin {
-                common,
-                // TODO
-            });
+            state.ack_wait.cleanup();
+            if state.ack_wait.is_empty() {
+                let common = state.take().common;
+                transition!(SendFin {
+                    common,
+                    // TODO
+                });
+            }
         }
 
         return Ok(Async::NotReady);
@@ -425,6 +431,10 @@ fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
 fn fill_read_buf(
     state: &mut SendData,
 ) -> Result<bool> {
+    if state.reached_input_eof {
+        return Ok(false);
+    }
+
     let mut tmp_buf = state.tmp_buf.borrow_mut();
 
     let buffer_space = {
@@ -482,7 +492,9 @@ fn make_data_send_fut<'s>(
     };
 
     let size = {
-        let mut send_buf = state.common.send_buf.borrow_mut();
+        let send_buf_ref = state.common.send_buf
+            .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize + data.len());
+        let mut send_buf = send_buf_ref.borrow_mut();
         let packet = make_stream_client_icmpv6_packet(
             &mut send_buf,
             *state.common.src.ip(),
@@ -505,6 +517,10 @@ fn make_data_send_fut<'s>(
 
     if let NextData::Input(slice) = data {
         let next_seqno = state.common.next_seqno;
+
+        if state.ack_wait.is_full() {
+            state.ack_wait.cleanup();
+        }
         state.ack_wait.add(AckWait::new(next_seqno, slice));
 
         state.common.next_seqno += Wrapping(1);
@@ -543,8 +559,6 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
                 Wrapping(packet.seqno_end)
             )
         );
-
-        state.ack_wait.cleanup();
 
         state.ack_timer = make_packet_loss_delay();
 

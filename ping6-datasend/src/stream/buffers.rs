@@ -46,10 +46,12 @@ impl<'a> RangeTrackerParentHandle<'a, AckWait>
 }
 
 impl AckWaitlist {
-    pub fn new(window_size: u32) -> AckWaitlist {
+    pub fn new(window_size: u32, mtu: u16) -> AckWaitlist {
         assert!(window_size <= ::std::u16::MAX as u32 + 1);
         let ret = AckWaitlist(Arc::new(Mutex::new(AckWaitlistImpl {
-            inner: VecDeque::with_capacity(window_size as usize),
+            inner: VecDeque::with_capacity(
+                window_size as usize * mtu as usize
+            ),
             del_tracker: unsafe { uninitialized() },
             tmpvec: RefCell::new(Vec::with_capacity(window_size as usize))
         })));
@@ -131,6 +133,17 @@ impl AckWaitlist {
         if let Some(ind) = theself.del_tracker.take_range() {
             theself.inner.drain(0 .. ind as usize + 1);
         }
+    }
+
+    // may return false 'false' if cleanup() was not called
+    pub fn is_empty(&self) -> bool {
+        let theself = self.0.lock().unwrap();
+        theself.inner.is_empty()
+    }
+
+    pub fn is_full(&self) -> bool {
+        let theself = self.0.lock().unwrap();
+        theself.inner.capacity() == theself.inner.len()
     }
 
     pub fn iter<'a>(&'a self) -> AckWaitlistIterator<'a> {

@@ -111,6 +111,8 @@ impl TrimmingBuffer {
         debug_assert!(theself.first_available <= range.0);
         debug_assert!(len > 0);
 
+        theself.first_available += len;
+
         let mut ranges_to_free = None;
         let ret = {
             let (beginning, ending) = theself.inner.as_slices();

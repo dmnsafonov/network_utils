@@ -309,6 +309,16 @@ pub fn validate_stream_packet(
     }
 
     let payload = packet.payload();
+
+    let header_constraint = ::std::cmp::min(
+        STREAM_CLIENT_HEADER_SIZE,
+        STREAM_SERVER_HEADER_SIZE
+    ) as usize;
+    if payload.len() < header_constraint {
+        debug!("invalid packet length");
+        return false;
+    }
+
     let checksum = u16_from_bytes_be(&payload[0..2]);
 
     if checksum != ping6_data_checksum(&payload[2..]) {
