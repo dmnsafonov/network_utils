@@ -8,7 +8,6 @@ use ::std::time::*;
 use ::futures::prelude::*;
 use ::futures::Stream;
 use ::futures::stream::*;
-use ::pnet_packet::PacketSize;
 use ::state_machine_future::RentToOwn;
 use ::tokio::prelude::*;
 use ::tokio::timer::Delay;
@@ -491,20 +490,18 @@ fn make_data_send_fut<'s>(
         NextData::Retransmission(_, s) => s
     };
 
-    let size = {
-        let send_buf_ref = state.common.send_buf
-            .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize + data.len());
-        let mut send_buf = send_buf_ref.borrow_mut();
-        let packet = make_stream_client_icmpv6_packet(
-            &mut send_buf,
-            *state.common.src.ip(),
-            *state.common.dst.ip(),
-            seqno,
-            StreamPacketFlagSet::new(),
-            &data
-        );
-        packet.packet_size()
-    };
+    let size = STREAM_CLIENT_FULL_HEADER_SIZE as usize + data.len();
+    let send_buf_ref = state.common.send_buf
+        .range(0 .. size);
+    let mut send_buf = send_buf_ref.borrow_mut();
+    make_stream_client_icmpv6_packet(
+        &mut send_buf,
+        *state.common.src.ip(),
+        *state.common.dst.ip(),
+        seqno,
+        StreamPacketFlagSet::new(),
+        &data
+    );
 
     let buf_to_send = state.common.send_buf.range(0 .. size);
     let dst = state.common.dst;
