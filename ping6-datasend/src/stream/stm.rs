@@ -493,20 +493,22 @@ fn make_data_send_fut<'s>(
     let size = STREAM_CLIENT_FULL_HEADER_SIZE as usize + data.len();
     let send_buf_ref = state.common.send_buf
         .range(0 .. size);
-    let mut send_buf = send_buf_ref.borrow_mut();
-    make_stream_client_icmpv6_packet(
-        &mut send_buf,
-        *state.common.src.ip(),
-        *state.common.dst.ip(),
-        seqno,
-        StreamPacketFlagSet::new(),
-        &data
-    );
 
-    let buf_to_send = state.common.send_buf.range(0 .. size);
+    {
+        let mut send_buf = send_buf_ref.borrow_mut();
+        make_stream_client_icmpv6_packet(
+            &mut send_buf,
+            *state.common.src.ip(),
+            *state.common.dst.ip(),
+            seqno,
+            StreamPacketFlagSet::new(),
+            &data
+        );
+    }
+
     let dst = state.common.dst;
     let fut = state.common.sock.sendto(
-        buf_to_send,
+        send_buf_ref,
         dst,
         SendFlagSet::new()
     );

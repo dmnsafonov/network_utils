@@ -301,6 +301,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         let send_buf_ref = send_buf_full_ref
                             .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
+                        debug!("sending ACK for range {} .. {}", l, r);
                         make_stream_server_icmpv6_packet(
                             &mut send_buf_ref.borrow_mut(),
                             send_src,
