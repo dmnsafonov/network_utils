@@ -71,6 +71,11 @@ fn init() -> Result<InitState> {
     set_no_new_privs()?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
+    let mut filter = icmp6_filter::new();
+    filter.pass(IcmpV6Type::EchoRequest);
+    sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
+    debug!("set icmpv6 type filter");
+
     let src = make_socket_addr(&config.source, Resolve::No)?;
 
     let dst = make_socket_addr(&config.destination, Resolve::Yes)?;
