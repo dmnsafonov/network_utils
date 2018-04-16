@@ -60,7 +60,7 @@ pub enum StreamMachine<'s> {
         send_ack: futures::IpV6RawSocketSendtoFuture
     },
 
-    #[state_machine_future(transitions(ReceivedServerFin, SendFin))]
+    #[state_machine_future(transitions(SendFin, SendFinAck))]
     SendData {
         common: StreamCommonState<'s>,
         read_buf: TrimmingBuffer,
@@ -72,20 +72,16 @@ pub enum StreamMachine<'s> {
             StreamE<(U8Slice, SocketAddrV6)>
         >>,
         ack_wait: AckWaitlist,
-        ack_timer: Delay
+        ack_timer: Delay,
+        reached_input_eof: bool
     },
 
-    #[state_machine_future(transitions(SendFinAck))]
-    ReceivedServerFin {
-        common: StreamCommonState<'s>,
-    },
-
-    #[state_machine_future(transitions(ReceivedServerFin, WaitForLastAck))]
+    #[state_machine_future(transitions(WaitForLastAck))]
     SendFinAck {
         common: StreamCommonState<'s>
     },
 
-    #[state_machine_future(transitions(ConnectionTerminated))]
+    #[state_machine_future(transitions(ConnectionTerminated, SendFinAck))]
     WaitForLastAck {
         common: StreamCommonState<'s>
     },
@@ -290,7 +286,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             send_fut: RefCell::new(None),
             recv_stream,
             ack_wait: AckWaitlist::new(window_size),
-            ack_timer: make_packet_loss_delay()
+            ack_timer: make_packet_loss_delay(),
+            reached_input_eof: false
         })
     }
 
@@ -310,44 +307,53 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
             activity = activity || poll_receive_packets(&mut *state)?;
             activity = activity || poll_timeout(&mut *state)?;
+
+            // TODO: server FIN
         }
 
-        unimplemented!()
-    }
+        if state.reached_input_eof && state.next_data.borrow().is_none() {
+            let common = state.take().common;
+            transition!(SendFin {
+                common,
+                // TODO
+            });
+        }
 
-    fn poll_received_server_fin<'a>(
-        state: &'a mut RentToOwn<'a, ReceivedServerFin<'s>>
-    ) -> Poll<AfterReceivedServerFin<'s>, Error> {
-        unimplemented!()
+        return Ok(Async::NotReady);
     }
 
     fn poll_send_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, SendFinAck<'s>>
     ) -> Poll<AfterSendFinAck<'s>, Error> {
+        debug!("sending FIN+ACK");
         unimplemented!()
     }
 
     fn poll_wait_for_last_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
-    ) -> Poll<AfterWaitForLastAck, Error> {
+    ) -> Poll<AfterWaitForLastAck<'s>, Error> {
+        debug!("waiting for last ACK");
         unimplemented!()
     }
 
     fn poll_send_fin<'a>(
         state: &'a mut RentToOwn<'a, SendFin<'s>>
     ) -> Poll<AfterSendFin<'s>, Error> {
+        debug!("sending FIN");
         unimplemented!()
     }
 
     fn poll_wait_for_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForFinAck<'s>>
     ) -> Poll<AfterWaitForFinAck<'s>, Error> {
+        debug!("waiting for FIN+ACK");
         unimplemented!()
     }
 
     fn poll_send_last_ack<'a>(
         state: &'a mut RentToOwn<'a, SendLastAck<'s>>
     ) -> Poll<AfterSendLastAck, Error> {
+        debug!("sending last ACK");
         unimplemented!()
     }
 }
@@ -438,6 +444,12 @@ fn fill_read_buf(
     if to_read != 0 {
         if let Async::Ready(size) =
                 state.common.data_source.poll_read(&mut tmp_buf[0 .. to_read])? {
+            if size == 0 {
+                debug!("reach EOF on the input stream");
+                state.reached_input_eof = true;
+                return Ok(true);
+            }
+
             state.read_buf.add(&tmp_buf[0..size]);
             return Ok(true);
         }
