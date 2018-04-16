@@ -376,6 +376,7 @@ fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
 
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
         -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
+    let csrc = common.src;
     let cdst = common.dst;
 
     Box::new(unfold((
@@ -393,7 +394,7 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
         src == cdst
             && validate_stream_packet(
                 &x.lock(),
-                Some((*cdst.ip(), *src.ip()))
+                Some((*src.ip(), *csrc.ip()))
             )
     }))
 }
