@@ -49,7 +49,7 @@ pub enum StreamMachine<'s> {
         >>
     },
 
-    #[state_machine_future(transitions(WaitForFirstSyn, ReceivePackets))]
+    #[state_machine_future(transitions(WaitForFirstSyn, SendSynAck, ReceivePackets))]
     WaitForAck {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
@@ -257,7 +257,23 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
-                return Ok(Async::NotReady);
+                let WaitForAck { mut common, active, recv_stream }
+                    = state.take();
+
+                let seqno = active.next_seqno - Wrapping(1);
+                let send_future = make_syn_ack_future(
+                    &mut common,
+                    active.dst,
+                    seqno.0,
+                    seqno.0
+                );
+
+                transition!(SendSynAck {
+                    common,
+                    active,
+                    send_syn_ack: send_future,
+                    next_action: Some(recv_stream)
+                });
             }
             Ok(Async::Ready(None)) => {
                 let mut st = state.take();
