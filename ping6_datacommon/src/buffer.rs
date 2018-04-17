@@ -171,6 +171,7 @@ impl TrimmingBuffer {
 pub struct TrimmingBufferSlice(TrimmingBufferSliceImpl);
 unsafe impl Send for TrimmingBufferSlice {}
 unsafe impl Sync for TrimmingBufferSlice {}
+unsafe impl ::owning_ref::StableAddress for TrimmingBufferSlice {}
 
 enum TrimmingBufferSliceImpl {
     Direct {
@@ -195,9 +196,9 @@ impl Deref for TrimmingBufferSlice {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         match self.0 {
-            TrimmingBufferSliceImpl::Direct { start, len, .. } => { unsafe {
+            TrimmingBufferSliceImpl::Direct { start, len, .. } => unsafe {
                 slice::from_raw_parts(start, len)
-            }},
+            },
             TrimmingBufferSliceImpl::Owning(ref boxed) => boxed.as_ref()
         }
     }

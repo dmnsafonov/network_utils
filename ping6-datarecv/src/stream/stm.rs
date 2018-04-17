@@ -7,6 +7,7 @@ use ::futures::future::*;
 use ::futures::prelude::*;
 use ::futures::stream::unfold;
 use ::futures::task::*;
+use ::owning_ref::OwningRef;
 use ::state_machine_future::RentToOwn;
 use ::tokio::io::*;
 use ::tokio::timer::*;
@@ -110,12 +111,17 @@ pub enum TerminationReason {
     Interrupted
 }
 
-pub struct WriteBorrow<T>(WriteAll<T, TrimmingBufferSlice>);
+pub struct WriteBorrow<T>(WriteAll<T, OwningRef<TrimmingBufferSlice, [u8]>>);
 
 impl<T> WriteBorrow<T> where T: AsyncWrite {
     fn new(write: T, buf: TrimmingBufferSlice) -> WriteBorrow<T> {
         WriteBorrow(
-            write_all(write, buf)
+            write_all(
+                write,
+                OwningRef::new(buf).map(|x|
+                    &(*x)[STREAM_CLIENT_FULL_HEADER_SIZE as usize ..]
+                )
+            )
         )
     }
 }
@@ -257,7 +263,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
-                let WaitForAck { mut common, active, recv_stream }
+                let WaitForAck { mut common, mut active, recv_stream }
                     = state.take();
 
                 let seqno = active.next_seqno - Wrapping(1);
@@ -286,6 +292,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 });
             }
         };
+
+        state.active.next_seqno += Wrapping(1);
 
         info!("connection established");
 
