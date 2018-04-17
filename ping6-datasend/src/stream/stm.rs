@@ -495,6 +495,7 @@ fn make_data_send_fut<'s>(
         .range(0 .. size);
 
     {
+        debug!("send packet with seqno {}", seqno);
         let mut send_buf = send_buf_ref.borrow_mut();
         make_stream_client_icmpv6_packet(
             &mut send_buf,
@@ -552,6 +553,8 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
     if let Async::Ready(Some((x, _))) = recv_async {
         let packet_buff = x.lock();
         let packet = parse_stream_server_packet(&packet_buff);
+        debug!("received ACK for range [{}, {}]",
+            packet.seqno_start, packet.seqno_end);
         state.ack_wait.remove(
             IRange(
                 Wrapping(packet.seqno_start),

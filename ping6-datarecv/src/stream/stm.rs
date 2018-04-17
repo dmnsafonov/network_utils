@@ -165,7 +165,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             dst: dst,
             next_seqno: next_seqno,
             order: Arc::new(Mutex::new(
-                DataOrderer::new(common.window_size as usize)
+                DataOrderer::new(common.window_size, common.mtu)
             )),
             seqno_tracker: seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(

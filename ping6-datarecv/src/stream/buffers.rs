@@ -67,10 +67,10 @@ impl Deref for OrderedTrimmingBufferSlice {
 }
 
 impl DataOrderer {
-    pub fn new(size: usize) -> DataOrderer {
+    pub fn new(window_size: u32, mtu: u16) -> DataOrderer {
         DataOrderer {
-            buffer: TrimmingBuffer::new(size),
-            order: BinaryHeap::with_capacity(size)
+            buffer: TrimmingBuffer::new(window_size as usize * mtu as usize),
+            order: BinaryHeap::with_capacity(window_size as usize)
         }
     }
 
@@ -186,9 +186,9 @@ impl Stream for TimedAckSeqnoGenerator {
         }
 
         let interval = self.interval.as_mut().unwrap();
-        let ranges = self.tracker.lock().unwrap().take();
         try_ready!(interval.poll());
 
+        let ranges = self.tracker.lock().unwrap().take();
         Ok(if ranges.is_empty() {
             Async::NotReady
         } else {
