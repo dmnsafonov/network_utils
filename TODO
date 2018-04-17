@@ -6,10 +6,6 @@ migrate to failure
 
 add packet number (u64) in the stream to the checksum
 
-move creating ack packet sender from
-/home/dimanss47/univ_proj/ping6-datarecv/src/stream/stm.rs to stream mode
-initialization
-
 remake async socket interface to accept Borrow, not just U8Slice
 
 retransmit lost ack's: send two equal seqno ack with the window start

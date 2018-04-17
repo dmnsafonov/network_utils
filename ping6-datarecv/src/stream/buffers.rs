@@ -106,7 +106,7 @@ impl SeqnoTracker {
     pub fn new(next_seqno: Wrapping<u16>) -> SeqnoTracker {
         SeqnoTracker {
             tracker: RangeTracker::new(),
-            window_start: -next_seqno
+            window_start: next_seqno
         }
     }
 
@@ -122,7 +122,7 @@ impl SeqnoTracker {
         (x - self.window_start).0 as usize
     }
 
-    pub fn take(&mut self) -> Vec<IRange<Wrapping<u16>>> {
+    pub fn take(&mut self) -> VecDeque<IRange<Wrapping<u16>>> {
         let ret = self.tracker.into_iter().map(|IRange(l,r)| {
             IRange(
                 self.from_sequential(l),
@@ -143,7 +143,9 @@ impl SeqnoTracker {
 pub struct TimedAckSeqnoGenerator {
     tracker: Arc<Mutex<SeqnoTracker>>,
     period: Duration,
-    interval: Option<Interval>
+    interval: Option<Interval>,
+    active: bool,
+    stopped: bool
 }
 
 impl TimedAckSeqnoGenerator {
@@ -152,22 +154,38 @@ impl TimedAckSeqnoGenerator {
         TimedAckSeqnoGenerator {
             tracker: tracker,
             period: dur,
-            interval: None
+            interval: None,
+            active: false,
+            stopped: false
         }
     }
 
     pub fn start(&mut self) {
         assert!(self.interval.is_none());
         self.interval = Some(Interval::new(Instant::now(), self.period));
+        self.active = true;
+    }
+
+    pub fn stop(&mut self) {
+        self.interval.take();
+        self.active = false;
+        self.stopped = true;
     }
 }
 
 impl Stream for TimedAckSeqnoGenerator {
-    type Item = Vec<IRange<Wrapping<u16>>>;
+    type Item = VecDeque<IRange<Wrapping<u16>>>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let interval = self.interval.as_mut().expect("a started ack interval");
+        if !self.active {
+            return match self.stopped {
+                true => Ok(Async::Ready(None)),
+                false => Ok(Async::NotReady)
+            };
+        }
+
+        let interval = self.interval.as_mut().unwrap();
         let ranges = self.tracker.lock().unwrap().take();
         try_ready!(interval.poll());
 

@@ -1,4 +1,3 @@
-use ::std::cell::*;
 use ::std::net::*;
 use ::std::num::Wrapping;
 use ::std::sync::*;
@@ -63,7 +62,7 @@ pub enum StreamMachine<'s> {
     ReceivePackets {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
-        task: Arc<Mutex<Cell<Option<Task>>>>,
+        task: Arc<Mutex<Option<Task>>>,
         recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
         write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
         timeout: Delay
@@ -171,7 +170,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             seqno_tracker: seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64 / 2)
             ))
         };
 
@@ -272,53 +271,30 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let WaitForAck { mut common, mut active, .. } = state.take();
 
-        let task = Arc::new(Mutex::new(Cell::new(None)));
-
-        // stuff to move into spawned closure
-        let mut ack_gen = active.ack_gen.take().expect("an ack range generator");
-        ack_gen.start();
-        let send_src = *common.src.ip();
-        let send_dst = active.dst;
-        let send_buf_full_ref = common.send_buf.clone();
-        let send_sock = common.sock.clone();
+        // things to move into the lambdas
+        let task = Arc::new(Mutex::new(None));
         let task_clone = task.clone();
         let main_task = ::futures::task::current();
+        let mut ack_gen = active.ack_gen.take().unwrap();
+        ack_gen.start();
+        let ack_sender = ::stream::ack_sender::AckSender::new(
+            ack_gen,
+            *common.src.ip(),
+            active.dst,
+            common.send_buf.clone(),
+            common.sock.clone()
+        );
 
         // spawn the ack packet sending task
         common.handle.spawn(
             lazy(move || {
                 // a hack to get the task handle out of spawn()
                 task_clone.lock().unwrap()
-                    .set(Some(::futures::task::current()));
+                    .get_or_insert(::futures::task::current());
                 main_task.notify();
                 ok(())
             }).and_then(move |_| {
-                ack_gen.map_err(|_| ()).for_each(move |ranges| {
-                    // can not move out of the outer closure
-                    let send_buf_full_ref = send_buf_full_ref.clone();
-                    let mut send_sock = send_sock.clone();
-                    join_all(ranges.into_iter().map(move |IRange(l,r)| {
-                        let send_buf_ref = send_buf_full_ref
-                            .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
-
-                        debug!("sending ACK for range {} .. {}", l, r);
-                        make_stream_server_icmpv6_packet(
-                            &mut send_buf_ref.borrow_mut(),
-                            send_src,
-                            *send_dst.ip(),
-                            l.0,
-                            r.0,
-                            StreamPacketFlags::Ack.into(),
-                            &[]
-                        );
-
-                        send_sock.sendto(
-                            send_buf_ref,
-                            send_dst,
-                            SendFlagSet::new()
-                        ).map_err(|_| ())
-                    })).map(|_| ())
-                })
+                ack_sender
             })
         );
 
@@ -357,13 +333,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterReceivePackets<'s>, Error> {
         debug!("receiving packets");
 
-        let ack_sending_task = {
-            let task_guard = state.task.lock().unwrap();
-            let task_opt = task_guard.take();
-            if task_opt.is_none() {
-                return Ok(Async::NotReady);
-            }
-            task_opt.unwrap()
+        let ack_sending_task = match state.task.lock().unwrap().take() {
+            Some(task) => task,
+            None => return Ok(Async::NotReady)
         };
 
         let mut activity = true;
@@ -397,29 +369,27 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 }
             }
 
-            // TODO: WRONG: stop losing data each NotReady, do cleanups
-            let mut write_future = state.write_future.take();
-            if write_future.is_some() {
+            if state.write_future.is_some() {
                 if let Async::Ready(_)
-                        = write_future.as_mut().unwrap().poll()? {
+                        = state.write_future.as_mut().unwrap().poll()? {
                     activity = true;
-                    write_future = None;
+                    state.write_future.take();
                 }
             }
 
-            if write_future.is_none() {
+            if state.write_future.is_none() {
                 let peeked_seqno = state.active.order.lock().unwrap()
                     .peek_seqno();
                 if peeked_seqno == Some(state.active.next_seqno.0) {
                     state.active.next_seqno += Wrapping(1);
-                    write_future = Some(WriteBorrow::new(
+                    let data = state.active.order.lock().unwrap()
+                        .take().unwrap();
+                    state.write_future = Some(WriteBorrow::new(
                         state.common.data_out.clone(),
-                        state.active.order.lock().unwrap().take().unwrap()
+                        data
                     ));
                 }
             }
-
-            state.write_future = write_future;
         }
 
         if let Async::Ready(_) = state.timeout.poll()? {
