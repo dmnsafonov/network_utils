@@ -41,7 +41,7 @@ impl AckSender {
 impl Future for AckSender {
     type Item = ();
     type Error = ();
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {debug!("ack_sender polled");
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let mut active = true;
         while active {
             active = false;
@@ -78,7 +78,7 @@ impl Future for AckSender {
             }
 
             if let Async::Ready(ranges_opt)
-                    = self.ack_gen.poll().map_err(|_| ())? {debug!("some ranges");
+                    = self.ack_gen.poll().map_err(|_| ())? {
                 match ranges_opt {
                     Some(ranges) => {
                         self.ranges_to_send = ranges;

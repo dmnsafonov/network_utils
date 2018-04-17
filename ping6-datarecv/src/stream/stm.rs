@@ -276,6 +276,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 });
             }
             Ok(Async::Ready(None)) => {
+                info!("connection attempt timed out, \
+                    waiting for new connection");
                 let mut st = state.take();
                 let recv_first_syn = make_recv_first_syn(&mut st.common);
                 transition!(WaitForFirstSyn {
@@ -284,6 +286,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 });
             }
         };
+
+        info!("connection established");
 
         let WaitForAck { mut common, mut active, .. } = state.take();
 
@@ -313,6 +317,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 ack_sender
             })
         );
+        debug!("spawned ACK sending task");
 
         let seqno_tracker_ref = active.seqno_tracker.clone();
         let window_size = common.window_size;
@@ -347,12 +352,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_receive_packets<'a>(
         state: &'a mut RentToOwn<'a, ReceivePackets<'s>>
     ) -> Poll<AfterReceivePackets<'s>, Error> {
-        debug!("receiving packets");
-
         let ack_sending_task = match state.task.lock().unwrap().take() {
             Some(task) => task,
             None => return Ok(Async::NotReady)
         };
+
+        debug!("receiving packets");
 
         let mut activity = true;
         while activity {
