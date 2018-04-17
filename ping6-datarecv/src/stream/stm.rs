@@ -398,6 +398,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
                     state.active.seqno_tracker.lock().unwrap()
                         .add(Wrapping(packet.seqno));
+                    if ::log::max_log_level() >= ::log::LogLevelFilter::Debug {
+                        let packet = parse_stream_client_packet(&data);
+                        debug!("received packet with seqno {}", packet.seqno);
+                    }
                     state.active.order.lock().unwrap().add(&data);
 
                     ack_sending_task.notify();

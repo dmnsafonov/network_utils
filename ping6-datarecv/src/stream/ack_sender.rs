@@ -46,7 +46,7 @@ impl Future for AckSender {
         while active {
             active = false;
 
-            if self.send_fut.is_some() {debug!("send ack");
+            if self.send_fut.is_some() {
                 match self.send_fut.as_mut().unwrap().poll().map_err(|_| ())? {
                     Async::NotReady => return Ok(Async::NotReady),
                     Async::Ready(size) => {
