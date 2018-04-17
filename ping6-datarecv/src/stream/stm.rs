@@ -363,8 +363,16 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         while activity {
             activity = false;
 
-            if state.active.order.lock().unwrap().get_space_left()
-                    >= state.common.mtu as usize {
+            let space = {
+                let mut order = state.active.order.lock().unwrap();
+                let space = order.get_space_left();
+                if space < state.common.mtu as usize {
+                    order.cleanup();
+                }
+                order.get_space_left()
+            };
+
+            if space >= state.common.mtu as usize {
                 if let Async::Ready(Some((data_ref,_)))
                         = state.recv_stream.poll()? {
                     state.timeout = make_connection_timeout();

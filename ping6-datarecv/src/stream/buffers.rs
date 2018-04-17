@@ -93,6 +93,10 @@ impl DataOrderer {
     pub fn take(&mut self) -> Option<TrimmingBufferSlice> {
         self.order.pop().map(|x| x.take())
     }
+
+    pub fn cleanup(&mut self) {
+        self.buffer.cleanup();
+    }
 }
 
 pub struct SeqnoTracker {
