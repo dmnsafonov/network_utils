@@ -75,6 +75,7 @@ impl Future for AckSender {
                     self.dst,
                     SendFlagSet::new()
                 ));
+                active = true;
             }
 
             if let Async::Ready(ranges_opt)
