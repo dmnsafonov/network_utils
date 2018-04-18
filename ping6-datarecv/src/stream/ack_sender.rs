@@ -52,9 +52,9 @@ impl Future for AckSender {
                     Async::Ready(size) => {
                         debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
                         self.send_fut.take();
+                        active = true;
                     }
                 }
-                active = true;
             }
 
             if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
@@ -76,6 +76,10 @@ impl Future for AckSender {
                     SendFlagSet::new()
                 ));
                 active = true;
+            }
+
+            if active {
+                continue;
             }
 
             if let Async::Ready(ranges_opt)

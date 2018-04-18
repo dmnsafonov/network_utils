@@ -343,7 +343,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
         ));
 
-        let timeout = make_connection_timeout();
+        let timeout = Delay::new(make_connection_timeout_delay());
 
         transition!(
             ReceivePackets {
@@ -383,7 +383,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             if space >= state.common.mtu as usize {
                 if let Async::Ready(Some((data_ref,_)))
                         = state.recv_stream.poll()? {
-                    state.timeout = make_connection_timeout();
+                    state.timeout.reset(make_connection_timeout_delay());
 
                     let data = data_ref.lock();
                     let packet = parse_stream_client_packet(&data);
@@ -429,6 +429,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         state.common.data_out.clone(),
                         data
                     ));
+                    activity = true;
                 }
             }
         }
@@ -546,11 +547,10 @@ fn make_syn_ack_future<'a>(
     )
 }
 
-fn make_connection_timeout<'a>()
-        -> Delay {
-    Delay::new(Instant::now() + Duration::from_millis(
-        PACKET_LOSS_TIMEOUT as u64
-    ))
+fn make_connection_timeout_delay() -> Instant {
+    Instant::now() + Duration::from_millis(
+        PACKET_LOSS_TIMEOUT as u64 * 3
+    )
 }
 
 pub struct StreamCommonState<'a> {

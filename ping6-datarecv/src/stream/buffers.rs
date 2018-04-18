@@ -166,7 +166,6 @@ impl TimedAckSeqnoGenerator {
 
     pub fn start(&mut self) {
         assert!(self.interval.is_none());
-        self.interval = Some(Interval::new(Instant::now(), self.period));
         self.active = true;
     }
 
@@ -189,7 +188,11 @@ impl Stream for TimedAckSeqnoGenerator {
             };
         }
 
-        let interval = self.interval.as_mut().unwrap();
+        let period = self.period;
+        let interval = self.interval.get_or_insert_with(||
+            Interval::new(Instant::now(), period)
+        );
+
         try_ready!(interval.poll());
 
         let ranges = self.tracker.lock().unwrap().take();
