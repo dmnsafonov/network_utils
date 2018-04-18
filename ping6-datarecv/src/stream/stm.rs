@@ -215,9 +215,6 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         let data = data_ref.lock();
                         let packet = parse_stream_client_packet(&data);
 
-                        seqno_tracker_ref.lock().unwrap()
-                            .add(Wrapping(packet.seqno));
-
                         if packet.flags == StreamPacketFlags::Ack.into()
                                 && packet.seqno == seqno.0 {
                             true
@@ -226,6 +223,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                             if order.get_space_left() < data.len() {
                                 bail!(ErrorKind::RecvBufferOverrunOnStart);
                             }
+                            seqno_tracker_ref.lock().unwrap()
+                                .add(Wrapping(packet.seqno));
                             order.add(&data);
                             false
                         }
