@@ -66,7 +66,8 @@ pub enum StreamMachine<'s> {
         task: Arc<Mutex<Option<Task>>>,
         recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
         write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
-        timeout: Delay
+        timeout: Delay,
+        ack_sender_stopper: AckStopper
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -163,7 +164,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let next_seqno = Wrapping(packet.seqno) + Wrapping(1);
         let seqno_tracker = Arc::new(Mutex::new(
-            SeqnoTracker::new(next_seqno)
+            SeqnoTracker::new(next_seqno + Wrapping(1))
         ));
 
         let seqno_tracker_clone = seqno_tracker.clone();
@@ -303,6 +304,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let task_clone = task.clone();
         let main_task = ::futures::task::current();
         let mut ack_gen = active.ack_gen.take().unwrap();
+        let stopper = ack_gen.stopper();
         ack_gen.start();
         let ack_sender = ::stream::ack_sender::AckSender::new(
             ack_gen,
@@ -319,7 +321,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 task_clone.lock().unwrap()
                     .get_or_insert(::futures::task::current());
                 main_task.notify();
-                ok(())
+                Ok(())
             }).and_then(move |_| {
                 ack_sender
             })
@@ -351,7 +353,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 task: task,
                 recv_stream: unsafe { SendBox::new(Box::new(recv_stream)) },
                 write_future: None,
-                timeout: timeout
+                timeout: timeout,
+                ack_sender_stopper: stopper
             }
         )
     }
@@ -359,8 +362,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_receive_packets<'a>(
         state: &'a mut RentToOwn<'a, ReceivePackets<'s>>
     ) -> Poll<AfterReceivePackets<'s>, Error> {
-        let ack_sending_task = match state.task.lock().unwrap().take() {
-            Some(task) => task,
+        let ack_sending_task = match *state.task.lock().unwrap() {
+            Some(ref task) => task.clone(),
             None => return Ok(Async::NotReady)
         };
 
@@ -372,8 +375,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
             let space = {
                 let mut order = state.active.order.lock().unwrap();
-                let space = order.get_space_left();
-                if space < state.common.mtu as usize {
+                let space_required =
+                    state.common.mtu - STREAM_CLIENT_FULL_HEADER_SIZE;
+                if order.get_space_left() < space_required as usize {
                     order.cleanup();
                 }
                 order.get_space_left()
@@ -434,6 +438,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         }
 
         if let Async::Ready(_) = state.timeout.poll()? {
+            state.ack_sender_stopper.stop();
+            ack_sending_task.notify();
             bail!(ErrorKind::TimedOut);
         }
 

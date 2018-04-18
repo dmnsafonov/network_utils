@@ -149,7 +149,7 @@ pub struct TimedAckSeqnoGenerator {
     period: Duration,
     interval: Option<Interval>,
     active: bool,
-    stopped: bool
+    stopped: Arc<Mutex<bool>>
 }
 
 impl TimedAckSeqnoGenerator {
@@ -160,7 +160,7 @@ impl TimedAckSeqnoGenerator {
             period: dur,
             interval: None,
             active: false,
-            stopped: false
+            stopped: Arc::new(Mutex::new(false))
         }
     }
 
@@ -169,10 +169,17 @@ impl TimedAckSeqnoGenerator {
         self.active = true;
     }
 
+    pub fn stopper(&mut self) -> AckStopper {
+        AckStopper(self.stopped.clone())
+    }
+}
+
+#[derive(Clone)]
+pub struct AckStopper(Arc<Mutex<bool>>);
+
+impl AckStopper {
     pub fn stop(&mut self) {
-        self.interval.take();
-        self.active = false;
-        self.stopped = true;
+        *self.0.lock().unwrap() = true;
     }
 }
 
@@ -182,7 +189,7 @@ impl Stream for TimedAckSeqnoGenerator {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         if !self.active {
-            return match self.stopped {
+            return match *self.stopped.lock().unwrap() {
                 true => Ok(Async::Ready(None)),
                 false => Ok(Async::NotReady)
             };

@@ -92,6 +92,7 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
         ).arg(Arg::with_name("message")
             .long("message")
             .short("m")
+            .takes_value(true)
             .help("Sends a short (fitting in a single packet) message \
                 to the sender simulteneously with accepting connection \
                 in stream mode")
@@ -99,6 +100,7 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
         ).arg(Arg::with_name("window-size")
             .long("window-size")
             .short("w")
+            .takes_value(true)
             .help("Sets the stream mode transmission window size between \
                 1 and 65536 inclusive.  Default is highly arbitrary \
                  value \"1000\"")
