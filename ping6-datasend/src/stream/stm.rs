@@ -87,17 +87,24 @@ pub enum StreamMachine<'s> {
 
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
-        common: StreamCommonState<'s>
+        common: StreamCommonState<'s>,
+        send_fut: futures::IpV6RawSocketSendtoFuture,
+        next_action: Option<SendBox<StreamE<
+            TimedResult<(U8Slice, SocketAddrV6)>
+        >>>
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
     WaitForFinAck {
-        common: StreamCommonState<'s>
+        common: StreamCommonState<'s>,
+        recv_stream: SendBox<StreamE<
+            TimedResult<(U8Slice, SocketAddrV6)>
+        >>
     },
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
-        common: StreamCommonState<'s>
+        send_fut: futures::IpV6RawSocketSendtoFuture
     },
 
     #[state_machine_future(ready)]
@@ -217,8 +224,6 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         common.next_seqno += Wrapping(1);
         debug_assert!(dst == common.dst);
 
-        let src = *common.src.ip();
-
         let data = data_ref.lock();
         let packet = parse_stream_server_packet(&data);
 
@@ -233,29 +238,17 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         // TODO: output the server message
 
-        let send_buf_ref = common.send_buf
-            .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize);
-        let mut send_buf = send_buf_ref.borrow_mut();
-
-        make_stream_client_icmpv6_packet(
-            &mut send_buf,
-            src,
-            *dst.ip(),
-            common.next_seqno.0,
+        let fut = make_send_fut(
+            &mut common,
             StreamPacketFlags::Ack.into(),
-            &[]
-        );
-        let send_ack_future = common.sock.sendto(
-            common.send_buf
-                .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize),
-            dst,
-            SendFlagSet::new()
+            &[],
+            None
         );
         common.next_seqno += Wrapping(1);
 
         transition!(SendAck {
             common: common,
-            send_ack: send_ack_future
+            send_ack: fut
         })
     }
 
@@ -316,10 +309,17 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         if state.reached_input_eof && state.next_data.borrow().is_none() {
             state.ack_wait.cleanup();
             if state.ack_wait.is_empty() {
-                let common = state.take().common;
+                let mut common = state.take().common;
+                let send_fut = make_send_fut(
+                    &mut common,
+                    StreamPacketFlags::Fin.into(),
+                    &[],
+                    None
+                );
                 transition!(SendFin {
                     common,
-                    // TODO
+                    send_fut: send_fut,
+                    next_action: None
                 });
             }
         }
@@ -345,44 +345,123 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         state: &'a mut RentToOwn<'a, SendFin<'s>>
     ) -> Poll<AfterSendFin<'s>, Error> {
         debug!("sending FIN");
-        unimplemented!()
+        let size = try_ready!(state.send_fut.poll());
+        debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+
+        let state = state.take();
+        let mut common = state.common;
+
+        let cdst = common.dst;
+        let timed_packets = state.next_action.unwrap_or_else(|| {
+            let seqno = common.next_seqno;
+            let packets = make_recv_packets_stream(&mut common)
+                .filter(move |&(ref x, dst)| {
+                    let data_ref = x.lock();
+                    let packet = parse_stream_server_packet(&data_ref);
+
+                    !packet.flags.test(StreamPacketFlags::Syn)
+                            && packet.flags.test(StreamPacketFlags::Ack)
+                            && packet.flags.test(StreamPacketFlags::Fin)
+                        && packet.seqno_start == packet.seqno_end
+                            && packet.seqno_start == seqno.0
+                        && dst == cdst
+
+                });
+            let timed = TimeoutResultStream::new(
+                packets,
+                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+            );
+            unsafe {
+                SendBox::new(Box::new(
+                    timed.take(RETRANSMISSIONS_NUMBER as u64)
+                ))
+            }
+        });
+
+        transition!(WaitForFinAck {
+            common,
+            recv_stream: timed_packets
+        })
     }
 
     fn poll_wait_for_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForFinAck<'s>>
     ) -> Poll<AfterWaitForFinAck<'s>, Error> {
         debug!("waiting for FIN+ACK");
-        unimplemented!()
+        match state.recv_stream.poll() {
+            Err(e) => bail!(e),
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
+            Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
+                let mut st = state.take();
+                let send_future =
+                    make_first_syn_future(&mut st.common);
+                transition!(SendFin {
+                    common: st.common,
+                    send_fut: send_future,
+                    next_action: Some(st.recv_stream)
+                })
+            }
+            Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
+        };
+
+        let mut common = state.take().common;
+
+        let send_fut = make_send_fut(
+            &mut common,
+            StreamPacketFlags::Ack.into(),
+            &[],
+            None
+        );
+        common.next_seqno += Wrapping(1);
+
+        transition!(SendLastAck {
+            send_fut
+        })
     }
 
     fn poll_send_last_ack<'a>(
-        state: &'a mut RentToOwn<'a, SendLastAck<'s>>
+        state: &'a mut RentToOwn<'a, SendLastAck>
     ) -> Poll<AfterSendLastAck, Error> {
         debug!("sending last ACK");
-        unimplemented!()
+        let size = try_ready!(state.send_fut.poll());
+        debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+
+        transition!(ConnectionTerminated(TerminationReason::DataSent))
     }
 }
 
-fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
-        -> futures::IpV6RawSocketSendtoFuture {
+fn make_send_fut<'a>(
+    common: &mut StreamCommonState<'a>,
+    flags: StreamPacketFlagSet,
+    payload: &[u8],
+    override_seqno: Option<u16>
+) -> futures::IpV6RawSocketSendtoFuture {
     let dst = common.dst;
     let send_buf_ref = common.send_buf
-        .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+        .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize + payload.len());
+    let seqno = override_seqno.unwrap_or(common.next_seqno.0);
 
     make_stream_client_icmpv6_packet(
         &mut send_buf_ref.borrow_mut(),
         *common.src.ip(),
         *dst.ip(),
-        common.next_seqno.0,
-        StreamPacketFlags::Syn.into(),
-        &[]
+        seqno,
+        flags,
+        payload
     );
 
+    debug!("send packet with seqno {}", seqno);
     common.sock.sendto(
         send_buf_ref,
         dst,
         SendFlagSet::new()
     )
+}
+
+fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
+        -> futures::IpV6RawSocketSendtoFuture {
+    make_send_fut(common, StreamPacketFlags::Syn.into(), &[], None)
 }
 
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
@@ -490,28 +569,11 @@ fn make_data_send_fut<'s>(
         NextData::Retransmission(_, s) => s
     };
 
-    let size = STREAM_CLIENT_FULL_HEADER_SIZE as usize + data.len();
-    let send_buf_ref = state.common.send_buf
-        .range(0 .. size);
-
-    {
-        debug!("send packet with seqno {}", seqno);
-        let mut send_buf = send_buf_ref.borrow_mut();
-        make_stream_client_icmpv6_packet(
-            &mut send_buf,
-            *state.common.src.ip(),
-            *state.common.dst.ip(),
-            seqno,
-            StreamPacketFlagSet::new(),
-            &data
-        );
-    }
-
-    let dst = state.common.dst;
-    let fut = state.common.sock.sendto(
-        send_buf_ref,
-        dst,
-        SendFlagSet::new()
+    let fut = make_send_fut(
+        &mut state.common,
+        StreamPacketFlagSet::new(),
+        &data,
+        Some(seqno)
     );
     state.send_fut.replace(Some(fut));
 
