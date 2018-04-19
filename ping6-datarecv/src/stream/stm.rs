@@ -449,30 +449,35 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_send_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, SendFinAck<'s>>
     ) -> Poll<AfterSendFinAck<'s>, Error> {
+        debug!("sending FIN+ACK");
         unimplemented!()
     }
 
     fn poll_wait_for_last_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
     ) -> Poll<AfterWaitForLastAck<'s>, Error> {
+        debug!("waiting for last ACK");
         unimplemented!()
     }
 
     fn poll_send_fin<'a>(
         state: &'a mut RentToOwn<'a, SendFin<'s>>
     ) -> Poll<AfterSendFin<'s>, Error> {
+        debug!("sending FIN");
         unimplemented!()
     }
 
     fn poll_wait_for_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForFinAck<'s>>
     ) -> Poll<AfterWaitForFinAck<'s>, Error> {
+        debug!("waiting for FIN+ACK");
         unimplemented!()
     }
 
     fn poll_send_last_ack<'a>(
         state: &'a mut RentToOwn<'a, SendLastAck<'s>>
     ) -> Poll<AfterSendLastAck, Error> {
+        debug!("sending lack ACK");
         unimplemented!()
     }
 }
