@@ -87,7 +87,9 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
         common: StreamCommonState<'s>,
-        active: ActiveStreamCommonState
+        active: ActiveStreamCommonState,
+        fin_seqno: u16,
+        send_fut: futures::IpV6RawSocketSendtoFuture
     },
 
     #[state_machine_future(transitions(SendFin, SendLastAck))]
@@ -395,6 +397,28 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         poll_timeout(&mut *state, ack_sending_task.clone())?;
 
+        if state.fin_seqno.is_some()
+                && state.active.seqno_tracker.lock().unwrap().is_empty()
+                && state.active.order.lock().unwrap().is_empty() {
+            let ReceivePackets { mut common, active, fin_seqno, .. }
+                = state.take();
+            let fin_seqno = fin_seqno.unwrap();
+            let send_fut = make_send_fut(
+                &mut common,
+                active.dst,
+                StreamPacketFlags::Fin | StreamPacketFlags::Ack,
+                fin_seqno,
+                fin_seqno,
+                &[]
+            );
+            transition!(SendFin {
+                common,
+                active,
+                fin_seqno,
+                send_fut
+            });
+        }
+
         Ok(Async::NotReady)
     }
 
@@ -541,6 +565,7 @@ fn poll_recv_stream(
                 }
             }
             state.fin_seqno = Some(packet.seqno);
+            return Ok(true);
         }
 
         state.active.seqno_tracker.lock().unwrap()

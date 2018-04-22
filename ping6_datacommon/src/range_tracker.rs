@@ -116,6 +116,10 @@ impl<P, E> RangeTracker<P, E> {
     pub fn iter<'a>(&'a self) -> RangeTrackerIterator<'a, P, E> {
         self.into_iter()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.rangeset.is_empty()
+    }
 }
 
 pub struct NoParent;

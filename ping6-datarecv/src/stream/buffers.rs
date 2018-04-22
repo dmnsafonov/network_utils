@@ -97,6 +97,10 @@ impl DataOrderer {
     pub fn cleanup(&mut self) {
         self.buffer.cleanup();
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
 }
 
 pub struct SeqnoTracker {
@@ -141,6 +145,10 @@ impl SeqnoTracker {
 
     pub fn from_sequential(&self, x: usize) -> Wrapping<u16> {
         Wrapping((x % U16_MAX_P1) as u16) + self.window_start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tracker.is_empty()
     }
 }
 

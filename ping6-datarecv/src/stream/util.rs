@@ -18,7 +18,7 @@ pub fn make_send_fut_raw<'a>(
     payload: &[u8]
 ) -> futures::IpV6RawSocketSendtoFuture {
     let send_buf_ref = send_buf
-        .range(0 .. STREAM_CLIENT_FULL_HEADER_SIZE as usize + payload.len());
+        .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize + payload.len());
 
     make_stream_server_icmpv6_packet(
         &mut send_buf_ref.borrow_mut(),
