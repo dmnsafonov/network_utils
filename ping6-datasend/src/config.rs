@@ -47,7 +47,9 @@ pub fn get_config() -> Config {
                         .parse().expect("window size must be a number"),
                     read_buffer_size: matches.value_of("read-buffer-size")
                         .unwrap()
-                        .parse().expect("read buffer size must be a number")
+                        .parse::<usize>().expect("read buffer size must \
+                            be a number")
+                        * 1024
                 })
             } else {
                 ModeConfig::Datagram(DatagramConfig {
