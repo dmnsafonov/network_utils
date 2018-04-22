@@ -23,6 +23,7 @@ use ::errors::{Error, ErrorKind};
 use ::stdout_iterator::StdoutBytesWriter;
 use ::stream::buffers::*;
 use ::stream::packet::*;
+use ::stream::util::make_send_fut;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
 type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
@@ -537,23 +538,13 @@ fn make_syn_ack_future<'a>(
     seqno_start: u16,
     seqno_end: u16
 ) -> futures::IpV6RawSocketSendtoFuture {
-    let send_buf_ref = common.send_buf
-        .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
-
-    make_stream_server_icmpv6_packet(
-        &mut send_buf_ref.borrow_mut(),
-        *common.src.ip(),
-        *dst.ip(),
+    make_send_fut(
+        common,
+        dst,
+        StreamPacketFlags::Syn | StreamPacketFlags::Ack,
         seqno_start,
         seqno_end,
-        StreamPacketFlags::Syn | StreamPacketFlags::Ack,
         &[]
-    );
-
-    common.sock.sendto(
-        send_buf_ref,
-        dst,
-        SendFlagSet::new()
     )
 }
 

@@ -5,12 +5,11 @@ use ::std::num::Wrapping;
 use ::tokio::prelude::*;
 
 use ::ping6_datacommon::*;
-use ::linux_network::SendFlagSet;
 use ::linux_network::futures::*;
 use ::sliceable_rcref::SArcRef;
 
 use ::stream::buffers::TimedAckSeqnoGenerator;
-use ::stream::packet::make_stream_server_icmpv6_packet;
+use ::stream::util::make_send_fut_raw;
 
 pub struct AckSender {
     ack_gen: TimedAckSeqnoGenerator,
@@ -59,21 +58,15 @@ impl Future for AckSender {
 
             if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
                 debug!("sending ACK for range {} .. {}", l, r);
-                let send_buf_ref = self.send_buf
-                    .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize);
-                make_stream_server_icmpv6_packet(
-                    &mut send_buf_ref.borrow_mut(),
+                self.send_fut = Some(make_send_fut_raw(
+                    self.sock.clone(),
+                    self.send_buf.clone(),
                     self.src,
-                    *self.dst.ip(),
+                    self.dst,
+                    StreamPacketFlags::Ack.into(),
                     l.0,
                     r.0,
-                    StreamPacketFlags::Ack.into(),
                     &[]
-                );
-                self.send_fut = Some(self.sock.sendto(
-                    send_buf_ref,
-                    self.dst,
-                    SendFlagSet::new()
                 ));
                 active = true;
             }

@@ -1,7 +1,8 @@
 mod ack_sender;
 mod buffers;
-mod packet;
-mod stm;
+pub mod packet;
+pub mod stm;
+pub mod util;
 
 use ::std::io;
 
