@@ -19,7 +19,7 @@ use ::send_box::SendBox;
 use ::sliceable_rcref::*;
 
 use ::config::Config;
-use ::errors::{Error, ErrorKind};
+use ::errors::{Error, ErrorKind, Result};
 use ::stdout_iterator::StdoutBytesWriter;
 use ::stream::buffers::*;
 use ::stream::packet::*;
@@ -68,7 +68,8 @@ pub enum StreamMachine<'s> {
         recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
         write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
         timeout: Delay,
-        ack_sender_stopper: AckStopper
+        ack_sender_stopper: AckStopper,
+        fin_seqno: Option<u16>
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -355,7 +356,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 recv_stream: unsafe { SendBox::new(Box::new(recv_stream)) },
                 write_future: None,
                 timeout: timeout,
-                ack_sender_stopper: stopper
+                ack_sender_stopper: stopper,
+                fin_seqno: None
             }
         )
     }
@@ -374,75 +376,24 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         while activity {
             activity = false;
 
-            let space = {
-                let mut order = state.active.order.lock().unwrap();
-                let space_required =
-                    state.common.mtu - STREAM_CLIENT_FULL_HEADER_SIZE;
-                if order.get_space_left() < space_required as usize {
-                    order.cleanup();
-                }
-                order.get_space_left()
-            };
+            let mtu = state.common.mtu;
+            let space = clean_and_get_space(
+                &mut state.active.order.lock().unwrap(),
+                mtu
+            );
 
-            if space >= state.common.mtu as usize {
-                if let Async::Ready(Some((data_ref,_)))
-                        = state.recv_stream.poll()? {
-                    state.timeout.reset(make_connection_timeout_delay());
+            activity = activity || poll_recv_stream(
+                &mut *state,
+                space,
+                ack_sending_task.clone()
+            )?;
 
-                    let data = data_ref.lock();
-                    let packet = parse_stream_client_packet(&data);
+            activity = activity || poll_send_fut(&mut *state)?;
 
-                    if data.len() > state.common.mtu as usize {
-                        bail!(ErrorKind::MtuLessThanReal(data.len() as u16));
-                    }
-
-                    if packet.flags.test(StreamPacketFlags::Fin) {
-                        unimplemented!()
-                    }
-
-                    state.active.seqno_tracker.lock().unwrap()
-                        .add(Wrapping(packet.seqno));
-                    if ::log::max_log_level() >= ::log::LogLevelFilter::Debug {
-                        let packet = parse_stream_client_packet(&data);
-                        debug!("received packet with seqno {}", packet.seqno);
-                    }
-                    state.active.order.lock().unwrap().add(&data);
-
-                    ack_sending_task.notify();
-
-                    activity = true;
-                }
-            }
-
-            if state.write_future.is_some() {
-                if let Async::Ready(_)
-                        = state.write_future.as_mut().unwrap().poll()? {
-                    activity = true;
-                    state.write_future.take();
-                }
-            }
-
-            if state.write_future.is_none() {
-                let peeked_seqno = state.active.order.lock().unwrap()
-                    .peek_seqno();
-                if peeked_seqno == Some(state.active.next_seqno.0) {
-                    state.active.next_seqno += Wrapping(1);
-                    let data = state.active.order.lock().unwrap()
-                        .take().unwrap();
-                    state.write_future = Some(WriteBorrow::new(
-                        state.common.data_out.clone(),
-                        data
-                    ));
-                    activity = true;
-                }
-            }
+            activity = activity || poll_write_output(&mut *state)?;
         }
 
-        if let Async::Ready(_) = state.timeout.poll()? {
-            state.ack_sender_stopper.stop();
-            ack_sending_task.notify();
-            bail!(ErrorKind::TimedOut);
-        }
+        poll_timeout(&mut *state, ack_sending_task.clone())?;
 
         Ok(Async::NotReady)
     }
@@ -552,6 +503,101 @@ fn make_connection_timeout_delay() -> Instant {
     Instant::now() + Duration::from_millis(
         PACKET_LOSS_TIMEOUT as u64 * 3
     )
+}
+
+fn clean_and_get_space(order: &mut DataOrderer, mtu: u16) -> usize {
+    let space_required = mtu - STREAM_CLIENT_FULL_HEADER_SIZE;
+    if order.get_space_left() < space_required as usize {
+        order.cleanup();
+    }
+    order.get_space_left()
+}
+
+fn poll_recv_stream(
+    state: &mut ReceivePackets,
+    space: usize,
+    ack_sending_task: Task)
+-> Result<bool> {
+    if space < state.common.mtu as usize {
+        return Ok(false);
+    }
+
+    if let Async::Ready(Some((data_ref,_)))
+            = state.recv_stream.poll()? {
+        state.timeout.reset(make_connection_timeout_delay());
+
+        let data = data_ref.lock();
+        let packet = parse_stream_client_packet(&data);
+
+        if data.len() > state.common.mtu as usize {
+            bail!(ErrorKind::MtuLessThanReal(data.len() as u16));
+        }
+
+        if packet.flags.test(StreamPacketFlags::Fin) {
+            if let Some(seqno) = state.fin_seqno {
+                if seqno != packet.seqno {
+                    error!("double FIN packet with different seqno");
+                    return Ok(false);
+                }
+            }
+            state.fin_seqno = Some(packet.seqno);
+        }
+
+        state.active.seqno_tracker.lock().unwrap()
+            .add(Wrapping(packet.seqno));
+        if ::log::max_log_level() >= ::log::LogLevelFilter::Debug {
+            let packet = parse_stream_client_packet(&data);
+            debug!("received packet with seqno {}", packet.seqno);
+        }
+        state.active.order.lock().unwrap().add(&data);
+
+        ack_sending_task.notify();
+
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn poll_send_fut(state: &mut ReceivePackets) -> Result<bool> {
+    if state.write_future.is_some() {
+        if let Async::Ready(_)
+                = state.write_future.as_mut().unwrap().poll()? {
+            state.write_future.take();
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn poll_write_output(state: &mut ReceivePackets) -> Result<bool> {
+    if state.write_future.is_none() {
+        let peeked_seqno = state.active.order.lock().unwrap()
+            .peek_seqno();
+        if peeked_seqno == Some(state.active.next_seqno.0) {
+            state.active.next_seqno += Wrapping(1);
+            let data = state.active.order.lock().unwrap()
+                .take().unwrap();
+            state.write_future = Some(WriteBorrow::new(
+                state.common.data_out.clone(),
+                data
+            ));
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn poll_timeout(
+    state: &mut ReceivePackets,
+    ack_sending_task: Task
+) -> Result<()> {
+    if let Async::Ready(_) = state.timeout.poll()? {
+        state.ack_sender_stopper.stop();
+        ack_sending_task.notify();
+        bail!(ErrorKind::TimedOut);
+    }
+    Ok(())
 }
 
 pub struct StreamCommonState<'a> {
