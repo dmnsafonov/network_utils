@@ -73,10 +73,14 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
                 Err(())
             },
             Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(TerminationReason::DataSent)) =>
-                unimplemented!(),
-            Ok(Async::Ready(TerminationReason::ServerFin)) =>
-                unimplemented!()
+            Ok(Async::Ready(TerminationReason::DataSent)) => {
+                info!("data sent successfully");
+                Ok(Async::Ready(()))
+            },
+            Ok(Async::Ready(TerminationReason::ServerFin)) => {
+                info!("connection dropped by server");
+                Ok(Async::Ready(()))
+            }
         }
     }));
     debug!("protocol state machine spawned");
