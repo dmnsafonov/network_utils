@@ -76,10 +76,14 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
                 Err(())
             },
             Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(TerminationReason::DataReceived)) =>
-                unimplemented!(),
-            Ok(Async::Ready(TerminationReason::Interrupted)) =>
-                unimplemented!()
+            Ok(Async::Ready(TerminationReason::DataReceived)) => {
+                info!("data received successfully");
+                Ok(Async::Ready(()))
+            },
+            Ok(Async::Ready(TerminationReason::Interrupted)) => {
+                info!("connection was interrupted");
+                Ok(Async::Ready(()))
+            }
         }
     }));
     debug!("protocol state machine spawned");
