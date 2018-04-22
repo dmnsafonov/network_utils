@@ -2,7 +2,7 @@ use ::std::cmp::*;
 use ::std::collections::*;
 use ::std::num::Wrapping;
 use ::std::ops::Deref;
-use ::std::sync::*;
+use ::std::sync::{atomic::{Ordering, *}, *};
 use ::std::time::*;
 
 use ::errors::Error;
@@ -39,7 +39,7 @@ impl Eq for OrderedTrimmingBufferSlice {}
 
 impl PartialOrd for OrderedTrimmingBufferSlice {
     fn partial_cmp(&self, other: &OrderedTrimmingBufferSlice)
-            -> Option<Ordering> {
+            -> Option<::std::cmp::Ordering> {
         let l = parse_stream_client_packet(&self.0).seqno;
         let r = parse_stream_client_packet(&other.0).seqno;
 
@@ -48,7 +48,7 @@ impl PartialOrd for OrderedTrimmingBufferSlice {
 }
 
 impl Ord for OrderedTrimmingBufferSlice {
-    fn cmp(&self, other: &OrderedTrimmingBufferSlice) -> Ordering {
+    fn cmp(&self, other: &OrderedTrimmingBufferSlice) -> ::std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
@@ -157,7 +157,7 @@ pub struct TimedAckSeqnoGenerator {
     period: Duration,
     interval: Option<Interval>,
     active: bool,
-    stopped: Arc<Mutex<bool>>
+    stopped: Arc<AtomicBool>
 }
 
 impl TimedAckSeqnoGenerator {
@@ -168,7 +168,7 @@ impl TimedAckSeqnoGenerator {
             period: dur,
             interval: None,
             active: false,
-            stopped: Arc::new(Mutex::new(false))
+            stopped: Arc::new(AtomicBool::new(false))
         }
     }
 
@@ -183,11 +183,11 @@ impl TimedAckSeqnoGenerator {
 }
 
 #[derive(Clone)]
-pub struct AckStopper(Arc<Mutex<bool>>);
+pub struct AckStopper(Arc<AtomicBool>);
 
 impl AckStopper {
     pub fn stop(&mut self) {
-        *self.0.lock().unwrap() = true;
+        self.0.store(true, Ordering::Release);
     }
 }
 
@@ -196,11 +196,12 @@ impl Stream for TimedAckSeqnoGenerator {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let stopped = self.stopped.load(Ordering::Acquire);
+        if stopped {
+            return Ok(Async::Ready(None));
+        }
         if !self.active {
-            return match *self.stopped.lock().unwrap() {
-                true => Ok(Async::Ready(None)),
-                false => Ok(Async::NotReady)
-            };
+            return Ok(Async::NotReady);
         }
 
         let period = self.period;
@@ -208,13 +209,12 @@ impl Stream for TimedAckSeqnoGenerator {
             Interval::new(Instant::now(), period)
         );
 
-        try_ready!(interval.poll());
-
-        let ranges = self.tracker.lock().unwrap().take();
-        Ok(if ranges.is_empty() {
-            Async::NotReady
-        } else {
-            Async::Ready(Some(ranges))
-        })
+        loop {
+            let ranges = self.tracker.lock().unwrap().take();
+            if !ranges.is_empty() {
+                return Ok(Async::Ready(Some(ranges)));
+            }
+            try_ready!(interval.poll());
+        }
     }
 }

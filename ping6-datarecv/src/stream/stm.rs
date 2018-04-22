@@ -383,22 +383,14 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let mut activity = true;
         while activity {
-            activity = false;
-
             let mtu = state.common.mtu;
             let space = clean_and_get_space(
                 &mut state.active.order.lock().unwrap(),
                 mtu
             );
 
-            activity = activity || poll_recv_stream(
-                &mut *state,
-                space,
-                ack_sending_task.clone()
-            )?;
-
+            activity = poll_recv_stream(&mut *state, space)?;
             activity = activity || poll_send_data_fut(&mut *state)?;
-
             activity = activity || poll_write_output(&mut *state)?;
         }
 
@@ -407,8 +399,17 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         if state.fin_seqno.is_some()
                 && state.active.seqno_tracker.lock().unwrap().is_empty()
                 && state.active.order.lock().unwrap().is_empty() {
-            let ReceivePackets { mut common, active, fin_seqno, .. }
-                = state.take();
+            let ReceivePackets {
+                mut common,
+                active,
+                mut ack_sender_stopper,
+                fin_seqno,
+                ..
+            } = state.take();
+
+            ack_sender_stopper.stop();
+            ack_sending_task.notify();
+
             let fin_seqno = fin_seqno.unwrap();
             let send_fut = make_fin_ack_future(
                 &mut common,
@@ -632,9 +633,8 @@ fn clean_and_get_space(order: &mut DataOrderer, mtu: u16) -> usize {
 
 fn poll_recv_stream(
     state: &mut ReceivePackets,
-    space: usize,
-    ack_sending_task: Task)
--> Result<bool> {
+    space: usize
+) -> Result<bool> {
     if space < state.common.mtu as usize {
         return Ok(false);
     }
@@ -653,7 +653,7 @@ fn poll_recv_stream(
         if packet.flags.test(StreamPacketFlags::Fin) {
             if let Some(seqno) = state.fin_seqno {
                 if seqno != packet.seqno {
-                    error!("double FIN packet with different seqno");
+                    warn!("double FIN packet with different seqno");
                     return Ok(false);
                 }
             }
@@ -668,8 +668,6 @@ fn poll_recv_stream(
             debug!("received packet with seqno {}", packet.seqno);
         }
         state.active.order.lock().unwrap().add(&data);
-
-        ack_sending_task.notify();
 
         return Ok(true);
     }
