@@ -45,17 +45,6 @@ impl Future for AckSender {
         while active {
             active = false;
 
-            if self.send_fut.is_some() {
-                match self.send_fut.as_mut().unwrap().poll().map_err(|_| ())? {
-                    Async::NotReady => return Ok(Async::NotReady),
-                    Async::Ready(size) => {
-                        debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
-                        self.send_fut.take();
-                        active = true;
-                    }
-                }
-            }
-
             if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
                 debug!("sending ACK for range {} .. {}", l, r);
                 self.send_fut = Some(make_send_fut_raw(
@@ -69,6 +58,17 @@ impl Future for AckSender {
                     &[]
                 ));
                 active = true;
+            }
+
+            if self.send_fut.is_some() {
+                match self.send_fut.as_mut().unwrap().poll().map_err(|_| ())? {
+                    Async::NotReady => return Ok(Async::NotReady),
+                    Async::Ready(size) => {
+                        debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
+                        self.send_fut.take();
+                        active = true;
+                    }
+                }
             }
 
             if active {

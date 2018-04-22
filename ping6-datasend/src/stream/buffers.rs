@@ -100,10 +100,8 @@ impl AckWaitlist {
             let mut peekable = Self::iter_from_lock(
                     OwnOrBorrow::new_borrowed(&theself))
                 .map(|(ind,x)| (ind as u32, x))
-                .skip_while(|&(_,x)| x.seqno < range.0
-                    || x.seqno > range.1)
-                .take_while(|&(_,x)| x.seqno >= range.0
-                    && x.seqno <= range.1)
+                .skip_while(|&(_,x)| x.seqno < range.0)
+                .take_while(|&(_,x)| x.seqno <= range.1)
                 .peekable();
             if let Some(&(first_ind, first_ackwait)) = peekable.peek() {
                 let mut start_ind = first_ind;
@@ -196,7 +194,7 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
         let mut acked_range_opt = self.0.tracker_iter.next();
         while let Some((ind, wait)) = self.0.inner.next() {
             while acked_range_opt.is_some()
-                    && acked_range_opt.unwrap().1 > ind {
+                    && acked_range_opt.as_ref().unwrap().1 > ind {
                 acked_range_opt = self.0.tracker_iter.next();
             }
 

@@ -8,6 +8,7 @@ if [[ "$1" == "setup" ]]; then
     ip link set send-if netns pingdata-sender
     ip netns exec pingdata-sender ip link set lo up
     ip netns exec pingdata-sender ip link set send-if up
+    ip netns exec pingdata-sender ip link set send-if mtu 1280
     ip netns exec pingdata-sender ip addr add fc00::1/64 dev send-if
 
     sysctl -q net.ipv6.conf.recv-if.forwarding=0
@@ -15,6 +16,7 @@ if [[ "$1" == "setup" ]]; then
     ip link set recv-if netns pingdata-receiver
     ip netns exec pingdata-receiver ip link set lo up
     ip netns exec pingdata-receiver ip link set recv-if up
+    ip netns exec pingdata-receiver ip link set recv-if mtu 1280
     ip netns exec pingdata-receiver ip addr add fc00::2/64 dev recv-if
 elif [[ "$1" == "clean" ]]; then
     ip netns del pingdata-sender

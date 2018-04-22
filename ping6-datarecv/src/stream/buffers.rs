@@ -211,10 +211,10 @@ impl Stream for TimedAckSeqnoGenerator {
 
         loop {
             let ranges = self.tracker.lock().unwrap().take();
+            try_ready!(interval.poll());
             if !ranges.is_empty() {
                 return Ok(Async::Ready(Some(ranges)));
             }
-            try_ready!(interval.poll());
         }
     }
 }

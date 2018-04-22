@@ -295,13 +295,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 let ret = fill_read_buf(&mut *state)?;
                 ret
             };
-            activity = activity || poll_send_fut(state.send_fut.borrow_mut())?;
             fill_next_data(&mut *state);
             if state.next_data.borrow().is_some() {
                 make_data_send_fut(&mut *state);
             }
-            activity = activity || poll_receive_packets(&mut *state)?;
-            activity = activity || poll_timeout(&mut *state)?;
+            activity = poll_send_fut(state.send_fut.borrow_mut())? || activity;
+            activity = poll_receive_packets(&mut *state)? || activity;
+            activity = poll_timeout(&mut *state)? || activity;
 
             // TODO: server FIN
         }
@@ -562,6 +562,10 @@ fn poll_send_fut(
 fn make_data_send_fut<'s>(
     state: &mut SendData<'s>,
 ) {
+    if state.send_fut.borrow().is_some() {
+        return;
+    }
+
     let data = state.next_data.replace(None).unwrap();
 
     let seqno = match data {
@@ -578,12 +582,10 @@ fn make_data_send_fut<'s>(
     state.send_fut.replace(Some(fut));
 
     if let NextData::Input(slice) = data {
-        let next_seqno = state.common.next_seqno;
-
         if state.ack_wait.is_full() {
             state.ack_wait.cleanup();
         }
-        state.ack_wait.add(AckWait::new(next_seqno, slice));
+        state.ack_wait.add(AckWait::new(Wrapping(seqno), slice));
 
         state.common.next_seqno += Wrapping(1);
     }
@@ -595,7 +597,7 @@ fn fill_next_data(state: &mut SendData) {
         if retransmit_queue.is_empty() {
             if let Some(slice) =
                     state.read_buf.take((state.common.mtu
-                        - STREAM_CLIENT_FULL_HEADER_SIZE) as usize) {
+                        - STREAM_CLIENT_HEADER_SIZE_WITH_IP) as usize) {
                 state.next_data.replace(Some(
                     NextData::from_tb_slice(slice)
                 ));

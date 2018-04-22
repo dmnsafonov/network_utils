@@ -390,8 +390,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             );
 
             activity = poll_recv_stream(&mut *state, space)?;
-            activity = activity || poll_send_data_fut(&mut *state)?;
-            activity = activity || poll_write_output(&mut *state)?;
+            activity = poll_send_data_fut(&mut *state)? || activity;
+            activity = poll_write_output(&mut *state)? || activity;
         }
 
         poll_timeout(&mut *state, ack_sending_task.clone())?;
@@ -624,7 +624,7 @@ fn make_connection_timeout_delay() -> Instant {
 }
 
 fn clean_and_get_space(order: &mut DataOrderer, mtu: u16) -> usize {
-    let space_required = mtu - STREAM_CLIENT_FULL_HEADER_SIZE;
+    let space_required = mtu - STREAM_CLIENT_HEADER_SIZE_WITH_IP;
     if order.get_space_left() < space_required as usize {
         order.cleanup();
     }
