@@ -277,3 +277,117 @@ macro_rules! gen_dtrange_from_irange {
 }
 
 gen_dtrange_from_irange!(usize, u64, u32, u16, u8);
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn empty_not_iterable() {
+        let tracker = RangeTracker::new();
+        assert!(tracker.iter().next().is_none());
+    }
+
+    #[test]
+    fn one_range_track() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(0usize, 5usize));
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(0usize, 5usize));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn merge_right() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(0usize, 5usize));
+        tracker.track_range(IRange(6usize, 10usize));
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(0usize, 10usize));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn merge_left() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(6usize, 10usize));
+        tracker.track_range(IRange(0usize, 5usize));
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(0usize, 10usize));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn merge_both_sides() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(8usize, 10usize));
+        tracker.track_range(IRange(0usize, 3usize));
+        tracker.track_range(IRange(4usize, 7usize));
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(0usize, 10usize));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn iterate_multiple_ranges() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(1usize, 10usize));
+        tracker.track_range(IRange(300usize, 500usize));
+        tracker.track_range(IRange(15usize, 30usize));
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(1usize, 10usize));
+        assert!(iter.next().unwrap() == IRange(15usize, 30usize));
+        assert!(iter.next().unwrap() == IRange(300usize, 500usize));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn take() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(0usize, 10usize));
+        tracker.track_range(IRange(300usize, 500usize));
+        tracker.track_range(IRange(15usize, 30usize));
+        assert!(tracker.take_range().unwrap() == 10);
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(4usize, 19usize));
+        assert!(iter.next().unwrap() == IRange(289usize, 489usize));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn take_last() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(0usize, 10usize));
+        tracker.track_range(IRange(300usize, 500usize));
+        assert!(tracker.take_range().unwrap() == 10);
+        tracker.track_range(IRange(0usize, 288usize));
+        assert!(tracker.take_range().unwrap() == 489);
+        assert!(tracker.iter().next().is_none());
+    }
+
+    #[test]
+    fn is_range_tracked() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(0usize, 10usize));
+        tracker.track_range(IRange(300usize, 500usize));
+        tracker.track_range(IRange(15usize, 30usize));
+        assert!(tracker.is_range_tracked(IRange(0usize, 0usize)).unwrap());
+        assert!(tracker.is_range_tracked(IRange(10usize, 11usize)).is_none());
+        assert!(tracker.is_range_tracked(IRange(9usize, 301usize)).is_none());
+        assert!(!tracker.is_range_tracked(IRange(11usize, 12usize)).unwrap());
+    }
+
+    #[test]
+    fn track_size_one() {
+        let mut tracker = RangeTracker::new();
+        tracker.track_range(IRange(0usize, 10usize));
+        tracker.track_range(IRange(14usize, 20usize));
+        tracker.track_range(IRange(11usize, 11usize));
+        tracker.track_range(IRange(13usize, 13usize));
+        tracker.track_range(IRange(12usize, 12usize));
+        let mut iter = tracker.iter();
+        assert!(iter.next().unwrap() == IRange(0usize, 20usize));
+    }
+
+    // TODO: test slices
+}
