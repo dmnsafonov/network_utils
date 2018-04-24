@@ -72,7 +72,8 @@ pub enum StreamMachine<'s> {
         >>,
         ack_wait: AckWaitlist,
         ack_timer: Delay,
-        reached_input_eof: bool
+        reached_input_eof: bool,
+        sending_new_data: bool
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -280,7 +281,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             recv_stream,
             ack_wait: AckWaitlist::new(window_size, mtu),
             ack_timer: make_packet_loss_delay(),
-            reached_input_eof: false
+            reached_input_eof: false,
+            sending_new_data: true
         })
     }
 
@@ -648,6 +650,7 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
             )
         ) {
             state.ack_timer = make_packet_loss_delay();
+            state.sending_new_data = true;
         }
 
         return Ok(true);
@@ -661,7 +664,7 @@ fn poll_timeout(state: &mut SendData) -> Result<bool> {
         {
             let mut retransmit_queue =
                 state.retransmit_queue.borrow_mut();
-            if !retransmit_queue.is_empty() {
+            if !state.sending_new_data || !retransmit_queue.is_empty() {
                 bail!(ErrorKind::TimedOut);
             }
             for i in state.ack_wait.iter() {
@@ -672,6 +675,7 @@ fn poll_timeout(state: &mut SendData) -> Result<bool> {
             }
         }
         state.ack_timer = make_packet_loss_delay();
+        state.sending_new_data = false;
 
         return Ok(true);
     }
