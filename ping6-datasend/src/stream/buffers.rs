@@ -76,18 +76,19 @@ impl AckWaitlist {
 
     // safe to call multiple times with the same arguments
     // and with overlapping ranges
-    pub fn remove(&mut self, range: IRange<Wrapping<u16>>) {
+    pub fn remove(&mut self, range: IRange<Wrapping<u16>>) -> bool {
         if range.0 > range.1 {
             self.remove_non_wrapping(IRange(range.0,
-                Wrapping(::std::u16::MAX)));
-            self.remove_non_wrapping(IRange(Wrapping(0), range.1));
+                    Wrapping(::std::u16::MAX)))
+                && self.remove_non_wrapping(IRange(Wrapping(0), range.1))
         } else {
-            self.remove_non_wrapping(range);
+            self.remove_non_wrapping(range)
         }
     }
 
     // safe to call multiple times with the same arguments
-    pub fn remove_non_wrapping(&mut self, range: IRange<Wrapping<u16>>) {
+    pub fn remove_non_wrapping(&mut self, range: IRange<Wrapping<u16>>)
+            -> bool {
         let mut theself = self.0.lock().unwrap();
 
         assert!(range.0 <= range.1);
@@ -119,9 +120,12 @@ impl AckWaitlist {
             }
         }
 
+        let mut removed_something = false;
         for i in tmpvec.drain(..) {
+            removed_something = true;
             theself.del_tracker.track_range(i.into());
         }
+        removed_something
     }
 
     pub fn cleanup(&mut self) {
@@ -140,6 +144,10 @@ impl AckWaitlist {
     pub fn is_full(&self) -> bool {
         let theself = self.0.lock().unwrap();
         theself.inner.capacity() == theself.inner.len()
+    }
+
+    pub fn first_seqno(&self) -> Option<Wrapping<u16>> {
+        self.iter().next().map(|x| x.seqno)
     }
 
     pub fn iter<'a>(&'a self) -> AckWaitlistIterator<'a> {
@@ -161,7 +169,7 @@ impl AckWaitlist {
             |x| {
                 let y = unsafe { x.as_ref().unwrap() };
                 DerefWrapper(AckWaitlistIteratorInternalImpl {
-                    tracker_iter: y.del_tracker.iter(),
+                    tracker_iter: y.del_tracker.iter().peekable(),
                     inner: y.inner.iter().enumerate(),
                     _phantom: Default::default()
                 })
@@ -178,11 +186,11 @@ struct AckWaitlistIteratorInternal<'a>(
 );
 
 struct AckWaitlistIteratorInternalImpl<'a> {
-    tracker_iter: RangeTrackerIterator<
+    tracker_iter: Peekable<RangeTrackerIterator<
         'a,
         AckWaitlistImplBufferGetter,
         AckWait
-    >,
+    >>,
     inner: Enumerate<vec_deque::Iter<'a, AckWait>>,
     _phantom: PhantomData<&'a AckWait>
 }
@@ -191,11 +199,12 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
     type Item = (u32, &'a AckWait);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut acked_range_opt = self.0.tracker_iter.next();
+        let mut acked_range_opt = self.0.tracker_iter.peek().map(|x| *x);
         while let Some((ind, wait)) = self.0.inner.next() {
             while acked_range_opt.is_some()
                     && acked_range_opt.as_ref().unwrap().1 < ind {
-                acked_range_opt = self.0.tracker_iter.next();
+                self.0.tracker_iter.next();
+                acked_range_opt = self.0.tracker_iter.peek().map(|x| *x);
             }
 
             if let Some(acked_range) = acked_range_opt {

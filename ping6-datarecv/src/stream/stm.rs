@@ -667,7 +667,9 @@ fn poll_recv_stream(
             let packet = parse_stream_client_packet(&data);
             debug!("received packet with seqno {}", packet.seqno);
         }
-        state.active.order.lock().unwrap().add(&data);
+        if packet.payload.len() > 0 {
+            state.active.order.lock().unwrap().add(&data);
+        }
 
         return Ok(true);
     }

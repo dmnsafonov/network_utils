@@ -18,3 +18,5 @@ cleanup() in AckWait's pub fn iter()
 do something with the timeouts/constants
 
 convert to bytes/byteorder
+
+send ack immediately if what we are receiving is a retrans

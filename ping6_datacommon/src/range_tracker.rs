@@ -167,7 +167,7 @@ impl<P, E> RangeTracker<P, E>
         } else {
             assert!(is_subslice(ending, slice));
             let end_ptr = ending.as_ptr() as usize;
-            let start = end_ptr - ptr + beginning.len();
+            let start = ptr - end_ptr + beginning.len();
             let end = start + len - 1;
             IRange(start, end)
         }

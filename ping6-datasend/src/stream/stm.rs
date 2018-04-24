@@ -517,9 +517,17 @@ fn fill_read_buf(
 
     let buffer_space = {
         let sp = state.read_buf.get_space_left();
-        if sp < state.common.mtu as usize {
+        let mtu = state.common.mtu as usize;
+        if sp < mtu {
             state.read_buf.cleanup();
-            state.read_buf.get_space_left()
+            let sp = state.read_buf.get_space_left();
+            if sp < mtu {
+                state.ack_wait.cleanup();
+                state.read_buf.cleanup();
+                state.read_buf.get_space_left()
+            } else {
+                sp
+            }
         } else {
             sp
         }
@@ -595,6 +603,20 @@ fn fill_next_data(state: &mut SendData) {
     if state.next_data.borrow().is_none() {
         let mut retransmit_queue = state.retransmit_queue.borrow_mut();
         if retransmit_queue.is_empty() {
+            // respect window size
+            if let Some(window_start) = state.ack_wait.first_seqno() {
+                let stream_conf = match state.common.config.mode {
+                    ModeConfig::Stream(ref x) => x,
+                    _ => unreachable!()
+                };
+                let window_size = stream_conf.window_size;
+                let diff = (state.common.next_seqno - window_start).0 as u32;
+                debug_assert!(diff <= window_size);
+                if diff == window_size {
+                    return;
+                }
+            }
+
             if let Some(slice) =
                     state.read_buf.take((state.common.mtu
                         - STREAM_CLIENT_HEADER_SIZE_WITH_IP) as usize) {
@@ -619,14 +641,14 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
         let packet = parse_stream_server_packet(&packet_buff);
         debug!("received ACK for range [{}, {}]",
             packet.seqno_start, packet.seqno_end);
-        state.ack_wait.remove(
+        if state.ack_wait.remove(
             IRange(
                 Wrapping(packet.seqno_start),
                 Wrapping(packet.seqno_end)
             )
-        );
-
-        state.ack_timer = make_packet_loss_delay();
+        ) {
+            state.ack_timer = make_packet_loss_delay();
+        }
 
         return Ok(true);
     }

@@ -34,6 +34,10 @@ elif [[ "$1" == "permissions" ]]; then
     chown root: target/debug/ping6-datarecv
     setcap 'cap_net_raw=p' target/debug/ping6-datasend
     setcap 'cap_net_raw=p' target/debug/ping6-datarecv
+    [ -d target/release ] && chown root: target/release/ping6-datasend
+    [ -d target/release ] && chown root: target/release/ping6-datarecv
+    [ -d target/release ] && setcap 'cap_net_raw=p' target/release/ping6-datasend
+    [ -d target/release ] && setcap 'cap_net_raw=p' target/release/ping6-datarecv
 else
     echo 'use setup, clean, send, recv or permissions'
 fi

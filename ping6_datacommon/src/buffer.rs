@@ -161,9 +161,10 @@ impl TrimmingBuffer {
 
     pub fn cleanup(&mut self) {
         let mut theself = self.0.write().unwrap();
-        let ind = theself.del_tracker.take_range();
-        if let Some(ind) = ind {
-            theself.inner.drain(0 .. ind + 1);
+        let n_to_erase = theself.del_tracker.take_range().map(|x| x + 1);
+        if let Some(n) = n_to_erase {
+            theself.inner.drain(0 .. n);
+            theself.first_available -= n;
         }
     }
 }
