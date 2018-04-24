@@ -109,7 +109,7 @@ impl AckWaitlist {
                 let mut last_ind = 0;
                 peekable.for_each(|(ind, &AckWait { seqno, .. })| {
                     if curr_seqno + Wrapping(1) != seqno {
-                        tmpvec.push(IRange(start_ind, ind));
+                        tmpvec.push(IRange(start_ind, last_ind));
                         start_ind = ind;
                     }
                     curr_seqno = seqno;
@@ -194,7 +194,7 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
         let mut acked_range_opt = self.0.tracker_iter.next();
         while let Some((ind, wait)) = self.0.inner.next() {
             while acked_range_opt.is_some()
-                    && acked_range_opt.as_ref().unwrap().1 > ind {
+                    && acked_range_opt.as_ref().unwrap().1 < ind {
                 acked_range_opt = self.0.tracker_iter.next();
             }
 
