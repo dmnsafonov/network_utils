@@ -650,10 +650,9 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
         let packet_buff = x.lock();
         let packet = parse_stream_server_packet(&packet_buff);
 
-        debug!("received ACK for range [{}, {}]",
-            packet.seqno_start, packet.seqno_end);
-
         if packet.flags.test(StreamPacketFlags::WS) {
+            debug!("received WS+ACK for range [{}, {}]",
+                packet.seqno_start, packet.seqno_end);
             let win_range = IRange(window_start, window_end);
             if win_range.contains_point(packet.seqno_start as u32) {
                 if state.ack_wait.remove(
@@ -665,6 +664,9 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
                     state.sending_new_data = true;
                 }
             }
+        } else {
+            debug!("received ACK for range [{}, {}]",
+                packet.seqno_start, packet.seqno_end);
         }
 
         if state.ack_wait.remove(
