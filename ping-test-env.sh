@@ -38,6 +38,9 @@ elif [[ "$1" == "permissions" ]]; then
     [ -d target/release ] && chown root: target/release/ping6-datarecv
     [ -d target/release ] && setcap 'cap_net_raw=p' target/release/ping6-datasend
     [ -d target/release ] && setcap 'cap_net_raw=p' target/release/ping6-datarecv
+elif [[ "$1" == "kill" ]]; then
+    killall -9 ping6-datasend
+    killall -9 ping6-datarecv
 else
     echo 'use setup, clean, send, recv or permissions'
 fi
