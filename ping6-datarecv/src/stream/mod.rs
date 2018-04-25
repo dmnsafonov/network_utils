@@ -27,7 +27,7 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
     let mut rt = ::tokio::runtime::Builder::new()
         .threadpool_builder({
             let mut builder = ::tokio::executor::thread_pool::Builder::new();
-            builder.pool_size(1);
+            builder.pool_size(2);
             builder
         }).build()?;
 

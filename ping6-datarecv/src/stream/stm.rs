@@ -188,7 +188,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             seqno_tracker: seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64 / 2)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64 / 3)
             ))
         };
 

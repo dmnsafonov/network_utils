@@ -209,12 +209,11 @@ impl Stream for TimedAckSeqnoGenerator {
             Interval::new(Instant::now(), period)
         );
 
-        loop {
-            let ranges = self.tracker.lock().unwrap().take();
-            try_ready!(interval.poll());
-            if !ranges.is_empty() {
-                return Ok(Async::Ready(Some(ranges)));
-            }
+        while interval.poll()?.is_ready() {}
+        let ranges = self.tracker.lock().unwrap().take();
+        if !ranges.is_empty() {
+            return Ok(Async::Ready(Some(ranges)));
         }
+        return Ok(Async::NotReady);
     }
 }
