@@ -260,12 +260,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let size = try_ready!(state.send_ack.poll());
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 
-        let (window_size, read_buffer_size) =
-            if let ModeConfig::Stream(ref sc) = state.common.config.mode {
-                (sc.window_size, sc.read_buffer_size)
-            } else {
-                unreachable!()
-            };
+        let sc = get_stream_config(&state.common.config);
 
         let recv_stream = RefCell::new(unsafe {
             SendBox::new(make_recv_ack_or_fin(&mut state.common))
@@ -273,13 +268,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let mtu = state.common.mtu;
         transition!(SendData {
             common: state.take().common,
-            read_buf: TrimmingBuffer::new(read_buffer_size),
+            read_buf: TrimmingBuffer::new(sc.read_buffer_size),
             tmp_buf: RefCell::new(vec![0; TMP_BUFFER_SIZE]),
             next_data: RefCell::new(None),
             retransmit_queue: RefCell::new(VecDeque::new()),
             send_fut: RefCell::new(None),
             recv_stream,
-            ack_wait: AckWaitlist::new(window_size, mtu),
+            ack_wait: AckWaitlist::new(sc.window_size, mtu),
             ack_timer: make_packet_loss_delay(),
             reached_input_eof: false,
             sending_new_data: true
@@ -430,6 +425,13 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         debug_assert!(size == STREAM_CLIENT_FULL_HEADER_SIZE as usize);
 
         transition!(ConnectionTerminated(TerminationReason::DataSent))
+    }
+}
+
+fn get_stream_config(config: &Config) -> &StreamConfig {
+    match config.mode {
+        ModeConfig::Stream(ref sc) => sc,
+        _ => unreachable!()
     }
 }
 
@@ -607,10 +609,7 @@ fn fill_next_data(state: &mut SendData) {
         if retransmit_queue.is_empty() {
             // respect window size
             if let Some(window_start) = state.ack_wait.first_seqno() {
-                let stream_conf = match state.common.config.mode {
-                    ModeConfig::Stream(ref x) => x,
-                    _ => unreachable!()
-                };
+                let stream_conf = get_stream_config(state.common.config);
                 let window_size = stream_conf.window_size;
                 let diff = (state.common.next_seqno - window_start).0 as u32;
                 debug_assert!(diff <= window_size);
@@ -639,18 +638,47 @@ fn fill_next_data(state: &mut SendData) {
 fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
     let recv_async = state.recv_stream.borrow_mut().poll()?;
     if let Async::Ready(Some((x, _))) = recv_async {
+        let sc = get_stream_config(state.common.config);
+
+        let window_start = {
+            match state.ack_wait.first_seqno() {
+                Some(first) => first.0 as u32,
+                None => return Ok(false)
+            }
+        };
+        let window_end = window_start + sc.window_size - 1;
+
         let packet_buff = x.lock();
         let packet = parse_stream_server_packet(&packet_buff);
+
         debug!("received ACK for range [{}, {}]",
             packet.seqno_start, packet.seqno_end);
+
+        if packet.flags.test(StreamPacketFlags::WS) {
+            let win_range = IRange(window_start, window_end);
+            if win_range.contains_point(packet.seqno_start as u32) {
+                if state.ack_wait.remove(
+                    IRange(
+                        Wrapping(window_start as u16),
+                        Wrapping(packet.seqno_start)
+                    )
+                ) {
+                    state.sending_new_data = true;
+                }
+            }
+        }
+
         if state.ack_wait.remove(
             IRange(
                 Wrapping(packet.seqno_start),
                 Wrapping(packet.seqno_end)
             )
         ) {
-            state.ack_timer = make_packet_loss_delay();
             state.sending_new_data = true;
+        }
+
+        if state.sending_new_data {
+            state.ack_timer = make_packet_loss_delay();
         }
 
         return Ok(true);
