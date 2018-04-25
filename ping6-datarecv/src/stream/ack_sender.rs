@@ -18,7 +18,8 @@ pub struct AckSender {
     send_buf: SArcRef<Vec<u8>>,
     sock: IpV6RawSocketAdapter,
     send_fut: Option<IpV6RawSocketSendtoFuture>,
-    ranges_to_send: VecDeque<IRange<Wrapping<u16>>>
+    ranges_to_send: VecDeque<IRange<Wrapping<u16>>>,
+    first_packet: bool
 }
 
 impl AckSender {
@@ -32,7 +33,8 @@ impl AckSender {
         AckSender {
             ack_gen, src, dst, send_buf, sock,
             send_fut: None,
-            ranges_to_send: VecDeque::new()
+            ranges_to_send: VecDeque::new(),
+            first_packet: false
         }
     }
 }
@@ -45,19 +47,27 @@ impl Future for AckSender {
         while active {
             active = false;
 
-            if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
-                debug!("sending ACK for range {} .. {}", l, r);
-                self.send_fut = Some(make_send_fut_raw(
-                    self.sock.clone(),
-                    self.send_buf.clone(),
-                    self.src,
-                    self.dst,
-                    StreamPacketFlags::Ack.into(),
-                    l.0,
-                    r.0,
-                    &[]
-                ));
-                active = true;
+            if self.send_fut.is_none() {
+                if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
+                    let mut flags = StreamPacketFlags::Ack.into();
+                    if self.first_packet {
+                        flags |= StreamPacketFlags::WS;
+                        self.first_packet = false;
+                    }
+
+                    debug!("sending ACK for range {} .. {}", l, r);
+                    self.send_fut = Some(make_send_fut_raw(
+                        self.sock.clone(),
+                        self.send_buf.clone(),
+                        self.src,
+                        self.dst,
+                        flags,
+                        l.0,
+                        r.0,
+                        &[]
+                    ));
+                    active = true;
+                }
             }
 
             if self.send_fut.is_some() {
@@ -80,6 +90,7 @@ impl Future for AckSender {
                 match ranges_opt {
                     Some(ranges) => {
                         self.ranges_to_send = ranges;
+                        self.first_packet = true;
                         active = true;
                     },
                     None => return Ok(Async::Ready(()))

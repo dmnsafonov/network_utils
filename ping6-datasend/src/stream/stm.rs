@@ -640,12 +640,11 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
     if let Async::Ready(Some((x, _))) = recv_async {
         let sc = get_stream_config(state.common.config);
 
-        let window_start = {
+        let window_start =
             match state.ack_wait.first_seqno() {
                 Some(first) => first.0 as u32,
                 None => return Ok(false)
-            }
-        };
+            };
         let window_end = window_start + sc.window_size - 1;
 
         let packet_buff = x.lock();
