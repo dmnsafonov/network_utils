@@ -5,6 +5,7 @@ authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 
 [dependencies]
 boolean_enums = { path = "../boolean_enums" }
+bytes = "^0.4.7"
 clap = "^2.26.2"
 env_logger = "^0.4.3"
 enum_extract = "^0.1.1"
@@ -22,7 +23,6 @@ pnet_packet = "^0.21.0"
 rand = "^0.4.2"
 seccomp = "^0.1.1"
 send_box = { path = "../send_box" }
-sliceable_rcref = { path = "../sliceable_rcref" }
 state_machine_future = "^0.1.5"
 tokio = "^0.1.5"
 tokio-timer = "^0.2.0"

@@ -293,7 +293,7 @@ mod test {
         let mut tracker = RangeTracker::new();
         tracker.track_range(IRange(0usize, 5usize));
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(0usize, 5usize));
+        assert_eq!(iter.next().unwrap(), IRange(0usize, 5usize));
         assert!(iter.next().is_none());
     }
 
@@ -303,7 +303,7 @@ mod test {
         tracker.track_range(IRange(0usize, 5usize));
         tracker.track_range(IRange(6usize, 10usize));
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(0usize, 10usize));
+        assert_eq!(iter.next().unwrap(), IRange(0usize, 10usize));
         assert!(iter.next().is_none());
     }
 
@@ -313,7 +313,7 @@ mod test {
         tracker.track_range(IRange(6usize, 10usize));
         tracker.track_range(IRange(0usize, 5usize));
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(0usize, 10usize));
+        assert_eq!(iter.next().unwrap(), IRange(0usize, 10usize));
         assert!(iter.next().is_none());
     }
 
@@ -324,7 +324,7 @@ mod test {
         tracker.track_range(IRange(0usize, 3usize));
         tracker.track_range(IRange(4usize, 7usize));
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(0usize, 10usize));
+        assert_eq!(iter.next().unwrap(), IRange(0usize, 10usize));
         assert!(iter.next().is_none());
     }
 
@@ -335,9 +335,9 @@ mod test {
         tracker.track_range(IRange(300usize, 500usize));
         tracker.track_range(IRange(15usize, 30usize));
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(1usize, 10usize));
-        assert!(iter.next().unwrap() == IRange(15usize, 30usize));
-        assert!(iter.next().unwrap() == IRange(300usize, 500usize));
+        assert_eq!(iter.next().unwrap(), IRange(1usize, 10usize));
+        assert_eq!(iter.next().unwrap(), IRange(15usize, 30usize));
+        assert_eq!(iter.next().unwrap(), IRange(300usize, 500usize));
         assert!(iter.next().is_none());
     }
 
@@ -347,10 +347,10 @@ mod test {
         tracker.track_range(IRange(0usize, 10usize));
         tracker.track_range(IRange(300usize, 500usize));
         tracker.track_range(IRange(15usize, 30usize));
-        assert!(tracker.take_range().unwrap() == 10);
+        assert_eq!(tracker.take_range().unwrap(), 10);
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(4usize, 19usize));
-        assert!(iter.next().unwrap() == IRange(289usize, 489usize));
+        assert_eq!(iter.next().unwrap(), IRange(4usize, 19usize));
+        assert_eq!(iter.next().unwrap(), IRange(289usize, 489usize));
         assert!(iter.next().is_none());
     }
 
@@ -359,9 +359,9 @@ mod test {
         let mut tracker = RangeTracker::new();
         tracker.track_range(IRange(0usize, 10usize));
         tracker.track_range(IRange(300usize, 500usize));
-        assert!(tracker.take_range().unwrap() == 10);
+        assert_eq!(tracker.take_range().unwrap(), 10);
         tracker.track_range(IRange(0usize, 288usize));
-        assert!(tracker.take_range().unwrap() == 489);
+        assert_eq!(tracker.take_range().unwrap(), 489);
         assert!(tracker.iter().next().is_none());
     }
 
@@ -386,7 +386,7 @@ mod test {
         tracker.track_range(IRange(13usize, 13usize));
         tracker.track_range(IRange(12usize, 12usize));
         let mut iter = tracker.iter();
-        assert!(iter.next().unwrap() == IRange(0usize, 20usize));
+        assert_eq!(iter.next().unwrap(), IRange(0usize, 20usize));
     }
 
     // TODO: test slices

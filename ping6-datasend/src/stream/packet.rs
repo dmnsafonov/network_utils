@@ -1,5 +1,6 @@
 use ::std::net::Ipv6Addr;
 
+use ::bytes::*;
 use ::pnet_packet::icmpv6::*;
 use ::pnet_packet::icmpv6::ndp::Icmpv6Codes;
 use ::pnet_packet::*;
@@ -13,37 +14,47 @@ pub struct StreamServerPacket<'a> {
     pub payload: &'a [u8]
 }
 
-pub fn make_stream_client_icmpv6_packet<'a>(
-    packet_buff: &'a mut [u8],
+pub fn make_stream_client_icmpv6_packet(
+    packet_buff: &mut BytesMut,
     src: Ipv6Addr,
     dst: Ipv6Addr,
     seqno: u16,
     flags: StreamPacketFlagSet,
     payload: &[u8]
-) -> Icmpv6Packet<'a> {
-    let mut packet = MutableIcmpv6Packet::new(packet_buff)
-        .expect("buffer big enough for the payload");
-    debug_assert!(packet.payload().len()
-        == STREAM_CLIENT_HEADER_SIZE as usize + payload.len());
+) -> Bytes {
     debug_assert!(!flags.test(StreamPacketFlags::WS));
 
-    packet.set_icmpv6_type(Icmpv6Types::EchoRequest);
-    packet.set_icmpv6_code(Icmpv6Codes::NoCode);
-
-    {
-        let payload_buff = packet.payload_mut();
-        payload_buff[2] = !0;
-        payload_buff[3] = flags.get();
-        payload_buff[4..=5].copy_from_slice(&u16_to_bytes_be(seqno));
-        payload_buff[6..].copy_from_slice(payload);
-        let checksum = ping6_data_checksum(&payload_buff[2..]);
-        payload_buff[0..=1].copy_from_slice(&u16_to_bytes_be(checksum));
+    let targlen = STREAM_CLIENT_FULL_HEADER_SIZE as usize + payload.len();
+    let buflen = packet_buff.len();
+    if buflen < targlen {
+        packet_buff.reserve(targlen - buflen);
+        unsafe { packet_buff.advance_mut(targlen - buflen); }
     }
 
-    let cm = icmpv6::checksum(&packet.to_immutable(), &src, &dst);
-    packet.set_checksum(cm);
+    {
+        let mut packet = MutableIcmpv6Packet::new(packet_buff)
+            .expect("buffer big enough for the payload");
+        debug_assert!(packet.payload().len()
+            >= STREAM_CLIENT_HEADER_SIZE as usize + payload.len());
 
-    packet.consume_to_immutable()
+        packet.set_icmpv6_type(Icmpv6Types::EchoRequest);
+        packet.set_icmpv6_code(Icmpv6Codes::NoCode);
+
+        {
+            let payload_buff = packet.payload_mut();
+            payload_buff[2] = !0;
+            payload_buff[3] = flags.get();
+            payload_buff[4..=5].copy_from_slice(&u16_to_bytes_be(seqno));
+            payload_buff[6..].copy_from_slice(payload);
+            let checksum = ping6_data_checksum(&payload_buff[2..]);
+            payload_buff[0..=1].copy_from_slice(&u16_to_bytes_be(checksum));
+        }
+
+        let cm = icmpv6::checksum(&packet.to_immutable(), &src, &dst);
+        packet.set_checksum(cm);
+    }
+
+    packet_buff.split_to(targlen).freeze()
 }
 
 pub fn parse_stream_server_packet<'a>(

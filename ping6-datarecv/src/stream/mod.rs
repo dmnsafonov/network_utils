@@ -7,9 +7,10 @@ pub mod util;
 
 use ::std::io;
 
+use ::bytes::BytesMut;
+
 use ::linux_network::*;
 use ::ping6_datacommon::*;
-use ::sliceable_rcref::SArcRef;
 
 use ::config::*;
 use ::errors::{ErrorKind, Result};
@@ -62,10 +63,9 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
         sock: async_sock,
         mtu: mtu,
         data_out: data_out,
-        send_buf: SArcRef::new(vec![0; mtu as usize], 0 .. (mtu as usize)),
+        send_buf: BytesMut::with_capacity(mtu as usize),
         // if we assumed default mtu, then the incoming packet size is unknown
-        recv_buf: SArcRef::new(vec![0; ::std::u16::MAX as usize],
-            0 .. (::std::u16::MAX as usize)),
+        recv_buf: BytesMut::with_capacity(::std::u16::MAX as usize),
         handle: rt.executor()
     };
 

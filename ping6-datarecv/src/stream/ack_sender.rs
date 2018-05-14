@@ -2,11 +2,11 @@ use ::std::collections::VecDeque;
 use ::std::net::*;
 use ::std::num::Wrapping;
 
+use ::bytes::BytesMut;
 use ::tokio::prelude::*;
 
 use ::ping6_datacommon::*;
 use ::linux_network::futures::*;
-use ::sliceable_rcref::SArcRef;
 
 use ::stream::buffers::TimedAckSeqnoGenerator;
 use ::stream::util::make_send_fut_raw;
@@ -15,7 +15,7 @@ pub struct AckSender {
     ack_gen: TimedAckSeqnoGenerator,
     src: Ipv6Addr,
     dst: SocketAddrV6,
-    send_buf: SArcRef<Vec<u8>>,
+    send_buf: BytesMut,
     sock: IpV6RawSocketAdapter,
     send_fut: Option<IpV6RawSocketSendtoFuture>,
     ranges_to_send: VecDeque<IRange<Wrapping<u16>>>,
@@ -27,11 +27,13 @@ impl AckSender {
         ack_gen: TimedAckSeqnoGenerator,
         src: Ipv6Addr,
         dst: SocketAddrV6,
-        send_buf: SArcRef<Vec<u8>>,
+        mtu: u16,
         sock: IpV6RawSocketAdapter
     ) -> AckSender {
         AckSender {
-            ack_gen, src, dst, send_buf, sock,
+            ack_gen, src, dst,
+            send_buf: BytesMut::with_capacity(mtu as usize),
+            sock,
             send_fut: None,
             ranges_to_send: VecDeque::new(),
             first_packet: false
@@ -58,7 +60,7 @@ impl Future for AckSender {
                     debug!("sending ACK for range {} .. {}", l, r);
                     self.send_fut = Some(make_send_fut_raw(
                         self.sock.clone(),
-                        self.send_buf.clone(),
+                        &mut self.send_buf,
                         self.src,
                         self.dst,
                         flags,
@@ -74,7 +76,7 @@ impl Future for AckSender {
                 match self.send_fut.as_mut().unwrap().poll().map_err(|_| ())? {
                     Async::NotReady => return Ok(Async::NotReady),
                     Async::Ready(size) => {
-                        debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
+                        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE as usize);
                         self.send_fut.take();
                         active = true;
                     }

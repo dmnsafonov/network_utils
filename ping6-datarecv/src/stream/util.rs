@@ -1,7 +1,8 @@
 use ::std::net::*;
 
+use ::bytes::*;
+
 use ::linux_network::*;
-use ::sliceable_rcref::SArcRef;
 
 use ::ping6_datacommon::*;
 
@@ -9,7 +10,7 @@ use ::stream::packet::make_stream_server_icmpv6_packet;
 
 pub fn make_send_fut_raw<'a>(
     mut sock: futures::IpV6RawSocketAdapter,
-    send_buf: SArcRef<Vec<u8>>,
+    mut send_buf: &mut BytesMut,
     src: Ipv6Addr,
     dst: SocketAddrV6,
     flags: StreamPacketFlagSet,
@@ -17,11 +18,8 @@ pub fn make_send_fut_raw<'a>(
     seqno_end: u16,
     payload: &[u8]
 ) -> futures::IpV6RawSocketSendtoFuture {
-    let send_buf_ref = send_buf
-        .range(0 .. STREAM_SERVER_FULL_HEADER_SIZE as usize + payload.len());
-
-    make_stream_server_icmpv6_packet(
-        &mut send_buf_ref.borrow_mut(),
+    let packet = make_stream_server_icmpv6_packet(
+        &mut send_buf,
         src,
         *dst.ip(),
         seqno_start,
@@ -31,7 +29,7 @@ pub fn make_send_fut_raw<'a>(
     );
 
     sock.sendto(
-        send_buf_ref,
+        packet,
         dst,
         SendFlagSet::new()
     )
@@ -47,7 +45,7 @@ pub fn make_send_fut<'a>(
 ) -> futures::IpV6RawSocketSendtoFuture {
     make_send_fut_raw(
         common.sock.clone(),
-        common.send_buf.clone(),
+        &mut common.send_buf,
         *common.src.ip(),
         dst,
         flags,

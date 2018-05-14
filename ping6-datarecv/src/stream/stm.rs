@@ -3,6 +3,7 @@ use ::std::num::Wrapping;
 use ::std::sync::*;
 use ::std::time::*;
 
+use ::bytes::*;
 use ::futures::future::*;
 use ::futures::prelude::*;
 use ::futures::stream::unfold;
@@ -13,10 +14,8 @@ use ::tokio::io::*;
 use ::tokio::timer::*;
 
 use ::linux_network::*;
-use ::linux_network::futures::U8Slice;
 use ::ping6_datacommon::*;
 use ::send_box::SendBox;
-use ::sliceable_rcref::*;
 
 use ::config::Config;
 use ::errors::{Error, ErrorKind, Result};
@@ -38,7 +37,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendSynAck))]
     WaitForFirstSyn {
         common: StreamCommonState<'s>,
-        recv_first_syn: SendBox<FutureE<(U8Slice, SocketAddrV6)>>
+        recv_first_syn: SendBox<FutureE<(Bytes, SocketAddrV6)>>
     },
 
     #[state_machine_future(transitions(WaitForAck))]
@@ -47,7 +46,7 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         send_syn_ack: futures::IpV6RawSocketSendtoFuture,
         next_action: Option<SendBox<
-            StreamE<TimedResult<(U8Slice,SocketAddrV6)>>
+            StreamE<TimedResult<(Bytes, SocketAddrV6)>>
         >>
     },
 
@@ -56,7 +55,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         recv_stream: SendBox<StreamE<
-            TimedResult<(U8Slice, SocketAddrV6)>
+            TimedResult<(Bytes, SocketAddrV6)>
         >>
     },
 
@@ -65,7 +64,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         task: Arc<Mutex<Option<Task>>>,
-        recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
+        recv_stream: SendBox<StreamE<(Bytes, SocketAddrV6)>>,
         write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
         timeout: Delay,
         ack_sender_handle: AckGenHandle,
@@ -79,7 +78,7 @@ pub enum StreamMachine<'s> {
         fin_seqno: u16,
         send_fut: futures::IpV6RawSocketSendtoFuture,
         next_action: Option<SendBox<
-            StreamE<TimedResult<(U8Slice,SocketAddrV6)>>
+            StreamE<TimedResult<(Bytes, SocketAddrV6)>>
         >>
     },
 
@@ -89,7 +88,7 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         fin_seqno: u16,
         recv_stream: SendBox<StreamE<
-            TimedResult<(U8Slice, SocketAddrV6)>
+            TimedResult<(Bytes, SocketAddrV6)>
         >>
     },
 
@@ -155,10 +154,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_init_state<'a>(
         state: &'a mut RentToOwn<'a, InitState<'s>>
     ) -> Poll<AfterInitState<'s>, Error> {
-        let recv_future = make_recv_first_syn(&mut state.common);
+        let recv_first_syn = make_recv_first_syn(&mut state.common);
         transition!(WaitForFirstSyn {
             common: state.take().common,
-            recv_first_syn: recv_future
+            recv_first_syn
         })
     }
 
@@ -166,11 +165,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         state: &'a mut RentToOwn<'a, WaitForFirstSyn<'s>>
     ) -> Poll<AfterWaitForFirstSyn<'s>, Error> {
         debug!("waiting for first SYN");
-        let (data_ref, dst) = try_ready!(state.recv_first_syn.poll());
+        let (data, dst) = try_ready!(state.recv_first_syn.poll());
 
         let mut common = state.take().common;
 
-        let data = data_ref.lock();
         let packet = parse_stream_client_packet(&data);
 
         let next_seqno = Wrapping(packet.seqno) + Wrapping(1);
@@ -212,7 +210,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendSynAck<'s>, Error> {
         debug!("sending SYN+ACK");
         let size = try_ready!(state.send_syn_ack.poll());
-        debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
         let SendSynAck { mut common, active, next_action, .. }
             = state.take();
@@ -222,9 +220,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             let seqno_tracker_ref = active.seqno_tracker.clone();
             let order_ref = active.order.clone();
             let packets = make_recv_packets_stream(&mut common)
-                .and_then(move |(data_ref, dst)| {
+                .and_then(move |(data, dst)| {
                     let pass = {
-                        let data = data_ref.lock();
                         let packet = parse_stream_client_packet(&data);
 
                         if packet.flags == StreamPacketFlags::Ack.into()
@@ -243,7 +240,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     };
 
                     match pass {
-                        true => Ok(Some((data_ref, dst))),
+                        true => Ok(Some((data, dst))),
                         false => Ok(None)
                     }
                 }).filter_map(|x| x);
@@ -321,7 +318,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             ack_gen,
             *common.src.ip(),
             active.dst,
-            common.send_buf.clone(),
+            common.mtu,
             common.sock.clone()
         );
 
@@ -342,8 +339,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let seqno_tracker_ref = active.seqno_tracker.clone();
         let window_size = common.window_size;
         let recv_stream = Box::new(make_recv_packets_stream(&mut common).filter(
-            move |&(ref x,_)| {
-                let data = x.lock();
+            move |&(ref data,_)| {
                 let packet = parse_stream_client_packet(&data);
 
                 let seqno = seqno_tracker_ref.lock().unwrap()
@@ -433,7 +429,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendFinAck<'s>, Error> {
         debug!("sending FIN+ACK");
         let size = try_ready!(state.send_fut.poll());
-        debug_assert!(size == STREAM_SERVER_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE as usize);
 
         let SendFinAck { mut common, active, fin_seqno, next_action, .. }
             = state.take();
@@ -441,9 +437,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let timed_packets = next_action.unwrap_or_else(|| {
             let seqno = fin_seqno;
             let packets = make_recv_packets_stream(&mut common)
-                .and_then(move |(data_ref, dst)| {
+                .and_then(move |(data, dst)| {
                     let pass = {
-                        let data = data_ref.lock();
                         let packet = parse_stream_client_packet(&data);
 
                         if packet.flags == StreamPacketFlags::Ack.into()
@@ -455,7 +450,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     };
 
                     match pass {
-                        true => Ok(Some((data_ref, dst))),
+                        true => Ok(Some((data, dst))),
                         false => Ok(None)
                     }
                 }).filter_map(|x| x);
@@ -539,23 +534,29 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
 fn make_recv_packets_stream<'a>(
     common: &mut StreamCommonState<'a>
-) -> impl Stream<Item = (U8Slice, SocketAddrV6), Error = Error> {
+) -> impl Stream<Item = (Bytes, SocketAddrV6), Error = Error> {
     let csrc = common.src;
+    let mtu = common.mtu as usize;
 
     unfold((
             common.sock.clone(),
-            common.recv_buf.range(0 .. common.mtu as usize),
-            common.mtu
+            common.recv_buf.split_to(mtu),
+            mtu
         ),
-        move |(mut sock, recv_buf, mtu)| {
-            Some(sock.recvfrom(recv_buf.clone(), RecvFlagSet::new())
+        move |(mut sock, mut recv_buf, mtu)| {
+            let len = recv_buf.len();
+            if len < mtu {
+                recv_buf.reserve(mtu - len);
+                unsafe { recv_buf.advance_mut(mtu - len); }
+            }
+            Some(sock.recvfrom(recv_buf.take(), RecvFlagSet::new())
                 .map_err(|e| e.into())
                 .map(move |x| (x, (sock, recv_buf, mtu)))
             )
         }
     ).filter(move |&(ref x, src)| {
         let res = validate_stream_packet(
-            &x.lock(),
+            &x,
             Some((*src.ip(), *csrc.ip()))
         );
         if res {
@@ -568,19 +569,17 @@ fn make_recv_packets_stream<'a>(
 }
 
 fn make_recv_first_syn(common: &mut StreamCommonState)
-        -> SendBox<FutureE<(U8Slice, SocketAddrV6)>> {
+        -> SendBox<FutureE<(Bytes, SocketAddrV6)>> {
     let recv_future = make_recv_packets_stream(common)
-        .filter(|&(ref x, _)| {
-            let data_ref = x.lock();
-            let packet = parse_stream_client_packet(&data_ref);
+        .filter(|&(ref data, _)| {
+            let packet = parse_stream_client_packet(&data);
 
             let res = packet.flags == StreamPacketFlags::Syn.into();
             if !res {
                 debug!("not a SYN packet, dropping");
             }
             res
-        })
-        .into_future()
+        }).into_future()
         .map(|(x,_)| x.unwrap())
         .map_err(|(e,_)| e);
     unsafe { SendBox::new(Box::new(recv_future)) }
@@ -639,11 +638,10 @@ fn poll_recv_stream(
         return Ok(false);
     }
 
-    if let Async::Ready(Some((data_ref,_)))
+    if let Async::Ready(Some((data,_)))
             = state.recv_stream.poll()? {
         state.timeout.reset(make_connection_timeout_delay());
 
-        let data = data_ref.lock();
         let packet = parse_stream_client_packet(&data);
 
         if data.len() > state.common.mtu as usize {
@@ -725,8 +723,8 @@ pub struct StreamCommonState<'a> {
     pub sock: futures::IpV6RawSocketAdapter,
     pub mtu: u16,
     pub data_out: StdoutBytesWriter<'a>,
-    pub send_buf: SArcRef<Vec<u8>>,
-    pub recv_buf: SArcRef<Vec<u8>>,
+    pub send_buf: BytesMut,
+    pub recv_buf: BytesMut,
     pub handle: ::tokio::runtime::TaskExecutor
 }
 

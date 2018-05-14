@@ -1,3 +1,4 @@
+extern crate bytes;
 #[macro_use] extern crate clap;
 extern crate env_logger;
 #[macro_use] extern crate enum_extract;
@@ -13,7 +14,6 @@ extern crate pnet_packet;
 extern crate rand;
 extern crate seccomp;
 extern crate send_box;
-extern crate sliceable_rcref;
 #[macro_use] extern crate state_machine_future;
 extern crate tokio;
 extern crate tokio_timer;

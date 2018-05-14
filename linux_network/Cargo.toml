@@ -4,10 +4,11 @@ version = "0.1.0"
 authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 
 [features]
-async = ["mio", "owning_ref", "sliceable_rcref", "tokio"]
+async = ["bytes", "mio", "owning_ref", "tokio"]
 
 [dependencies]
 boolean_enums = { path = "../boolean_enums" }
+bytes = { version = "^0.4.7", optional = true }
 error-chain = "^0.11.0"
 interfaces = "^0.0.3"
 log = "^0.3.8"
@@ -17,5 +18,4 @@ numeric_enums = { path = "../numeric_enums" }
 owning_ref = { version = "^0.3.3", optional = true }
 pnet_packet = "^0.21.0"
 seccomp = { version = "^0.1.1", optional = true }
-sliceable_rcref = { path = "../sliceable_rcref", optional = true }
 tokio = { version = "^0.1.5", optional = true }

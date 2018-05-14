@@ -1,3 +1,4 @@
+#[cfg(feature = "async")] extern crate bytes;
 #[macro_use] extern crate error_chain;
 extern crate interfaces;
 #[macro_use] extern crate log;
@@ -10,7 +11,6 @@ extern crate pnet_packet;
 
 #[macro_use] extern crate boolean_enums;
 #[macro_use] extern crate numeric_enums;
-#[cfg(feature = "async")] extern crate sliceable_rcref;
 
 #[macro_use] mod util;
 #[macro_use] pub mod bpf;
