@@ -66,8 +66,8 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     let payload = payload_arg.as_ref();
 
-    let packet_checksum = u16_from_bytes_be(&payload[0..2]);
-    let len = u16_from_bytes_be(&payload[2..4]);
+    let packet_checksum = u16_from_bytes_be(&payload[0..=1]);
+    let len = u16_from_bytes_be(&payload[2..=3]);
 
     if len != (payload.len() - 4) as u16 {
         debug!("wrong encapsulated packet length: {}, dropping", len);
@@ -100,7 +100,7 @@ fn binary_print(
         payload_for_print = Some(payload);
     } else if validate_payload(payload) {
         let real_payload = &payload[4..];
-        write_binary(out, &payload[0..2], real_payload)?;
+        write_binary(out, &payload[0..=1], real_payload)?;
         payload_for_print = Some(real_payload);
     } else {
         payload_for_print = None;

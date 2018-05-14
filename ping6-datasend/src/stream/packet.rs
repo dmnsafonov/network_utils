@@ -34,10 +34,10 @@ pub fn make_stream_client_icmpv6_packet<'a>(
         let payload_buff = packet.payload_mut();
         payload_buff[2] = !0;
         payload_buff[3] = flags.get();
-        payload_buff[4..6].copy_from_slice(&u16_to_bytes_be(seqno));
+        payload_buff[4..=5].copy_from_slice(&u16_to_bytes_be(seqno));
         payload_buff[6..].copy_from_slice(payload);
         let checksum = ping6_data_checksum(&payload_buff[2..]);
-        payload_buff[0..2].copy_from_slice(&u16_to_bytes_be(checksum));
+        payload_buff[0..=1].copy_from_slice(&u16_to_bytes_be(checksum));
     }
 
     let cm = icmpv6::checksum(&packet.to_immutable(), &src, &dst);
@@ -60,13 +60,13 @@ pub fn parse_stream_server_packet<'a>(
     };
 
     // satisfying the borrow checker
-    let payload_ind = (&payload[7..8]).as_ptr() as usize + 1
+    let payload_ind = (&payload[7..=7]).as_ptr() as usize + 1
         - packet_buff.as_ptr() as usize;
 
     StreamServerPacket {
         flags: flags,
-        seqno_start: u16_from_bytes_be(&payload[4..6]),
-        seqno_end: u16_from_bytes_be(&payload[6..8]),
+        seqno_start: u16_from_bytes_be(&payload[4..=5]),
+        seqno_end: u16_from_bytes_be(&payload[6..=7]),
         payload: &packet_buff[payload_ind..]
     }
 }

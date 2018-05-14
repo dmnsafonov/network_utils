@@ -1,6 +1,7 @@
 mod ack_sender;
 mod buffers;
 pub mod packet;
+pub mod stdout;
 pub mod stm;
 pub mod util;
 
@@ -12,7 +13,7 @@ use ::sliceable_rcref::SArcRef;
 
 use ::config::*;
 use ::errors::{ErrorKind, Result};
-use ::stdout_iterator::*;
+use self::stdout::*;
 use ::tokio::prelude::*;
 use ::util::InitState;
 

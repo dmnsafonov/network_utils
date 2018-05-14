@@ -24,7 +24,6 @@ extern crate sliceable_rcref;
 mod config;
 mod datagrams;
 mod errors;
-mod stdout_iterator;
 mod stream;
 mod util;
 

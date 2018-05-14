@@ -262,8 +262,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let sc = get_stream_config(&state.common.config);
 
+        let recv_stream_box: Box<StreamE<(U8Slice, SocketAddrV6)>>
+            = Box::new(make_recv_ack_or_fin(&mut state.common));
         let recv_stream = RefCell::new(unsafe {
-            SendBox::new(make_recv_ack_or_fin(&mut state.common))
+            SendBox::new(recv_stream_box)
         });
         let mtu = state.common.mtu;
         transition!(SendData {
@@ -469,11 +471,11 @@ fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
 }
 
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
-        -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
+        -> impl Stream<Item = (U8Slice, SocketAddrV6), Error = Error> {
     let csrc = common.src;
     let cdst = common.dst;
 
-    Box::new(unfold((
+    unfold((
             common.sock.clone(),
             common.recv_buf.range(0 .. common.mtu as usize),
             common.mtu
@@ -490,7 +492,7 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
                 &x.lock(),
                 Some((*src.ip(), *csrc.ip()))
             )
-    }))
+    })
 }
 
 fn make_packet_loss_delay() -> Delay {
@@ -499,15 +501,15 @@ fn make_packet_loss_delay() -> Delay {
 }
 
 fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
-        -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
-    Box::new(make_recv_packets_stream(common)
+        -> impl Stream<Item = (U8Slice, SocketAddrV6), Error = Error> {
+    make_recv_packets_stream(common)
         .filter(|&(ref x, _)| {
             let packet_buff = x.lock();
             let packet = parse_stream_server_packet(&packet_buff);
             (packet.flags.test(StreamPacketFlags::Ack)
                     || packet.flags.test(StreamPacketFlags::Fin))
                 && !packet.flags.test(StreamPacketFlags::Syn)
-        }))
+        })
 }
 
 fn fill_read_buf(

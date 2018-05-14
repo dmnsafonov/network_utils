@@ -131,7 +131,7 @@ impl AckWaitlist {
     pub fn cleanup(&mut self) {
         let mut theself = self.0.lock().unwrap();
         if let Some(ind) = theself.del_tracker.take_range() {
-            theself.inner.drain(0 .. ind as usize + 1);
+            theself.inner.drain(0 ..= ind as usize);
         }
     }
 

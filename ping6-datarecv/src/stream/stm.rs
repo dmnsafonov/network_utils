@@ -20,9 +20,9 @@ use ::sliceable_rcref::*;
 
 use ::config::Config;
 use ::errors::{Error, ErrorKind, Result};
-use ::stdout_iterator::StdoutBytesWriter;
 use ::stream::buffers::*;
 use ::stream::packet::*;
+use ::stream::stdout::StdoutBytesWriter;
 use ::stream::util::make_send_fut;
 
 type FutureE<T> = ::futures::Future<Item = T, Error = Error>;
@@ -539,10 +539,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
 fn make_recv_packets_stream<'a>(
     common: &mut StreamCommonState<'a>
-) -> Box<StreamE<(U8Slice, SocketAddrV6)>> {
+) -> impl Stream<Item = (U8Slice, SocketAddrV6), Error = Error> {
     let csrc = common.src;
 
-    Box::new(unfold((
+    unfold((
             common.sock.clone(),
             common.recv_buf.range(0 .. common.mtu as usize),
             common.mtu
@@ -564,7 +564,7 @@ fn make_recv_packets_stream<'a>(
             debug!("invalid packet filtered out");
         }
         res
-    }))
+    })
 }
 
 fn make_recv_first_syn(common: &mut StreamCommonState)

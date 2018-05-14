@@ -14,18 +14,23 @@ impl<T> SendBox<T> where T: ?Sized {
         fence(Ordering::Acquire);
         self.0
     }
+
+    pub fn propagate(&self) {
+        fence(Ordering::SeqCst);
+    }
 }
 
 impl<T> Deref for SendBox<T> where T: ?Sized {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        fence(Ordering::Acquire);
+        fence(Ordering::SeqCst);
         &*self.0
     }
 }
 
 impl<T> DerefMut for SendBox<T> where T: ?Sized {
     fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
+        fence(Ordering::SeqCst);
         &mut *self.0
     }
 }

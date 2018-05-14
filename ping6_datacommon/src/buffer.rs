@@ -122,7 +122,7 @@ impl TrimmingBuffer {
                     let ind = range.0;
                     TrimmingBufferSliceImpl::Direct {
                         parent: self.0.clone(),
-                        start: beginning[ind .. ind + 1].as_ptr(),
+                        start: beginning[ind ..= ind].as_ptr(),
                         len: len
                     }
                 } else {
@@ -144,7 +144,7 @@ impl TrimmingBuffer {
                 let ind = range.0 - beg_len;
                 TrimmingBufferSliceImpl::Direct {
                     parent: self.0.clone(),
-                    start: ending[ind .. ind + 1].as_ptr(),
+                    start: ending[ind ..= ind].as_ptr(),
                     len: len
                 }
             };
@@ -161,10 +161,9 @@ impl TrimmingBuffer {
 
     pub fn cleanup(&mut self) {
         let mut theself = self.0.write().unwrap();
-        let n_to_erase = theself.del_tracker.take_range().map(|x| x + 1);
-        if let Some(n) = n_to_erase {
-            theself.inner.drain(0 .. n);
-            theself.first_available -= n;
+        if let Some(i) = theself.del_tracker.take_range() {
+            theself.inner.drain(0 ..= i);
+            theself.first_available -= i + 1;
         }
     }
 }
