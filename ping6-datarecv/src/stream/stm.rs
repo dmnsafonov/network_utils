@@ -68,7 +68,7 @@ pub enum StreamMachine<'s> {
         recv_stream: SendBox<StreamE<(U8Slice, SocketAddrV6)>>,
         write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
         timeout: Delay,
-        ack_sender_stopper: AckStopper,
+        ack_sender_handle: AckGenHandle,
         fin_seqno: Option<u16>
     },
 
@@ -188,7 +188,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             seqno_tracker: seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64 / 3)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64) / 3
             ))
         };
 
@@ -315,7 +315,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         let task_clone = task.clone();
         let main_task = ::futures::task::current();
         let mut ack_gen = active.ack_gen.take().unwrap();
-        let stopper = ack_gen.stopper();
+        let ack_sender_handle = ack_gen.handle();
         ack_gen.start();
         let ack_sender = ::stream::ack_sender::AckSender::new(
             ack_gen,
@@ -365,7 +365,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 recv_stream: unsafe { SendBox::new(Box::new(recv_stream)) },
                 write_future: None,
                 timeout: timeout,
-                ack_sender_stopper: stopper,
+                ack_sender_handle,
                 fin_seqno: None
             }
         )
@@ -402,12 +402,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             let ReceivePackets {
                 mut common,
                 active,
-                mut ack_sender_stopper,
+                mut ack_sender_handle,
                 fin_seqno,
                 ..
             } = state.take();
 
-            ack_sender_stopper.stop();
+            ack_sender_handle.stop();
             ack_sending_task.notify();
 
             let fin_seqno = fin_seqno.unwrap();
@@ -619,7 +619,7 @@ fn make_fin_ack_future<'a>(
 
 fn make_connection_timeout_delay() -> Instant {
     Instant::now() + Duration::from_millis(
-        PACKET_LOSS_TIMEOUT as u64 * 3
+        PACKET_LOSS_TIMEOUT as u64 * 2
     )
 }
 
@@ -711,7 +711,7 @@ fn poll_timeout(
     ack_sending_task: Task
 ) -> Result<()> {
     if let Async::Ready(_) = state.timeout.poll()? {
-        state.ack_sender_stopper.stop();
+        state.ack_sender_handle.stop();
         ack_sending_task.notify();
         bail!(ErrorKind::TimedOut);
     }

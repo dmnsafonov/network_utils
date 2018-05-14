@@ -157,7 +157,8 @@ pub struct TimedAckSeqnoGenerator {
     period: Duration,
     interval: Option<Interval>,
     active: bool,
-    stopped: Arc<AtomicBool>
+    stopped: Arc<AtomicBool>,
+    timeless: Arc<AtomicBool>
 }
 
 impl TimedAckSeqnoGenerator {
@@ -168,26 +169,38 @@ impl TimedAckSeqnoGenerator {
             period: dur,
             interval: None,
             active: false,
-            stopped: Arc::new(AtomicBool::new(false))
+            stopped: Arc::new(AtomicBool::new(false)),
+            timeless: Arc::new(AtomicBool::new(true))
         }
     }
 
     pub fn start(&mut self) {
         assert!(self.interval.is_none());
         self.active = true;
+        fence(Ordering::Release);
     }
 
-    pub fn stopper(&mut self) -> AckStopper {
-        AckStopper(self.stopped.clone())
+    pub fn handle(&mut self) -> AckGenHandle {
+        AckGenHandle {
+            stopped: self.stopped.clone(),
+            timeless: self.timeless.clone()
+        }
     }
 }
 
 #[derive(Clone)]
-pub struct AckStopper(Arc<AtomicBool>);
+pub struct AckGenHandle {
+    stopped: Arc<AtomicBool>,
+    timeless: Arc<AtomicBool>
+}
 
-impl AckStopper {
+impl AckGenHandle {
     pub fn stop(&mut self) {
-        self.0.store(true, Ordering::Release);
+        self.stopped.store(true, Ordering::Release);
+    }
+
+    pub fn request_timeless(&mut self) {
+        self.timeless.store(true, Ordering::Release);
     }
 }
 
@@ -209,11 +222,16 @@ impl Stream for TimedAckSeqnoGenerator {
             Interval::new(Instant::now(), period)
         );
 
-        while interval.poll()?.is_ready() {}
-        let ranges = self.tracker.lock().unwrap().take();
-        if !ranges.is_empty() {
-            return Ok(Async::Ready(Some(ranges)));
+        if self.timeless.swap(false, Ordering::Acquire) {
+            while interval.poll()?.is_ready() {}
+        } else {
+            try_ready!(interval.poll());
         }
-        return Ok(Async::NotReady);
+        let ranges = self.tracker.lock().unwrap().take();
+        if ranges.is_empty() {
+            while interval.poll()?.is_ready() {}
+            return Ok(Async::NotReady);
+        }
+        Ok(Async::Ready(Some(ranges)))
     }
 }
