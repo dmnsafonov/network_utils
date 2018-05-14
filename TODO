@@ -6,14 +6,11 @@ migrate to failure
 
 add packet number (u64) in the stream to the checksum
 
-retransmit lost ack's: send two equal seqno ack with the window start
-as from the point of the receiver
-
 cleanup() in AckWait's pub fn iter()
 
 do something with the timeouts/constants
 
-convert to bytes/byteorder
+convert to byteorder
 
 send ack immediately if what we are receiving is a retrans
 
