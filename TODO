@@ -8,8 +8,6 @@ add packet number (u64) in the stream to the checksum
 
 cleanup() in AckWait's pub fn iter()
 
-do something with the timeouts/constants
-
 send ack immediately if what we are receiving is a retrans
 
 now that rust has inclusive ranges, remove IRange
