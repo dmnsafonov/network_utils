@@ -15,10 +15,10 @@ use ::tokio::timer::Delay;
 
 use ::linux_network::*;
 use ::ping6_datacommon::*;
+use ::send_box::SendBox;
 
 use ::config::*;
 use ::errors::{Error, ErrorKind, Result};
-use ::send_box::SendBox;
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::buffers::*;
 use ::stream::packet::*;

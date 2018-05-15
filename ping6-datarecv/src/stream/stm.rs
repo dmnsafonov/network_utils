@@ -250,7 +250,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             );
             unsafe {
                 SendBox::new(Box::new(
-                    timed.take(2)
+                    timed.take(RETRANSMISSIONS_NUMBER)
                 ))
             }
         });
@@ -460,7 +460,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             );
             unsafe {
                 SendBox::new(Box::new(
-                    timed.take(2)
+                    timed.take(RETRANSMISSIONS_NUMBER)
                 ))
             }
         });
@@ -618,7 +618,7 @@ fn make_fin_ack_future<'a>(
 
 fn make_connection_timeout_delay() -> Instant {
     Instant::now() + Duration::from_millis(
-        PACKET_LOSS_TIMEOUT * 2
+        CONNECTION_LOSS_TIMEOUT
     )
 }
 
