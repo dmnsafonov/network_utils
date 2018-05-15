@@ -1,3 +1,4 @@
+extern crate byteorder;
 extern crate capabilities;
 #[macro_use] extern crate error_chain;
 extern crate futures;
@@ -27,6 +28,7 @@ use std::ops::*;
 use std::os::unix::prelude::*;
 use std::sync::atomic::*;
 
+use byteorder::*;
 use capabilities::*;
 use libc::{c_int, c_long, IPPROTO_ICMPV6};
 use nix::libc;
@@ -97,7 +99,9 @@ pub fn ping6_data_checksum<T>(payload: T) -> u16 where T: AsRef<[u8]> {
     use seahash::*;
     let b = payload.as_ref();
     let mut hasher = SeaHasher::new();
-    hasher.write(&u16_to_bytes_be(b.len() as u16));
+    let mut buf = [0;2];
+    BE::write_u16(&mut buf, b.len() as u16);
+    hasher.write(&buf);
     hasher.write(b);
     (hasher.finish() & 0xffff) as u16
 }
@@ -127,18 +131,6 @@ extern "C" fn signal_handler(_: c_int) {
 
 pub fn signal_received() -> bool {
     SIGNAL_FLAG.swap(false, Ordering::Relaxed)
-}
-
-pub fn u16_to_bytes_be(x: u16) -> [u8; 2] {
-    [
-        ((x & 0xff00) >> 8) as u8,
-        (x & 0xff) as u8
-    ]
-}
-
-pub fn u16_from_bytes_be(x: &[u8]) -> u16 {
-    assert_eq!(x.len(), 2);
-    ((x[0] as u16) << 8) | x[1] as u16
 }
 
 gen_boolean_enum!(pub StdoutUse);
@@ -319,7 +311,7 @@ pub fn validate_stream_packet(
         return false;
     }
 
-    let checksum = u16_from_bytes_be(&payload[0..2]);
+    let checksum = BE::read_u16(&payload[0..2]);
 
     if checksum != ping6_data_checksum(&payload[2..]) {
         debug!("invalid protocol checksum");

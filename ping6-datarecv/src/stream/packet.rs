@@ -1,6 +1,6 @@
 use ::std::net::Ipv6Addr;
 
-use ::bytes::*;
+use ::bytes::{*, BigEndian as BE};
 use ::pnet_packet::icmpv6::*;
 use ::pnet_packet::icmpv6::ndp::Icmpv6Codes;
 use ::pnet_packet::*;
@@ -43,7 +43,7 @@ pub fn parse_stream_client_packet_payload<'a>(
 
     StreamClientPacket {
         flags: flags,
-        seqno: u16_from_bytes_be(&payload[4..=5]),
+        seqno: BE::read_u16(&payload[4..=5]),
         payload: &payload[6..]
     }
 }
@@ -75,13 +75,22 @@ pub fn make_stream_server_icmpv6_packet(
 
         {
             let payload_buff = packet.payload_mut();
+            let mut buf = [0;2];
+
             payload_buff[2] = !0;
             payload_buff[3] = flags.get();
-            payload_buff[4..=5].copy_from_slice(&u16_to_bytes_be(seqno_start));
-            payload_buff[6..=7].copy_from_slice(&u16_to_bytes_be(seqno_end));
+
+            BE::write_u16(&mut buf, seqno_start);
+            payload_buff[4..=5].copy_from_slice(&buf);
+
+            BE::write_u16(&mut buf, seqno_end);
+            payload_buff[6..=7].copy_from_slice(&buf);
+
             payload_buff[8..].copy_from_slice(payload);
+
             let checksum = ping6_data_checksum(&payload_buff[2..]);
-            payload_buff[0..=1].copy_from_slice(&u16_to_bytes_be(checksum));
+            BE::write_u16(&mut buf, checksum);
+            payload_buff[0..=1].copy_from_slice(&buf);
         }
 
         let cm = icmpv6::checksum(&packet.to_immutable(), &src, &dst);

@@ -1,7 +1,8 @@
 use ::std::net::Ipv6Addr;
 use ::std::os::unix::prelude::*;
 
-use pnet_packet::icmpv6;
+use ::bytes::*;
+use ::pnet_packet::icmpv6;
 use ::pnet_packet::icmpv6::*;
 use ::pnet_packet::icmpv6::ndp::Icmpv6Codes;
 use ::pnet_packet::Packet;
@@ -81,9 +82,9 @@ fn form_checked_payload<T>(payload: T)
     let checksum = ping6_data_checksum(b);
 
     let mut ret = Vec::with_capacity(len + 4);
-    ret.extend_from_slice(&u16_to_bytes_be(checksum));
-    ret.extend_from_slice(&u16_to_bytes_be(len as u16));
-    ret.extend_from_slice(b);
+    ret.put_u16_be(checksum);
+    ret.put_u16_be(len as u16);
+    ret.put(b);
 
     Ok(ret)
 }

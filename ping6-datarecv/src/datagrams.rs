@@ -2,6 +2,7 @@ use ::std::io;
 use ::std::io::prelude::*;
 use ::std::net::Ipv6Addr;
 
+use ::bytes::{*, BigEndian as BE};
 use ::pnet_packet::icmpv6::*;
 use ::pnet_packet::Packet;
 
@@ -66,8 +67,8 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     let payload = payload_arg.as_ref();
 
-    let packet_checksum = u16_from_bytes_be(&payload[0..=1]);
-    let len = u16_from_bytes_be(&payload[2..=3]);
+    let packet_checksum = BE::read_u16(&payload[0..=1]);
+    let len = BE::read_u16(&payload[2..=3]);
 
     if len != (payload.len() - 4) as u16 {
         debug!("wrong encapsulated packet length: {}, dropping", len);
@@ -91,10 +92,12 @@ fn binary_print(
     raw: Raw
 ) -> Result<()> {
     let payload_for_print;
+    let mut buf = [0;2];
+    BE::write_u16(&mut buf, payload.len() as u16);
     if raw.into() {
         write_binary(
             out,
-            &u16_to_bytes_be(payload.len() as u16),
+            &buf,
             payload
         )?;
         payload_for_print = Some(payload);
