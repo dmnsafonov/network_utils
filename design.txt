@@ -41,3 +41,13 @@ contains the ACK flag, than the sequence numbers must be valid newly
 acknowledged seqnos; otherwise the seqno must be the seqno of the last packet
 of the block [first_packet, seqno] of packets, receipt of which
 was acknowledged.
+
+Timeouts:
+SYN -> SYN+ACK -> ACK   3PL
+FIN -> FIN+ACK -> ACK   3PL
+
+wait for ACK            1PL
+send ACK every          1/3PL
+connection timeout      30sec
+
+where PL is somewhere around a few seconds
