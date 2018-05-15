@@ -71,8 +71,8 @@ pub enum StreamMachine<'s> {
         >>,
         ack_wait: AckWaitlist,
         ack_timer: Delay,
-        reached_input_eof: bool,
-        sending_new_data: bool
+        connection_timeout: Delay,
+        reached_input_eof: bool
     },
 
     #[state_machine_future(transitions(WaitForLastAck))]
@@ -274,9 +274,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             send_fut: RefCell::new(None),
             recv_stream,
             ack_wait: AckWaitlist::new(sc.window_size, mtu),
-            ack_timer: make_packet_loss_delay(),
-            reached_input_eof: false,
-            sending_new_data: true
+            ack_timer: Delay::new(make_packet_loss_instant()),
+            connection_timeout: Delay::new(make_connection_timeout_instant()),
+            reached_input_eof: false
         })
     }
 
@@ -495,9 +495,12 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
     })
 }
 
-fn make_packet_loss_delay() -> Delay {
-    Delay::new(Instant::now()
-        + Duration::from_millis(PACKET_LOSS_TIMEOUT))
+fn make_packet_loss_instant() -> Instant {
+    Instant::now() + Duration::from_millis(PACKET_LOSS_TIMEOUT)
+}
+
+fn make_connection_timeout_instant() -> Instant {
+    Instant::now() + Duration::from_millis(CONNECTION_LOSS_TIMEOUT)
 }
 
 fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
@@ -650,6 +653,7 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
 
         let packet = parse_stream_server_packet(&packet_buff);
 
+        let mut got_new_ack = false;
         if packet.flags.test(StreamPacketFlags::WS) {
             debug!("received WS+ACK for range [{}, {}]",
                 packet.seqno_start, packet.seqno_end);
@@ -661,7 +665,7 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
                         Wrapping(packet.seqno_start)
                     )
                 ) {
-                    state.sending_new_data = true;
+                    got_new_ack = true;
                 }
             }
         } else {
@@ -675,11 +679,12 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
                 Wrapping(packet.seqno_end)
             )
         ) {
-            state.sending_new_data = true;
+            got_new_ack = true;
         }
 
-        if state.sending_new_data {
-            state.ack_timer = make_packet_loss_delay();
+        if got_new_ack {
+            state.ack_timer.reset(make_packet_loss_instant());
+            state.connection_timeout.reset(make_connection_timeout_instant());
         }
 
         return Ok(true);
@@ -693,8 +698,8 @@ fn poll_timeout(state: &mut SendData) -> Result<bool> {
         {
             let mut retransmit_queue =
                 state.retransmit_queue.borrow_mut();
-            if !state.sending_new_data || !retransmit_queue.is_empty() {
-                bail!(ErrorKind::TimedOut);
+            if !retransmit_queue.is_empty() {
+                return Ok(false);
             }
             for i in state.ack_wait.iter() {
                 retransmit_queue.push_back((
@@ -703,10 +708,13 @@ fn poll_timeout(state: &mut SendData) -> Result<bool> {
                 ));
             }
         }
-        state.ack_timer = make_packet_loss_delay();
-        state.sending_new_data = false;
+        state.ack_timer.reset(make_packet_loss_instant());
 
         return Ok(true);
+    }
+
+    if let Async::Ready(_) = state.connection_timeout.poll()? {
+        bail!(ErrorKind::TimedOut);
     }
 
     Ok(false)

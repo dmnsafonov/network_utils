@@ -344,7 +344,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
                 let seqno = seqno_tracker_ref.lock().unwrap()
                     .to_sequential(Wrapping(packet.seqno));
-debug!("sn: {}", seqno);
+                debug!("packet position in the receive window: {}",
+                    seqno as u32 + 1);
+
                 seqno < window_size as usize
                     && !packet.flags.test(StreamPacketFlags::Syn.into())
                     && !packet.flags.test(StreamPacketFlags::Ack.into())
@@ -691,7 +693,7 @@ fn poll_write_data_fut(state: &mut ReceivePackets) -> Result<bool> {
 fn poll_make_write_data_fut(state: &mut ReceivePackets) -> Result<bool> {
     if state.write_future.is_none() {
         let peeked_seqno = state.active.order.lock().unwrap()
-            .peek_seqno();//debug!("peeked: {:?}, waiting: {}", peeked_seqno, state.active.next_seqno.0);
+            .peek_seqno();
         if peeked_seqno == Some(state.active.next_seqno.0) {
             state.active.next_seqno += Wrapping(1);
             let data = state.active.order.lock().unwrap()
