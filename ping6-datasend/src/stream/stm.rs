@@ -163,7 +163,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendFirstSyn<'s>, Error> {
         debug!("sending first SYN packet");
         let size = try_ready!(state.send.poll());
-        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
 
         let state = state.take();
         let mut common = state.common;
@@ -182,11 +182,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 });
             let timed = TimeoutResultStream::new(
                 packets,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT)
             );
             unsafe {
                 SendBox::new(Box::new(
-                    timed.take(RETRANSMISSIONS_NUMBER as u64)
+                    timed.take(RETRANSMISSIONS_NUMBER)
                 ))
             }
         });
@@ -255,7 +255,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendAck<'s>, Error> {
         debug!("sending first ACK");
         let size = try_ready!(state.send_ack.poll());
-        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
 
         let sc = get_stream_config(&state.common.config);
 
@@ -342,7 +342,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendFin<'s>, Error> {
         debug!("sending FIN");
         let size = try_ready!(state.send_fut.poll());
-        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
 
         let state = state.take();
         let mut common = state.common;
@@ -364,11 +364,11 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 });
             let timed = TimeoutResultStream::new(
                 packets,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT)
             );
             unsafe {
                 SendBox::new(Box::new(
-                    timed.take(RETRANSMISSIONS_NUMBER as u64)
+                    timed.take(RETRANSMISSIONS_NUMBER)
                 ))
             }
         });
@@ -420,7 +420,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendLastAck, Error> {
         debug!("sending last ACK");
         let size = try_ready!(state.send_fut.poll());
-        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
 
         transition!(ConnectionTerminated(TerminationReason::DataSent))
     }
@@ -497,7 +497,7 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
 
 fn make_packet_loss_delay() -> Delay {
     Delay::new(Instant::now()
-        + Duration::from_millis(PACKET_LOSS_TIMEOUT as u64))
+        + Duration::from_millis(PACKET_LOSS_TIMEOUT))
 }
 
 fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
@@ -621,7 +621,7 @@ fn fill_next_data(state: &mut SendData) {
 
             if let Some(slice) =
                     state.read_buf.take((state.common.mtu
-                        - STREAM_CLIENT_HEADER_SIZE_WITH_IP) as usize) {
+                        - STREAM_CLIENT_HEADER_SIZE_WITH_IP as u16) as usize) {
                 state.next_data.replace(Some(
                     NextData::from_tb_slice(slice)
                 ));

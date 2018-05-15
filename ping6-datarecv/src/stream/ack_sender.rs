@@ -76,7 +76,7 @@ impl Future for AckSender {
                 match self.send_fut.as_mut().unwrap().poll().map_err(|_| ())? {
                     Async::NotReady => return Ok(Async::NotReady),
                     Async::Ready(size) => {
-                        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE as usize);
+                        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE);
                         self.send_fut.take();
                         active = true;
                     }

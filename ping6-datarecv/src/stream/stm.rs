@@ -130,7 +130,7 @@ impl<T> WriteBorrow<T> where T: AsyncWrite {
             write_all(
                 write,
                 OwningRef::new(buf).map(|x|
-                    &(*x)[STREAM_CLIENT_FULL_HEADER_SIZE as usize ..]
+                    &(*x)[STREAM_CLIENT_FULL_HEADER_SIZE..]
                 )
             )
         )
@@ -186,7 +186,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             seqno_tracker: seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64) / 3
+                Duration::from_millis(ACK_SEND_PERIOD)
             ))
         };
 
@@ -210,7 +210,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendSynAck<'s>, Error> {
         debug!("sending SYN+ACK");
         let size = try_ready!(state.send_syn_ack.poll());
-        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE);
 
         let SendSynAck { mut common, active, next_action, .. }
             = state.take();
@@ -246,7 +246,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 }).filter_map(|x| x);
             let timed = TimeoutResultStream::new(
                 packets,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT)
             );
             unsafe {
                 SendBox::new(Box::new(
@@ -429,7 +429,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterSendFinAck<'s>, Error> {
         debug!("sending FIN+ACK");
         let size = try_ready!(state.send_fut.poll());
-        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE as usize);
+        debug_assert_eq!(size, STREAM_SERVER_FULL_HEADER_SIZE);
 
         let SendFinAck { mut common, active, fin_seqno, next_action, .. }
             = state.take();
@@ -456,7 +456,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 }).filter_map(|x| x);
             let timed = TimeoutResultStream::new(
                 packets,
-                Duration::from_millis(PACKET_LOSS_TIMEOUT as u64)
+                Duration::from_millis(PACKET_LOSS_TIMEOUT)
             );
             unsafe {
                 SendBox::new(Box::new(
@@ -618,12 +618,12 @@ fn make_fin_ack_future<'a>(
 
 fn make_connection_timeout_delay() -> Instant {
     Instant::now() + Duration::from_millis(
-        PACKET_LOSS_TIMEOUT as u64 * 2
+        PACKET_LOSS_TIMEOUT * 2
     )
 }
 
 fn clean_and_get_space(order: &mut DataOrderer, mtu: u16) -> usize {
-    let space_required = mtu - STREAM_CLIENT_HEADER_SIZE_WITH_IP;
+    let space_required = mtu - STREAM_CLIENT_HEADER_SIZE_WITH_IP as u16;
     if order.get_space_left() < space_required as usize {
         order.cleanup();
     }

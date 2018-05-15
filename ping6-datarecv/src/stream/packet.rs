@@ -57,7 +57,7 @@ pub fn make_stream_server_icmpv6_packet(
     flags: StreamPacketFlagSet,
     payload: &[u8]
 ) -> Bytes {
-    let targlen = STREAM_SERVER_FULL_HEADER_SIZE as usize + payload.len();
+    let targlen = STREAM_SERVER_FULL_HEADER_SIZE + payload.len();
     let buflen = packet_buff.len();
     if buflen < targlen {
         packet_buff.reserve(targlen - buflen);
@@ -68,7 +68,7 @@ pub fn make_stream_server_icmpv6_packet(
         let mut packet = MutableIcmpv6Packet::new(packet_buff)
             .expect("buffer big enough for the payload");
         debug_assert!(packet.payload().len()
-            >= STREAM_SERVER_HEADER_SIZE as usize + payload.len());
+            >= STREAM_SERVER_HEADER_SIZE + payload.len());
 
         packet.set_icmpv6_type(Icmpv6Types::EchoRequest);
         packet.set_icmpv6_code(Icmpv6Codes::NoCode);

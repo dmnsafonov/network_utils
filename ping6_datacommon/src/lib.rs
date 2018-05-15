@@ -305,7 +305,7 @@ pub fn validate_stream_packet(
     let header_constraint = ::std::cmp::min(
         STREAM_CLIENT_HEADER_SIZE,
         STREAM_SERVER_HEADER_SIZE
-    ) as usize;
+    );
     if payload.len() < header_constraint {
         debug!("invalid packet length");
         return false;
