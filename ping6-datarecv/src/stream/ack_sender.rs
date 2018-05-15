@@ -19,7 +19,7 @@ pub struct AckSender {
     sock: IpV6RawSocketAdapter,
     send_fut: Option<IpV6RawSocketSendtoFuture>,
     ranges_to_send: VecDeque<IRange<Wrapping<u16>>>,
-    first_packet: bool
+    set_ws_packet: bool
 }
 
 impl AckSender {
@@ -36,7 +36,7 @@ impl AckSender {
             sock,
             send_fut: None,
             ranges_to_send: VecDeque::new(),
-            first_packet: false
+            set_ws_packet: false
         }
     }
 }
@@ -52,9 +52,9 @@ impl Future for AckSender {
             if self.send_fut.is_none() {
                 if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
                     let mut flags = StreamPacketFlags::Ack.into();
-                    if self.first_packet {
+                    if self.set_ws_packet {
                         flags |= StreamPacketFlags::WS;
-                        self.first_packet = false;
+                        self.set_ws_packet = false;
                     }
 
                     debug!("sending ACK for range {} .. {}", l, r);
@@ -90,9 +90,9 @@ impl Future for AckSender {
             if let Async::Ready(ranges_opt)
                     = self.ack_gen.poll().map_err(|_| ())? {
                 match ranges_opt {
-                    Some(ranges) => {
+                    Some((ranges, ws)) => {
+                        self.set_ws_packet = ws == ranges.front().unwrap().0;
                         self.ranges_to_send = ranges;
-                        self.first_packet = true;
                         active = true;
                     },
                     None => return Ok(Async::Ready(()))

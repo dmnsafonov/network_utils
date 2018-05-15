@@ -118,11 +118,14 @@ impl SeqnoTracker {
         }
     }
 
-    pub fn add(&mut self, x: Wrapping<u16>) {
+    pub fn add(&mut self, x: Wrapping<u16>) -> bool {
         let ax = self.to_sequential(x);
         let range = IRange(ax, ax);
         if !self.tracker.is_range_tracked(range).unwrap() {
             self.tracker.track_range(IRange(ax, ax));
+            true
+        } else {
+            false
         }
     }
 
@@ -130,17 +133,19 @@ impl SeqnoTracker {
         (x - self.window_start).0 as usize
     }
 
-    pub fn take(&mut self) -> VecDeque<IRange<Wrapping<u16>>> {
+    pub fn take(&mut self)
+    -> (VecDeque<IRange<Wrapping<u16>>>, Wrapping<u16>) {
         let ret = self.tracker.into_iter().map(|IRange(l,r)| {
             IRange(
                 self.from_sequential(l),
                 self.from_sequential(r)
             )
         }).collect();
+        let window_start = self.window_start;
         if let Some(x) = self.tracker.take_range() {
-            self.window_start += Wrapping(x as u16) + Wrapping(1);
+            self.window_start = self.from_sequential(x) + Wrapping(1);
         }
-        ret
+        (ret, window_start)
     }
 
     pub fn from_sequential(&self, x: usize) -> Wrapping<u16> {
@@ -205,7 +210,7 @@ impl AckGenHandle {
 }
 
 impl Stream for TimedAckSeqnoGenerator {
-    type Item = VecDeque<IRange<Wrapping<u16>>>;
+    type Item = (VecDeque<IRange<Wrapping<u16>>>, Wrapping<u16>);
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -222,16 +227,14 @@ impl Stream for TimedAckSeqnoGenerator {
             Interval::new(Instant::now(), period)
         );
 
-        if self.timeless.swap(false, Ordering::Acquire) {
-            while interval.poll()?.is_ready() {}
-        } else {
+        if !self.timeless.swap(false, Ordering::Acquire) {
             try_ready!(interval.poll());
         }
-        let ranges = self.tracker.lock().unwrap().take();
+        while interval.poll()?.is_ready() {}
+        let (ranges, ws) = self.tracker.lock().unwrap().take();
         if ranges.is_empty() {
-            while interval.poll()?.is_ready() {}
             return Ok(Async::NotReady);
         }
-        Ok(Async::Ready(Some(ranges)))
+        Ok(Async::Ready(Some((ranges, ws))))
     }
 }

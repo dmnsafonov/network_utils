@@ -344,7 +344,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
                 let seqno = seqno_tracker_ref.lock().unwrap()
                     .to_sequential(Wrapping(packet.seqno));
-
+debug!("sn: {}", seqno);
                 seqno < window_size as usize
                     && !packet.flags.test(StreamPacketFlags::Syn.into())
                     && !packet.flags.test(StreamPacketFlags::Ack.into())
@@ -386,8 +386,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             );
 
             activity = poll_recv_stream(&mut *state, space)?;
-            activity = poll_send_data_fut(&mut *state)? || activity;
-            activity = poll_write_output(&mut *state)? || activity;
+            activity = poll_write_data_fut(&mut *state)? || activity;
+            activity = poll_make_write_data_fut(&mut *state)? || activity;
         }
 
         poll_timeout(&mut *state, ack_sending_task.clone())?;
@@ -559,12 +559,14 @@ fn make_recv_packets_stream<'a>(
             &x,
             Some((*src.ip(), *csrc.ip()))
         );
-        if res {
+        let flags = parse_stream_client_packet(&x).flags;
+        if res && !flags.test(StreamPacketFlags::WS) {
             debug!("valid packet received");
+            true
         } else {
             debug!("invalid packet filtered out");
+            false
         }
-        res
     })
 }
 
@@ -640,8 +642,6 @@ fn poll_recv_stream(
 
     if let Async::Ready(Some((data,_)))
             = state.recv_stream.poll()? {
-        state.timeout.reset(make_connection_timeout_delay());
-
         let packet = parse_stream_client_packet(&data);
 
         if data.len() > state.common.mtu as usize {
@@ -659,13 +659,15 @@ fn poll_recv_stream(
             return Ok(true);
         }
 
-        state.active.seqno_tracker.lock().unwrap()
-            .add(Wrapping(packet.seqno));
         if ::log::max_log_level() >= ::log::LogLevelFilter::Debug {
             let packet = parse_stream_client_packet(&data);
             debug!("received packet with seqno {}", packet.seqno);
         }
-        if packet.payload.len() > 0 {
+
+        let seqno_is_new = state.active.seqno_tracker.lock().unwrap()
+            .add(Wrapping(packet.seqno));
+        if seqno_is_new && packet.payload.len() > 0 {
+            state.timeout.reset(make_connection_timeout_delay());
             state.active.order.lock().unwrap().add(&data);
         }
 
@@ -675,7 +677,7 @@ fn poll_recv_stream(
     Ok(false)
 }
 
-fn poll_send_data_fut(state: &mut ReceivePackets) -> Result<bool> {
+fn poll_write_data_fut(state: &mut ReceivePackets) -> Result<bool> {
     if state.write_future.is_some() {
         if let Async::Ready(_)
                 = state.write_future.as_mut().unwrap().poll()? {
@@ -686,10 +688,10 @@ fn poll_send_data_fut(state: &mut ReceivePackets) -> Result<bool> {
     Ok(false)
 }
 
-fn poll_write_output(state: &mut ReceivePackets) -> Result<bool> {
+fn poll_make_write_data_fut(state: &mut ReceivePackets) -> Result<bool> {
     if state.write_future.is_none() {
         let peeked_seqno = state.active.order.lock().unwrap()
-            .peek_seqno();
+            .peek_seqno();//debug!("peeked: {:?}, waiting: {}", peeked_seqno, state.active.next_seqno.0);
         if peeked_seqno == Some(state.active.next_seqno.0) {
             state.active.next_seqno += Wrapping(1);
             let data = state.active.order.lock().unwrap()
