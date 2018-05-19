@@ -94,7 +94,7 @@ pub fn get_args<'a>() -> ArgMatches<'a> {
             .short("m")
             .takes_value(true)
             .help("Sends a short (fitting in a single packet) message \
-                to the sender simulteneously with accepting connection \
+                to the sender simultaneously with accepting connection \
                 in stream mode")
             .requires("stream")
         ).arg(Arg::with_name("window-size")
