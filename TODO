@@ -2,7 +2,7 @@ try the enumflags crate to replace the numeric_enums internal one.
 
 maybe, remake the async sockets using macros
 
-migrate to failure
+migrate to failure [done for the rsndpproxy crate]
 
 add packet number (u64) in the stream to the checksum
 
