@@ -1,44 +1,30 @@
-error_chain!(
-    errors {
-        AlreadyRunning(filename: String) {
-            description("another instance already running")
-            display("another instance already running: failed locking {}",
-                filename)
-        }
+use ::std::io;
 
-        PrivDrop {
-            description("privilege dropping error")
-        }
+pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
-        FileIo(name: String) {
-            description("file io error")
-            display("error accessing file: {}", name)
-        }
+#[derive(Fail, Debug)]
+pub enum Error {
+    #[fail(display = "another instance already running: failed locking {}", filename)]
+    AlreadyRunning {
+        filename: String
+    },
 
-        NoInterface(name: String) {
-            description("cannot find specified network interface")
-            display("cannot find network interface {}", name)
-        }
+    #[fail(display = "privilege dropping error: {}", _0)]
+    PrivDrop(#[cause] io::Error),
 
-        NoMac(name: String) {
-            description("cannot get the mac address")
-            display("cannot get the mac address of the interface {}", name)
-        }
+    #[fail(display = "io error on file {}: {}", name, cause)]
+    FileIo {
+        name: String,
+        #[cause] cause: io::Error
+    },
+
+    #[fail(display = "cannot find network interface {}", name)]
+    NoInterface {
+        name: String
+    },
+
+    #[fail(display = "cannot get the mac address of the interface {}", if_name)]
+    NoMac {
+        if_name: String
     }
-
-    foreign_links {
-        ConfigParseError(::toml::de::Error);
-        ConfigSerializeError(::toml::ser::Error);
-        NixError(::nix::Error);
-        InvalidIpv6Prefix(::ipnetwork::IpNetworkError);
-        LogInit(::log::SetLoggerError);
-        SyslogInit(::syslog::SyslogError);
-    }
-
-    links {
-        LinuxNetwork (
-            ::linux_network::errors::Error,
-            ::linux_network::errors::ErrorKind
-        );
-    }
-);
+}

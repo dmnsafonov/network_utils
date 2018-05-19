@@ -1,6 +1,16 @@
-pub fn log_if_err<T,E>(x: ::std::result::Result<T,E>)
-        where E: ::error_chain::ChainedError {
+pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
     if let Err(e) = x {
-        error!("{}", e.display_chain());
+        let mut out = String::new();
+
+        let mut first = true;;
+        for i in e.causes() {
+            if !first {
+                out += ": ";
+            }
+            out += &format!("{}", i);
+            first = false;
+        }
+
+        error!("{}", out);
     }
 }

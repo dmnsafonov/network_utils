@@ -3,7 +3,7 @@
 extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;
-#[macro_use] extern crate error_chain;
+#[macro_use] extern crate failure;
 extern crate interfaces;
 extern crate ipnetwork;
 #[macro_use] extern crate log;
@@ -25,10 +25,12 @@ mod util;
 use std::cell::*;
 use std::collections::HashMap;
 use std::fs::*;
+use std::io;
 use std::process::exit;
 use std::os::unix::prelude::*;
 use std::rc::*;
 
+use failure::SyncFailure;
 use log::LogLevel::*;
 use nix::Errno;
 use nix::libc;
@@ -40,11 +42,24 @@ use users::*;
 use linux_network::*;
 use linux_network::Permissions;
 use config::*;
-use errors::{ErrorKind, Result, ResultExt};
+use errors::{Error, Result};
 use server::*;
 use util::*;
 
-quick_main!(early_main);
+fn main() {
+    if let Err(e) = early_main() {
+        let mut first = true;;
+        for i in e.causes() {
+            if !first {
+                eprint!(": ");
+            }
+            eprint!("{}", i);
+            first = false;
+        }
+        eprintln!("");
+    }
+}
+
 fn early_main() -> Result<()> {
     let config = config::read_config()?;
 
@@ -119,7 +134,7 @@ fn the_main(config: &Config) -> Result<()> {
     }
 
     if config.daemonize {
-        umask(UmaskPermissionSet::new())?;
+        umask(UmaskPermissionSet::new()).map_err(SyncFailure::new)?;
         create_pid_file(&config.pid_file)?;
     }
 
@@ -133,8 +148,9 @@ fn the_main(config: &Config) -> Result<()> {
 
 fn serve_requests(config: &Config) -> Result<()> {
     let signals = setup_signalfd()?;
-    let epoll = EPoll::new()?;
-    epoll.borrow_mut().add(Rc::clone(&signals), EPOLLIN)?;
+    let epoll = EPoll::new().map_err(SyncFailure::new)?;
+    epoll.borrow_mut().add(Rc::clone(&signals), EPOLLIN)
+        .map_err(SyncFailure::new)?;
 
     let mut servers = HashMap::with_capacity(config.interfaces.len());
     for i in &config.interfaces {
@@ -163,7 +179,10 @@ fn create_pid_file<T>(pid_filename: T) -> Result<()>
 
     let pid_filename = pid_filename.as_ref();
     let pid_filename_str = pid_filename.to_string_lossy().into_owned();
-    let err_arg = || ErrorKind::FileIo(pid_filename_str.clone());
+    let err_arg = |e| Error::FileIo {
+        name: pid_filename_str.clone(),
+        cause: e
+    };
     let mut pid_file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -178,12 +197,12 @@ fn create_pid_file<T>(pid_filename: T) -> Result<()>
             .set(FileOpenFlags::NoFollow)
             .get())
         .open(pid_filename)
-        .chain_err(&err_arg)?;
+        .map_err(&err_arg)?;
 
     lock_file(&mut pid_file, &pid_filename_str)?;
 
     writeln!(pid_file, "{}", getpid())
-        .chain_err(err_arg)?;
+        .map_err(err_arg)?;
 
     pid_file.into_raw_fd();
 
@@ -196,10 +215,11 @@ fn lock_file<T>(file: &mut File, filename: T) -> Result<()>
         match linux_network::errors::error_to_errno(&he)
             .map(Errno::from_i32) {
                 Some(Errno::EACCES) | Some(Errno::EAGAIN) => {
-                    bail!(ErrorKind::AlreadyRunning(
-                        filename.as_ref().to_string()));
+                    bail!(Error::AlreadyRunning {
+                        filename: filename.as_ref().to_string()
+                    });
                 },
-                _ => bail!(he)
+                _ => bail!(SyncFailure::new(he))
         }
     }
     Ok(())
@@ -215,19 +235,17 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
         .set(SecBit::NoRootLocked)
         .set(SecBit::NoCapAmbientRaise)
         .set(SecBit::NoCapAmbientRaiseLocked);
-    set_securebits(bits)?;
+    set_securebits(bits).map_err(SyncFailure::new)?;
 
-    drop_supplementary_groups()?;
+    drop_supplementary_groups().map_err(SyncFailure::new)?;
     debug!("dropped supplementary groups");
     if let Some(ref su) = *su {
-        let bits = get_securebits()?
+        let bits = get_securebits().map_err(SyncFailure::new)?
             .set(SecBit::KeepCaps);
-        set_securebits(bits)?;
+        set_securebits(bits).map_err(SyncFailure::new)?;
 
-        switch::set_current_gid(su.gid)
-            .chain_err(|| ErrorKind::PrivDrop)?;
-        switch::set_current_uid(su.uid)
-            .chain_err(|| ErrorKind::PrivDrop)?;
+        switch::set_current_gid(su.gid).map_err(Error::PrivDrop)?;
+        switch::set_current_uid(su.uid).map_err(Error::PrivDrop)?;
         debug!("dropped uid and gid 0");
     } else {
         warn!("consider changing user with \"su = user:group\" option");
@@ -236,14 +254,13 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     let bits = bits
         .clear(SecBit::KeepCaps)
         .set(SecBit::KeepCapsLocked);
-    set_securebits(bits)?;
+    set_securebits(bits).map_err(SyncFailure::new)?;
     debug!("securebits set to 0b{:b}", bits.get());
 
-    set_no_new_privs()?;
+    set_no_new_privs().map_err(SyncFailure::new)?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
-    let mut caps = Capabilities::new()
-        .chain_err(|| ErrorKind::PrivDrop)?;
+    let mut caps = Capabilities::new().map_err(Error::PrivDrop)?;
     let req_caps = [
         Capability::CAP_NET_ADMIN,
         Capability::CAP_NET_BROADCAST,
@@ -251,16 +268,20 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     ];
 
     if !caps.update(&req_caps, Flag::Permitted, true) {
-        bail!(ErrorKind::PrivDrop);
+        bail!(Error::PrivDrop(io::Error::new(
+            io::ErrorKind::Other,
+            "cannot update a capset"
+        )));
     }
-    caps.apply()
-        .chain_err(|| ErrorKind::PrivDrop)?;
+    caps.apply().map_err(Error::PrivDrop)?;
 
     if !caps.update(&req_caps, Flag::Effective, true) {
-        bail!(ErrorKind::PrivDrop);
+        bail!(Error::PrivDrop(io::Error::new(
+            io::ErrorKind::Other,
+            "cannot update a capset"
+        )));
     }
-    caps.apply()
-        .chain_err(|| ErrorKind::PrivDrop)?;
+    caps.apply().map_err(Error::PrivDrop)?;
     debug!("dropped linux capabilities");
 
     // TODO: chroot, namespaces

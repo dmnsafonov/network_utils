@@ -7,7 +7,7 @@ use ::libc::{uid_t, gid_t};
 use ::serde::*;
 use ::serde::de::Visitor;
 
-use super::errors::{Error, ErrorKind, Result, ResultExt};
+use super::errors::{Error, Result};
 
 const DEFAULT_CONFIG_PATH: &str = "/etc/rsndpproxy.conf";
 const DEFAULT_PID_PATH: &str = "/run/rsndpproxy.pid";
@@ -71,7 +71,7 @@ impl<'de> Visitor<'de> for Ipv6PrefixVisitor {
             where E: ::serde::de::Error {
         Ipv6Network::from_str(value)
             .map(Ipv6Prefix)
-            .map_err(|e| E::custom(Error::from(e)))
+            .map_err(|e| E::custom(e))
     }
 }
 
@@ -180,10 +180,16 @@ pub fn read_config() -> Result<Config> {
     let config_filename = matches.value_of_os("config").unwrap();
     let config_filename_str = config_filename.to_string_lossy().into_owned();
     let mut config_file = ::std::fs::File::open(config_filename)
-        .chain_err(|| ErrorKind::FileIo(config_filename_str.clone()))?;
+        .map_err(|e| Error::FileIo {
+            name: config_filename_str.clone(),
+            cause: e
+        })?;
     let mut config_str = String::new();
     config_file.read_to_string(&mut config_str)
-        .chain_err(|| ErrorKind::FileIo(config_filename_str.clone()))?;
+        .map_err(|e| Error::FileIo {
+            name: config_filename_str.clone(),
+            cause: e
+        })?;
 
     let mut config: Config = ::toml::from_str(&config_str)?;
     config.config_file = config_filename.into();

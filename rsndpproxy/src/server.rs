@@ -5,6 +5,7 @@ use ::std::os::raw::c_uint;
 use ::std::os::unix::prelude::*;
 use ::std::rc::*;
 
+use ::failure::SyncFailure;
 use ::nix::sys::epoll::*;
 use ::nix::unistd::*;
 use ::pnet_packet::icmpv6::*;
@@ -14,7 +15,7 @@ use ::linux_network::*;
 
 use ::config::*;
 use ::util::*;
-use super::errors::{Error, ErrorKind, Result, ResultExt};
+use super::errors::{Error, Result};
 
 pub struct Server<'a> {
     sock: IpV6PacketSocket,
@@ -52,8 +53,10 @@ impl<'a> Server<'a> {
             bpf_stmt!(RET | K, 0);
         );
 
-        self.sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))?;
-        self.sock.setsockopt(&SockOpts::LockFilter::new(&true))?;
+        self.sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))
+            .map_err(SyncFailure::new)?;
+        self.sock.setsockopt(&SockOpts::LockFilter::new(&true))
+            .map_err(SyncFailure::new)?;
 
         Ok(())
     }
