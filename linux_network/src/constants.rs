@@ -14,8 +14,6 @@ pub mod raw {
     pub const S_ISGID: mode_t = ::libc::S_ISGID as mode_t;
     pub const S_ISVTX: mode_t = ::libc::S_ISVTX as mode_t;
 
-    pub const F_WRLCK: c_short = 1;
-
     pub const ICMPV6_FILTER: c_int = 1;
 
     pub const ICMP6_ECHO_REQUEST: uint8_t = 128;

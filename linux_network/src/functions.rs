@@ -70,7 +70,7 @@ pub fn umask(mask: UmaskPermissionSet)
 pub fn fcntl_lock_fd<F>(fd: &mut F) -> Result<()>
         where F: AsRawFd { unsafe {
     let mut lock: flock = zeroed();
-    lock.l_type = F_WRLCK;
+    lock.l_type = F_WRLCK as i16;
     lock.l_whence = SEEK_SET as c_short;
     n1try!(fcntl(fd.as_raw_fd(), F_SETLK, &mut lock));
     Ok(())
