@@ -1,11 +1,17 @@
+[all]
 maybe, remake the async sockets using macros
 
+[all]
 migrate to failure [done for the rsndpproxy crate]
 
+[ping6]
 add packet number (u64) in the stream to the checksum
 
+[ping6-datasend]
 cleanup() in AckWait's pub fn iter()
 
+[ping6-datarecv]
 send ack immediately if what we are receiving is a retrans
 
+[ping6]
 now that rust has inclusive ranges, remove IRange
