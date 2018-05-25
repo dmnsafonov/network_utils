@@ -1,3 +1,4 @@
+#[macro_use] extern crate bitflags;
 extern crate byteorder;
 extern crate capabilities;
 #[macro_use] extern crate error_chain;
@@ -13,7 +14,6 @@ extern crate tokio_timer;
 
 #[macro_use] extern crate boolean_enums;
 extern crate linux_network;
-#[macro_use] extern crate numeric_enums;
 
 pub mod buffer;
 pub mod constants;
@@ -41,8 +41,6 @@ use seccomp::*;
 
 use linux_network::*;
 
-pub use numeric_enums::{EnumFromNum, EnumToNum, NumEnumFlagSet};
-
 pub use buffer::*;
 pub use constants::*;
 pub use errors::*;
@@ -61,8 +59,8 @@ pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve)
         IPPROTO_ICMPV6,
         0,
         match resolve {
-            Resolve::Yes => AddrInfoFlagSet::new(),
-            Resolve::No => AddrInfoFlags::NumericHost.into()
+            Resolve::Yes => AddrInfoFlags::empty(),
+            Resolve::No => AddrInfoFlags::NumericHost
         }
     )?;
 
@@ -319,7 +317,7 @@ pub fn validate_stream_packet(
     }
 
     let x = payload[3];
-    if x & !ALL_STREAM_PACKET_FLAGS != 0 {
+    if StreamPacketFlags::from_bits(x).is_none() {
         debug!("invalid protocol flags");
         return false;
     }

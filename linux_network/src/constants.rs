@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 pub mod raw {
     use ::libc::*;
 
@@ -81,72 +83,76 @@ use ::libc::*;
 use self::raw::*;
 use self::raw::{S_ISUID, S_ISGID, S_ISVTX};
 
-gen_enum!(pub SecBit: c_int;
-    (SECBIT_NOROOT => NoRoot),
-    (SECBIT_NOROOT_LOCKED => NoRootLocked),
-    (SECBIT_NO_SETUID_FIXUP => NoSetuidFixup),
-    (SECBIT_NO_SETUID_FIXUP_LOCKED => NoSetuidFixupLocked),
-    (SECBIT_KEEP_CAPS => KeepCaps),
-    (SECBIT_KEEP_CAPS_LOCKED => KeepCapsLocked),
-    (SECBIT_NO_CAP_AMBIENT_RAISE => NoCapAmbientRaise),
-    (SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED => NoCapAmbientRaiseLocked)
+bitflags!(
+    pub struct SecBits: c_int {
+        const NoRoot = SECBIT_NOROOT;
+        const NoRootLocked = SECBIT_NOROOT_LOCKED;
+        const NoSetuidFixup = SECBIT_NO_SETUID_FIXUP;
+        const NoSetuidFixupLocked = SECBIT_NO_SETUID_FIXUP_LOCKED;
+        const KeepCaps = SECBIT_KEEP_CAPS;
+        const KeepCapsLocked = SECBIT_KEEP_CAPS_LOCKED;
+        const NoCapAmbientRaise = SECBIT_NO_CAP_AMBIENT_RAISE;
+        const NoCapAmbientRaiseLocked = SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED;
+    }
 );
-gen_flag_set!(pub SecBitSet, SecBit: c_int);
 
-gen_enum!(pub Permissions: mode_t;
-    (S_IXUSR => UserExecute),
-    (S_IWUSR => UserWrite),
-    (S_IRUSR => UserRead),
-    (S_IXGRP => GroupExecute),
-    (S_IWGRP => GroupWrite),
-    (S_IRGRP => GroupRead),
-    (S_IXOTH => OtherExecute),
-    (S_IWOTH => OtherWrite),
-    (S_IROTH => OtherRead),
+bitflags!(
+    pub struct Permissions: mode_t {
+        const UserExecute = S_IXUSR;
+        const UserWrite = S_IWUSR;
+        const UserRead = S_IRUSR;
+        const GroupExecute = S_IXGRP;
+        const GroupWrite = S_IWGRP;
+        const GroupRead = S_IRGRP;
+        const OtherExecute = S_IXOTH;
+        const OtherWrite = S_IWOTH;
+        const OtherRead = S_IROTH;
 
-    (S_ISUID => SetUid),
-    (S_ISGID => SetGid),
-    (S_ISVTX => Sticky)
+        const SetUid = S_ISUID;
+        const SetGid = S_ISGID;
+        const Sticky = S_ISVTX;
+    }
 );
-gen_flag_set!(pub PermissionSet, Permissions: mode_t);
 
-gen_enum!(pub UmaskPermissions: mode_t;
-    (S_IXUSR => UserExecute),
-    (S_IWUSR => UserWrite),
-    (S_IRUSR => UserRead),
-    (S_IXGRP => GroupExecute),
-    (S_IWGRP => GroupWrite),
-    (S_IRGRP => GroupRead),
-    (S_IXOTH => OtherExecute),
-    (S_IWOTH => OtherWrite),
-    (S_IROTH => OtherRead)
+bitflags!(
+    pub struct UmaskPermissions: mode_t {
+        const UserExecute = S_IXUSR;
+        const UserWrite = S_IWUSR;
+        const UserRead = S_IRUSR;
+        const GroupExecute = S_IXGRP;
+        const GroupWrite = S_IWGRP;
+        const GroupRead = S_IRGRP;
+        const OtherExecute = S_IXOTH;
+        const OtherWrite = S_IWOTH;
+        const OtherRead = S_IROTH;
+    }
 );
-gen_flag_set!(pub UmaskPermissionSet, UmaskPermissions: mode_t);
 
-gen_enum!(pub FileOpenFlags: c_int;
-    (O_RDONLY => ReadOnly),
-    (O_WRONLY => WriteOnly),
-    (O_RDWR => ReadWrite),
-    (O_APPEND => Append),
-    (O_ASYNC => Async),
-    (O_CLOEXEC => CloseOnExec),
-    (O_CREAT => Create),
-    (O_DIRECT => Direct),
-    (O_DIRECTORY => Directory),
-    (O_DSYNC => DSync),
-    (O_EXCL => Exclusive),
-    (O_LARGEFILE => LargeFile),
-    (O_NOATIME => NoATime),
-    (O_NOCTTY => NoCTty),
-    (O_NOFOLLOW => NoFollow),
-    (O_NONBLOCK => Nonblock),
-    (O_NDELAY => NDelay),
-    (O_PATH => Path),
-    (O_SYNC => Sync),
-    (O_TMPFILE => TmpFile),
-    (O_TRUNC => Truncate)
+bitflags!(
+    pub struct FileOpenFlags: c_int {
+        const ReadOnly = O_RDONLY;
+        const WriteOnly = O_WRONLY;
+        const ReadWrite = O_RDWR;
+        const Append = O_APPEND;
+        const Async = O_ASYNC;
+        const CloseOnExec = O_CLOEXEC;
+        const Create = O_CREAT;
+        const Direct = O_DIRECT;
+        const Directory = O_DIRECTORY;
+        const DSync = O_DSYNC;
+        const Exclusive = O_EXCL;
+        const LargeFile = O_LARGEFILE;
+        const NoATime = O_NOATIME;
+        const NoCTty = O_NOCTTY;
+        const NoFollow = O_NOFOLLOW;
+        const Nonblock = O_NONBLOCK;
+        const NDelay = O_NDELAY;
+        const Path = O_PATH;
+        const Sync = O_SYNC;
+        const TmpFile = O_TMPFILE;
+        const Truncate = O_TRUNC;
+    }
 );
-gen_flag_set!(pub FileOpenFlagSet, FileOpenFlags: c_int);
 
 // not exhaustive
 gen_enum!(pub IpProto: c_int;
@@ -185,79 +191,83 @@ gen_enum!(pub IcmpV6Type: uint8_t;
     (ND_REDIRECT => NdRedirect)
 );
 
-gen_enum!(pub RecvFlags: c_int;
-    (MSG_CMSG_CLOEXEC => CmsgCloexec),
-    (MSG_DONTWAIT => DontWait),
-    (MSG_ERRQUEUE => ErrQueue),
-    (MSG_OOB => Oob),
-    (MSG_PEEK => Peek),
-    (MSG_TRUNC => Trunc),
-    (MSG_WAITALL => WaitAll)
+bitflags!(
+    pub struct RecvFlags: c_int {
+        const CmsgCloexec = MSG_CMSG_CLOEXEC;
+        const DontWait = MSG_DONTWAIT;
+        const ErrQueue = MSG_ERRQUEUE;
+        const Oob = MSG_OOB;
+        const Peek = MSG_PEEK;
+        const Trunc = MSG_TRUNC;
+        const WaitAll = MSG_WAITALL;
+    }
 );
-gen_flag_set!(pub RecvFlagSet, RecvFlags: c_int);
 
-gen_enum!(pub SendFlags: c_int;
-    (MSG_CONFIRM => Confirm),
-    (MSG_DONTROUTE => DontRoute),
-    (MSG_DONTWAIT => DontWait),
-    (MSG_EOR => Eor),
-    (MSG_MORE => More),
-    (MSG_NOSIGNAL => NoSignal),
-    (MSG_OOB => Oob)
+bitflags!(
+    pub struct SendFlags: c_int {
+        const Confirm = MSG_CONFIRM;
+        const DontRoute = MSG_DONTROUTE;
+        const DontWait = MSG_DONTWAIT;
+        const Eor = MSG_EOR;
+        const More = MSG_MORE;
+        const NoSignal = MSG_NOSIGNAL;
+        const Oob = MSG_OOB;
+    }
 );
-gen_flag_set!(pub SendFlagSet, SendFlags: c_int);
 
-gen_enum!(pub BpfCommandFlags: u16;
-    (BPF_LD => LD),
-    (BPF_LDX => LDX),
-    (BPF_ST => ST),
-    (BPF_STX => STX),
-    (BPF_ALU => ALU),
-    (BPF_JMP => JMP),
-    (BPF_RET => RET),
-    (BPF_MISC => MISC),
+bitflags!(
+    pub struct BpfCommandFlags: u16 {
+        const LD = BPF_LD;
+        const LDX = BPF_LDX;
+        const ST = BPF_ST;
+        const STX = BPF_STX;
+        const ALU = BPF_ALU;
+        const JMP = BPF_JMP;
+        const RET = BPF_RET;
+        const MISC = BPF_MISC;
 
-    (BPF_W => W),
-    (BPF_H => H),
-    (BPF_B => B),
+        const W = BPF_W;
+        const H = BPF_H;
+        const B = BPF_B;
 
-    (BPF_IMM => IMM),
-    (BPF_ABS => ABS),
-    (BPF_IND => IND),
-    (BPF_MEM => MEM),
-    (BPF_LEN => LEN),
-    (BPF_MSH => MSH),
+        const IMM = BPF_IMM;
+        const ABS = BPF_ABS;
+        const IND = BPF_IND;
+        const MEM = BPF_MEM;
+        const LEN = BPF_LEN;
+        const MSH = BPF_MSH;
 
-    (BPF_ADD => ADD),
-    (BPF_SUB => SUB),
-    (BPF_MUL => MUL),
-    (BPF_DIV => DIV),
-    (BPF_OR => OR),
-    (BPF_AND => AND),
-    (BPF_LSH => LSH),
-    (BPF_RSH => RSH),
-    (BPF_NEG => NEG),
-    (BPF_MOD => MOD),
-    (BPF_XOR => XOR),
+        const ADD = BPF_ADD;
+        const SUB = BPF_SUB;
+        const MUL = BPF_MUL;
+        const DIV = BPF_DIV;
+        const OR = BPF_OR;
+        const AND = BPF_AND;
+        const LSH = BPF_LSH;
+        const RSH = BPF_RSH;
+        const NEG = BPF_NEG;
+        const MOD = BPF_MOD;
+        const XOR = BPF_XOR;
 
-    (BPF_JA => JA),
-    (BPF_JEQ => JEQ),
-    (BPF_JGT => JGT),
-    (BPF_JGE => JGE),
-    (BPF_JSET => JSET),
+        const JA = BPF_JA;
+        const JEQ = BPF_JEQ;
+        const JGT = BPF_JGT;
+        const JGE = BPF_JGE;
+        const JSET = BPF_JSET;
 
-    (BPF_K => K),
-    (BPF_X => X)
+        const K = BPF_K;
+        const X = BPF_X;
+    }
 );
-gen_flag_set!(pub BpfCommand, BpfCommandFlags: u16);
 
-gen_enum!(pub AddrInfoFlags: c_int;
-    (AI_ADDRCONFIG => AddrConfig),
-    (AI_ALL => All),
-    (AI_CANONNAME => CanonName),
-    (AI_NUMERICHOST => NumericHost),
-    (AI_NUMERICSERV => NumericServ),
-    (AI_PASSIVE => Passive),
-    (AI_V4MAPPED => V4Mapped)
+bitflags!(
+    pub struct AddrInfoFlags: c_int {
+        const AddrConfig = AI_ADDRCONFIG;
+        const All = AI_ALL;
+        const CanonName = AI_CANONNAME;
+        const NumericHost = AI_NUMERICHOST;
+        const NumericServ = AI_NUMERICSERV;
+        const Passive = AI_PASSIVE;
+        const V4Mapped = AI_V4MAPPED;
+    }
 );
-gen_flag_set!(pub AddrInfoFlagSet, AddrInfoFlags: c_int);

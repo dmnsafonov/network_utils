@@ -38,7 +38,7 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
         };
 
         let packet = make_packet(&packet_descr, *src.ip(), *dst.ip());
-        match sock.sendto(packet.packet(), dst, SendFlagSet::new()) {
+        match sock.sendto(packet.packet(), dst, SendFlags::empty()) {
             Ok(_) => (),
             Err(e) => {
                 if let Interrupted = *e.kind() {

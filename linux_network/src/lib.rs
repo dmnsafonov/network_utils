@@ -1,3 +1,4 @@
+#[macro_use] extern crate bitflags;
 #[cfg(feature = "async")] extern crate bytes;
 #[macro_use] extern crate error_chain;
 extern crate interfaces;

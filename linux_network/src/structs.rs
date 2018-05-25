@@ -2,8 +2,6 @@ use ::std::fmt::*;
 
 use ::libc::*;
 
-use ::numeric_enums::*;
-
 use ::errors::{ErrorKind, Result};
 use ::*;
 
@@ -76,12 +74,12 @@ impl icmp6_filter {
     }
 
     pub fn pass(&mut self, icmp_type: IcmpV6Type) {
-        let tp = icmp_type.to_num();
+        let tp = icmp_type.bits();
         self.icmp6_filt[tp as usize >> 5] &= !(1 << (tp & 31));
     }
 
     pub fn block(&mut self, icmp_type: IcmpV6Type) {
-        let tp = icmp_type.to_num();
+        let tp = icmp_type.bits();
         self.icmp6_filt[tp as usize >> 5] |= 1 << ((tp & 31));
     }
 }

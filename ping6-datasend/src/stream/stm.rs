@@ -174,9 +174,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 .filter(move |&(ref data, _)| {
                     let packet = parse_stream_server_packet(&data);
 
-                    packet.flags.test(StreamPacketFlags::Syn)
-                            && packet.flags.test(StreamPacketFlags::Ack)
-                            && !packet.flags.test(StreamPacketFlags::Fin)
+                    packet.flags.contains(StreamPacketFlags::Syn)
+                            && packet.flags.contains(StreamPacketFlags::Ack)
+                            && !packet.flags.contains(StreamPacketFlags::Fin)
                         && packet.seqno_start == packet.seqno_end
                         && packet.seqno_start == seqno.0
                 });
@@ -238,7 +238,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let fut = make_send_fut(
             &mut common,
-            StreamPacketFlags::Ack.into(),
+            StreamPacketFlags::Ack,
             &[],
             None
         );
@@ -308,7 +308,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 let mut common = state.take().common;
                 let send_fut = make_send_fut(
                     &mut common,
-                    StreamPacketFlags::Fin.into(),
+                    StreamPacketFlags::Fin,
                     &[],
                     None
                 );
@@ -354,9 +354,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 .filter(move |&(ref data, dst)| {
                     let packet = parse_stream_server_packet(&data);
 
-                    !packet.flags.test(StreamPacketFlags::Syn)
-                            && packet.flags.test(StreamPacketFlags::Ack)
-                            && packet.flags.test(StreamPacketFlags::Fin)
+                    !packet.flags.contains(StreamPacketFlags::Syn)
+                            && packet.flags.contains(StreamPacketFlags::Ack)
+                            && packet.flags.contains(StreamPacketFlags::Fin)
                         && packet.seqno_start == packet.seqno_end
                             && packet.seqno_start == seqno.0
                         && dst == cdst
@@ -404,7 +404,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let send_fut = make_send_fut(
             &mut common,
-            StreamPacketFlags::Ack.into(),
+            StreamPacketFlags::Ack,
             &[],
             None
         );
@@ -435,7 +435,7 @@ fn get_stream_config(config: &Config) -> &StreamConfig {
 
 fn make_send_fut<'a>(
     common: &mut StreamCommonState<'a>,
-    flags: StreamPacketFlagSet,
+    flags: StreamPacketFlags,
     payload: &[u8],
     override_seqno: Option<u16>
 ) -> futures::IpV6RawSocketSendtoFuture {
@@ -455,13 +455,13 @@ fn make_send_fut<'a>(
     common.sock.sendto(
         packet,
         dst,
-        SendFlagSet::new()
+        SendFlags::empty()
     )
 }
 
 fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
         -> futures::IpV6RawSocketSendtoFuture {
-    make_send_fut(common, StreamPacketFlags::Syn.into(), &[], None)
+    make_send_fut(common, StreamPacketFlags::Syn, &[], None)
 }
 
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
@@ -481,7 +481,7 @@ fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
                 recv_buf.reserve(mtu - len);
                 unsafe { recv_buf.advance_mut(mtu - len); }
             }
-            Some(sock.recvfrom(recv_buf.clone(), RecvFlagSet::new())
+            Some(sock.recvfrom(recv_buf.clone(), RecvFlags::empty())
                 .map_err(|e| e.into())
                 .map(move |x| (x, (sock, recv_buf, mtu)))
             )
@@ -508,9 +508,9 @@ fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
     make_recv_packets_stream(common)
         .filter(|&(ref packet_buff, _)| {
             let packet = parse_stream_server_packet(&packet_buff);
-            (packet.flags.test(StreamPacketFlags::Ack)
-                    || packet.flags.test(StreamPacketFlags::Fin))
-                && !packet.flags.test(StreamPacketFlags::Syn)
+            (packet.flags.contains(StreamPacketFlags::Ack)
+                    || packet.flags.contains(StreamPacketFlags::Fin))
+                && !packet.flags.contains(StreamPacketFlags::Syn)
         })
 }
 
@@ -591,7 +591,7 @@ fn make_data_send_fut<'s>(
 
     let fut = make_send_fut(
         &mut state.common,
-        StreamPacketFlagSet::new(),
+        StreamPacketFlags::empty(),
         &data,
         Some(seqno)
     );
@@ -654,7 +654,7 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
         let packet = parse_stream_server_packet(&packet_buff);
 
         let mut got_new_ack = false;
-        if packet.flags.test(StreamPacketFlags::WS) {
+        if packet.flags.contains(StreamPacketFlags::WS) {
             debug!("received WS+ACK for range [{}, {}]",
                 packet.seqno_start, packet.seqno_end);
             let win_range = IRange(window_start, window_end);

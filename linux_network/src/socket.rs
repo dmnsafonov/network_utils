@@ -8,8 +8,6 @@ use ::nix::sys::socket::{AddressFamily, SockType, socket};
 use ::pnet_packet::*;
 use ::pnet_packet::ipv6::*;
 
-use ::numeric_enums::*;
-
 use ::*;
 use ::errors::{Error, ErrorKind, Result, ResultExt};
 use ::util::*;
@@ -44,7 +42,7 @@ impl IpV6RawSocket {
         Ok(())
     }}
 
-    pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlagSet)
+    pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlags)
             -> Result<(&'a mut [u8], SocketAddrV6)> { unsafe {
         let mut addr: sockaddr_in6 = zeroed();
 
@@ -53,7 +51,7 @@ impl IpV6RawSocket {
             self.0,
             ref_to_mut_cvoid(buf),
             buf.len() as size_t,
-            flags.get(),
+            flags.bits(),
             as_sockaddr_mut(&mut addr),
             &mut addr_size
         ));
@@ -72,7 +70,7 @@ impl IpV6RawSocket {
         &mut self,
         buf: &[u8],
         addr: SocketAddrV6,
-        flags: SendFlagSet
+        flags: SendFlags
     ) -> Result<size_t> { unsafe {
         let addr_in = make_sockaddr_in6(addr);
         let addr_size = size_of_val(&addr_in) as socklen_t;
@@ -81,7 +79,7 @@ impl IpV6RawSocket {
             self.0,
             ref_to_cvoid(buf),
             buf.len() as size_t,
-            flags.get(),
+            flags.bits(),
             as_sockaddr(&addr_in),
             addr_size)) as size_t
         )
@@ -163,7 +161,7 @@ impl IpV6PacketSocket {
         Ok(ret)
     }
 
-    pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
+    pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlags)
             -> Result<(Ipv6, MacAddr)> { unsafe {
         let mut packet = MutableIpv6Packet::owned(vec![0; maxsize])
             .ok_or(ErrorKind::BufferTooSmall(maxsize))?;
@@ -174,7 +172,7 @@ impl IpV6PacketSocket {
             self.fd,
             ref_to_mut_cvoid(packet.packet_mut()),
             maxsize,
-            flags.get(),
+            flags.bits(),
             as_sockaddr_mut(&mut addr),
             &mut addr_size
         ));
@@ -186,7 +184,7 @@ impl IpV6PacketSocket {
             &mut self,
             packet: &Ipv6,
             dest: Option<MacAddr>,
-            flags: SendFlagSet
+            flags: SendFlags
     ) -> Result<size_t> { unsafe {
         let len = Ipv6Packet::packet_size(&packet);
         let mut buf = MutableIpv6Packet::owned(
@@ -208,7 +206,7 @@ impl IpV6PacketSocket {
             self.fd,
             ref_to_cvoid(buf.packet()),
             len as size_t,
-            flags.get(),
+            flags.bits(),
             as_sockaddr(&addr_ll),
             addr_size)) as size_t
         )
@@ -330,8 +328,8 @@ pub mod SockOpts {
                     let (_, ptr, len) = self.val.to_set_sock_opt_arg()?;
                     n1try!(::libc::setsockopt(
                         fd.as_raw_fd(),
-                        $level.to_num(),
-                        $opt.to_num(),
+                        $level.bits(),
+                        $opt.bits(),
                         ptr,
                         len
                     ));
@@ -434,7 +432,7 @@ pub mod futures {
         pub fn recvfrom_direct<'a>(
             &mut self,
             buf: &'a mut [u8],
-            flags: RecvFlagSet
+            flags: RecvFlags
         ) -> Result<(&'a mut [u8], SocketAddrV6)> {
             let mut poll_evented = self.0.lock().unwrap();
             let ready = Ready::readable();
@@ -458,7 +456,7 @@ pub mod futures {
             &mut self,
             buf: &[u8],
             addr: SocketAddrV6,
-            flags: SendFlagSet
+            flags: SendFlags
         ) -> Result<size_t> {
             let mut poll_evented = self.0.lock().unwrap();
 
@@ -480,7 +478,7 @@ pub mod futures {
         pub fn recvfrom(
             &mut self,
             buf: BytesMut,
-            flags: RecvFlagSet
+            flags: RecvFlags
         ) -> IpV6RawSocketRecvfromFuture {
             IpV6RawSocketRecvfromFuture::new(self.0.clone(), buf, flags)
         }
@@ -489,7 +487,7 @@ pub mod futures {
             &mut self,
             buf: Bytes,
             addr: SocketAddrV6,
-            flags: SendFlagSet
+            flags: SendFlags
         ) -> IpV6RawSocketSendtoFuture {
             IpV6RawSocketSendtoFuture::new(self.0.clone(), buf, addr, flags)
         }
@@ -510,14 +508,14 @@ pub mod futures {
     struct IpV6RawSocketRecvfromFutureState {
         sock: IpV6RawSocketPE,
         buf: BytesMut,
-        flags: RecvFlagSet
+        flags: RecvFlags
     }
 
     impl IpV6RawSocketRecvfromFuture {
         fn new(
             sock: IpV6RawSocketPE,
             buf: BytesMut,
-            flags: RecvFlagSet
+            flags: RecvFlags
         ) -> IpV6RawSocketRecvfromFuture {
             IpV6RawSocketRecvfromFuture(
                 Some(IpV6RawSocketRecvfromFutureState {
@@ -562,7 +560,7 @@ pub mod futures {
         sock: IpV6RawSocketPE,
         buf: Bytes,
         addr: SocketAddrV6,
-        flags: SendFlagSet
+        flags: SendFlags
     }
 
     impl IpV6RawSocketSendtoFuture {
@@ -570,7 +568,7 @@ pub mod futures {
             sock: IpV6RawSocketPE,
             buf: Bytes,
             addr: SocketAddrV6,
-            flags: SendFlagSet
+            flags: SendFlags
         ) -> IpV6RawSocketSendtoFuture {
             IpV6RawSocketSendtoFuture(
                 Some(IpV6RawSocketSendtoFutureState {
@@ -621,7 +619,7 @@ pub mod futures {
         pub fn recvpacket_direct(
             &mut self,
             maxsize: size_t,
-            flags: RecvFlagSet
+            flags: RecvFlags
         ) -> Result<(Ipv6, MacAddr)> {
             let mut poll_evented = self.0.lock().unwrap();
             let ready = Ready::readable();
@@ -645,7 +643,7 @@ pub mod futures {
             &mut self,
             packet: &Ipv6,
             dest: Option<MacAddr>,
-            flags: SendFlagSet
+            flags: SendFlags
         ) -> Result<size_t> {
             let mut poll_evented = self.0.lock().unwrap();
 
@@ -664,20 +662,27 @@ pub mod futures {
             }
         }
 
-        pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlagSet)
+        pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlags)
                 -> IpV6PacketSocketRecvpacketFuture {
-            IpV6PacketSocketRecvpacketFuture::new(self.0.clone(), maxsize,
-                flags)
+            IpV6PacketSocketRecvpacketFuture::new(
+                self.0.clone(),
+                maxsize,
+                flags
+            )
         }
 
         pub fn sendpacket<'a, 'b>(
             &'a mut self,
             packet: &'b Ipv6,
             dest: Option<MacAddr>,
-            flags: SendFlagSet
+            flags: SendFlags
         ) -> IpV6PacketSocketSendpacketFuture<'b> where 'a: 'b {
-            IpV6PacketSocketSendpacketFuture::new(self.0.clone(), packet, dest,
-                flags)
+            IpV6PacketSocketSendpacketFuture::new(
+                self.0.clone(),
+                packet,
+                dest,
+                flags
+            )
         }
     }
 
@@ -695,14 +700,14 @@ pub mod futures {
     struct IpV6PacketSocketRecvpacketFutureState {
         sock: IpV6PacketSocketPE,
         maxsize: size_t,
-        flags: RecvFlagSet
+        flags: RecvFlags
     }
 
     impl IpV6PacketSocketRecvpacketFuture {
         fn new(
             sock: IpV6PacketSocketPE,
             maxsize: size_t,
-            flags: RecvFlagSet
+            flags: RecvFlags
         ) -> IpV6PacketSocketRecvpacketFuture {
             IpV6PacketSocketRecvpacketFuture(
                 Some(IpV6PacketSocketRecvpacketFutureState {
@@ -738,7 +743,7 @@ pub mod futures {
         sock: IpV6PacketSocketPE,
         packet: &'a Ipv6,
         destination: Option<MacAddr>,
-        flags: SendFlagSet
+        flags: SendFlags
     }
 
     impl<'a> IpV6PacketSocketSendpacketFuture<'a> {
@@ -746,7 +751,7 @@ pub mod futures {
             sock: IpV6PacketSocketPE,
             packet: &'a Ipv6,
             destination: Option<MacAddr>,
-            flags: SendFlagSet
+            flags: SendFlags
         ) -> IpV6PacketSocketSendpacketFuture<'a> where 'b: 'a {
             IpV6PacketSocketSendpacketFuture(
                 Some(IpV6PacketSocketSendpacketFutureState {

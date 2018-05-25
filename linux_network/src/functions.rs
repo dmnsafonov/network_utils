@@ -6,8 +6,6 @@ use ::std::os::unix::prelude::*;
 use ::libc::*;
 use ::nix::sys::socket::SockType;
 
-use ::numeric_enums::*;
-
 use ::*;
 use ::raw::*;
 use ::errors::*;
@@ -31,18 +29,18 @@ pub mod raw {
     ioctl!(get_interface_mtu; SIOCGIFMTU; ifreq);
 }
 
-pub fn get_securebits() -> Result<SecBitSet> { unsafe {
+pub fn get_securebits() -> Result<SecBits> { unsafe {
     Ok(
-        SecBitSet::from_num(
+        SecBits::from_bits(
             n1try!(
                 prctl(PR_GET_SECUREBITS)
             )
-        )
+        ).expect("valid secure bits")
     )
 }}
 
-pub fn set_securebits(bits: SecBitSet) -> Result<()> { unsafe {
-    n1try!(prctl(PR_SET_SECUREBITS, bits.get() as c_ulong));
+pub fn set_securebits(bits: SecBits) -> Result<()> { unsafe {
+    n1try!(prctl(PR_SET_SECUREBITS, bits.bits() as c_ulong));
     Ok(())
 }}
 
@@ -62,9 +60,12 @@ pub fn drop_supplementary_groups() -> Result<()> { unsafe {
     Ok(())
 }}
 
-pub fn umask(mask: UmaskPermissionSet)
-        -> Result<UmaskPermissionSet> { unsafe {
-    Ok(UmaskPermissionSet::from_num(::libc::umask(mask.get())))
+pub fn umask(mask: UmaskPermissions)
+        -> Result<UmaskPermissions> { unsafe {
+    Ok(
+        UmaskPermissions::from_bits(::libc::umask(mask.bits()))
+            .expect("valid umask bits")
+    )
 }}
 
 pub fn fcntl_lock_fd<F>(fd: &mut F) -> Result<()>
@@ -131,13 +132,13 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
     socktype: Option<SockType>,
     proto: c_int,
     port: in_port_t,
-    flags: AddrInfoFlagSet
+    flags: AddrInfoFlags
 ) -> Result<sockaddr_in6> where T: AsRef<str> { unsafe {
     let mut ai: addrinfo = zeroed();
     ai.ai_family = AF_INET6;
     ai.ai_socktype = socktype.map(|x| x as c_int).unwrap_or(0);
     ai.ai_protocol = proto;
-    ai.ai_flags = flags.get();
+    ai.ai_flags = flags.bits();
 
     let mut res: *mut addrinfo = null_mut();
 
@@ -172,24 +173,24 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
 }}
 
 fn get_fd_flags<F>(fd: &F)
-        -> Result<FileOpenFlagSet> where F: AsRawFd + ?Sized { unsafe {
+        -> Result<FileOpenFlags> where F: AsRawFd + ?Sized { unsafe {
     Ok(
-        FileOpenFlagSet::from_num(
+        FileOpenFlags::from_bits(
             n1try!(
                 fcntl(fd.as_raw_fd(), F_GETFL)
             )
-        )
+        ).expect("valid open file flags")
     )
 }}
 
-fn set_fd_flags<F>(fd: &F, flags: FileOpenFlagSet)
+fn set_fd_flags<F>(fd: &F, flags: FileOpenFlags)
         -> Result<()> where F: AsRawFd + ?Sized { unsafe {
-    n1try!(fcntl(fd.as_raw_fd(), F_SETFL, flags.get()));
+    n1try!(fcntl(fd.as_raw_fd(), F_SETFL, flags.bits()));
     Ok(())
 }}
 
 pub fn get_fd_nonblock<F>(fd: &F) -> Result<bool> where F: AsRawFd + ?Sized {
-    Ok(get_fd_flags(fd)?.test(FileOpenFlags::Nonblock))
+    Ok(get_fd_flags(fd)?.contains(FileOpenFlags::Nonblock))
 }
 
 gen_boolean_enum!(pub Nonblock);
@@ -204,5 +205,5 @@ pub fn set_fd_nonblock<F>(fd: &F, nonblock: Nonblock)
     if flags != new_flags {
         set_fd_flags(fd, new_flags)?;
     }
-    Ok(flags.test(FileOpenFlags::Nonblock))
+    Ok(flags.contains(FileOpenFlags::Nonblock))
 }

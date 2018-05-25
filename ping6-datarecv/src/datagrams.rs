@@ -30,7 +30,7 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
         }
 
         let (buf, sockaddr) =
-            match sock.recvfrom(&mut raw_buf, RecvFlagSet::new()) {
+            match sock.recvfrom(&mut raw_buf, RecvFlags::empty()) {
                 x@Ok(_) => x,
                 Err(e) => {
                     if let Interrupted = *e.kind() {

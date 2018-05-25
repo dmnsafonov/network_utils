@@ -51,7 +51,7 @@ impl Future for AckSender {
 
             if self.send_fut.is_none() {
                 if let Some(IRange(l,r)) = self.ranges_to_send.pop_front() {
-                    let mut flags = StreamPacketFlags::Ack.into();
+                    let mut flags = StreamPacketFlags::Ack;
                     if self.set_ws_packet {
                         flags |= StreamPacketFlags::WS;
                         self.set_ws_packet = false;

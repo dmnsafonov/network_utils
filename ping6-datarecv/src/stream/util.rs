@@ -13,7 +13,7 @@ pub fn make_send_fut_raw<'a>(
     mut send_buf: &mut BytesMut,
     src: Ipv6Addr,
     dst: SocketAddrV6,
-    flags: StreamPacketFlagSet,
+    flags: StreamPacketFlags,
     seqno_start: u16,
     seqno_end: u16,
     payload: &[u8]
@@ -31,14 +31,14 @@ pub fn make_send_fut_raw<'a>(
     sock.sendto(
         packet,
         dst,
-        SendFlagSet::new()
+        SendFlags::empty()
     )
 }
 
 pub fn make_send_fut<'a>(
     common: &mut ::stream::stm::StreamCommonState<'a>,
     dst: SocketAddrV6,
-    flags: StreamPacketFlagSet,
+    flags: StreamPacketFlags,
     seqno_start: u16,
     seqno_end: u16,
     payload: &[u8]

@@ -134,7 +134,7 @@ fn the_main(config: &Config) -> Result<()> {
     }
 
     if config.daemonize {
-        umask(UmaskPermissionSet::new()).map_err(SyncFailure::new)?;
+        umask(UmaskPermissions::empty()).map_err(SyncFailure::new)?;
         create_pid_file(&config.pid_file)?;
     }
 
@@ -186,17 +186,17 @@ fn create_pid_file<T>(pid_filename: T) -> Result<()>
     let mut pid_file = OpenOptions::new()
         .write(true)
         .create(true)
-        .mode(PermissionSet::new()
-            .set(Permissions::UserRead)
-            .set(Permissions::UserWrite)
-            .set(Permissions::GroupRead)
-            .set(Permissions::OtherRead)
-            .get())
-        .custom_flags(FileOpenFlagSet::new()
-            .set(FileOpenFlags::CloseOnExec)
-            .set(FileOpenFlags::NoFollow)
-            .get())
-        .open(pid_filename)
+        .mode(
+            (Permissions::UserRead
+            | Permissions::UserWrite
+            | Permissions::GroupRead
+            | Permissions::OtherRead
+            ).bits()
+        ).custom_flags(
+            (FileOpenFlags::CloseOnExec
+            | FileOpenFlags::NoFollow
+            ).bits()
+        ).open(pid_filename)
         .map_err(&err_arg)?;
 
     lock_file(&mut pid_file, &pid_filename_str)?;
@@ -228,20 +228,20 @@ fn lock_file<T>(file: &mut File, filename: T) -> Result<()>
 fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     use capabilities::*;
 
-    let bits = SecBitSet::new()
-        .set(SecBit::NoSetuidFixup)
-        .set(SecBit::NoSetuidFixupLocked)
-        .set(SecBit::NoRoot)
-        .set(SecBit::NoRootLocked)
-        .set(SecBit::NoCapAmbientRaise)
-        .set(SecBit::NoCapAmbientRaiseLocked);
+    let mut bits =
+        SecBits::NoSetuidFixup
+        | SecBits::NoSetuidFixupLocked
+        | SecBits::NoRoot
+        | SecBits::NoRootLocked
+        | SecBits::NoCapAmbientRaise
+        | SecBits::NoCapAmbientRaiseLocked;
     set_securebits(bits).map_err(SyncFailure::new)?;
 
     drop_supplementary_groups().map_err(SyncFailure::new)?;
     debug!("dropped supplementary groups");
     if let Some(ref su) = *su {
         let bits = get_securebits().map_err(SyncFailure::new)?
-            .set(SecBit::KeepCaps);
+            | SecBits::KeepCaps;
         set_securebits(bits).map_err(SyncFailure::new)?;
 
         switch::set_current_gid(su.gid).map_err(Error::PrivDrop)?;
@@ -251,11 +251,10 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
         warn!("consider changing user with \"su = user:group\" option");
     }
 
-    let bits = bits
-        .clear(SecBit::KeepCaps)
-        .set(SecBit::KeepCapsLocked);
+    bits.remove(SecBits::KeepCaps);
+    bits.insert(SecBits::KeepCapsLocked);
     set_securebits(bits).map_err(SyncFailure::new)?;
-    debug!("securebits set to 0b{:b}", bits.get());
+    debug!("securebits set to 0b{:?}", bits);
 
     set_no_new_privs().map_err(SyncFailure::new)?;
     debug!("PR_SET_NO_NEW_PRIVS set");

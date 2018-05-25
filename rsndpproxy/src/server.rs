@@ -35,22 +35,22 @@ impl<'a> Server<'a> {
         use ::libc::*;
 
         use ::linux_network::raw::*;
-        use ::linux_network::BpfCommandFlags::*;
+        use ::linux_network::BpfCommandFlags as B;
 
         // TODO: process ipv6 extension headers properly
         let filter = bpf_filter!(
-            bpf_stmt!(LD | H | ABS, 12);
-            bpf_jump!(JMP | JEQ | K, ETHERTYPE_IPV6, 0, 5);
+            bpf_stmt!(B::LD | B::H | B::ABS, 12);
+            bpf_jump!(B::JMP | B::JEQ | B::K, ETHERTYPE_IPV6, 0, 5);
 
-            bpf_stmt!(LD | B | ABS, 20);
-            bpf_jump!(JMP | JEQ | K, IPPROTO_ICMPV6, 0, 3);
+            bpf_stmt!(B::LD | B::B | B::ABS, 20);
+            bpf_jump!(B::JMP | B::JEQ | B::K, IPPROTO_ICMPV6, 0, 3);
 
-            bpf_stmt!(LD | B | ABS, 54);
-            bpf_jump!(JMP | JEQ | K, ND_NEIGHBOR_SOLICIT, 0, 1);
+            bpf_stmt!(B::LD | B::B | B::ABS, 54);
+            bpf_jump!(B::JMP | B::JEQ | B::K, ND_NEIGHBOR_SOLICIT, 0, 1);
 
-            bpf_stmt!(RET | K, ::std::u32::MAX);
+            bpf_stmt!(B::RET | B::K, ::std::u32::MAX);
 
-            bpf_stmt!(RET | K, 0);
+            bpf_stmt!(B::RET | B::K, 0);
         );
 
         self.sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))

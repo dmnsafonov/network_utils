@@ -8,7 +8,7 @@ use ::pnet_packet::*;
 use ::ping6_datacommon::*;
 
 pub struct StreamServerPacket<'a> {
-    pub flags: StreamPacketFlagSet,
+    pub flags: StreamPacketFlags,
     pub seqno_start: u16,
     pub seqno_end: u16,
     pub payload: &'a [u8]
@@ -19,10 +19,10 @@ pub fn make_stream_client_icmpv6_packet(
     src: Ipv6Addr,
     dst: Ipv6Addr,
     seqno: u16,
-    flags: StreamPacketFlagSet,
+    flags: StreamPacketFlags,
     payload: &[u8]
 ) -> Bytes {
-    debug_assert!(!flags.test(StreamPacketFlags::WS));
+    debug_assert!(!flags.contains(StreamPacketFlags::WS));
 
     let targlen = STREAM_CLIENT_FULL_HEADER_SIZE + payload.len();
     let buflen = packet_buff.len();
@@ -45,7 +45,7 @@ pub fn make_stream_client_icmpv6_packet(
             let mut buf = [0;2];
 
             payload_buff[2] = !0;
-            payload_buff[3] = flags.get();
+            payload_buff[3] = flags.bits();
 
             BE::write_u16(&mut buf, seqno);
             payload_buff[4..=5].copy_from_slice(&buf);
@@ -73,9 +73,7 @@ pub fn parse_stream_server_packet<'a>(
         .expect("a valid length icmpv6 packet");
     let payload = packet.payload();
 
-    let flags = unsafe {
-        StreamPacketFlagSet::from_num(payload[3])
-    };
+    let flags = StreamPacketFlags::from_bits(payload[3]).unwrap();
 
     // satisfying the borrow checker
     let payload_ind = (&payload[7..=7]).as_ptr() as usize + 1

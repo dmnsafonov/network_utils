@@ -8,7 +8,7 @@ use ::pnet_packet::*;
 use ::ping6_datacommon::*;
 
 pub struct StreamClientPacket<'a> {
-    pub flags: StreamPacketFlagSet,
+    pub flags: StreamPacketFlags,
     pub seqno: u16,
     pub payload: &'a [u8]
 }
@@ -37,9 +37,7 @@ pub fn parse_stream_client_packet<'a>(
 pub fn parse_stream_client_packet_payload<'a>(
     payload: &'a [u8]
 ) -> StreamClientPacket<'a> {
-    let flags = unsafe {
-        StreamPacketFlagSet::from_num(payload[3])
-    };
+    let flags = StreamPacketFlags::from_bits(payload[3]).unwrap();
 
     StreamClientPacket {
         flags: flags,
@@ -54,7 +52,7 @@ pub fn make_stream_server_icmpv6_packet(
     dst: Ipv6Addr,
     seqno_start: u16,
     seqno_end: u16,
-    flags: StreamPacketFlagSet,
+    flags: StreamPacketFlags,
     payload: &[u8]
 ) -> Bytes {
     let targlen = STREAM_SERVER_FULL_HEADER_SIZE + payload.len();
@@ -78,7 +76,7 @@ pub fn make_stream_server_icmpv6_packet(
             let mut buf = [0;2];
 
             payload_buff[2] = !0;
-            payload_buff[3] = flags.get();
+            payload_buff[3] = flags.bits();
 
             BE::write_u16(&mut buf, seqno_start);
             payload_buff[4..=5].copy_from_slice(&buf);

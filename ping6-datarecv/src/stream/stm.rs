@@ -224,7 +224,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     let pass = {
                         let packet = parse_stream_client_packet(&data);
 
-                        if packet.flags == StreamPacketFlags::Ack.into()
+                        if packet.flags == StreamPacketFlags::Ack
                                 && packet.seqno == seqno.0 {
                             true
                         } else {
@@ -348,8 +348,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     seqno as u32 + 1);
 
                 seqno < window_size as usize
-                    && !packet.flags.test(StreamPacketFlags::Syn.into())
-                    && !packet.flags.test(StreamPacketFlags::Ack.into())
+                    && !packet.flags.contains(StreamPacketFlags::Syn)
+                    && !packet.flags.contains(StreamPacketFlags::Ack)
             }
         ));
 
@@ -443,7 +443,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     let pass = {
                         let packet = parse_stream_client_packet(&data);
 
-                        if packet.flags == StreamPacketFlags::Ack.into()
+                        if packet.flags == StreamPacketFlags::Ack
                                 && packet.seqno == seqno {
                             true
                         } else {
@@ -551,7 +551,7 @@ fn make_recv_packets_stream<'a>(
                 recv_buf.reserve(mtu - len);
                 unsafe { recv_buf.advance_mut(mtu - len); }
             }
-            Some(sock.recvfrom(recv_buf.take(), RecvFlagSet::new())
+            Some(sock.recvfrom(recv_buf.take(), RecvFlags::empty())
                 .map_err(|e| e.into())
                 .map(move |x| (x, (sock, recv_buf, mtu)))
             )
@@ -562,7 +562,7 @@ fn make_recv_packets_stream<'a>(
             Some((*src.ip(), *csrc.ip()))
         );
         let flags = parse_stream_client_packet(&x).flags;
-        if res && !flags.test(StreamPacketFlags::WS) {
+        if res && !flags.contains(StreamPacketFlags::WS) {
             debug!("valid packet received");
             true
         } else {
@@ -578,7 +578,7 @@ fn make_recv_first_syn(common: &mut StreamCommonState)
         .filter(|&(ref data, _)| {
             let packet = parse_stream_client_packet(&data);
 
-            let res = packet.flags == StreamPacketFlags::Syn.into();
+            let res = packet.flags == StreamPacketFlags::Syn;
             if !res {
                 debug!("not a SYN packet, dropping");
             }
@@ -650,7 +650,7 @@ fn poll_recv_stream(
             bail!(ErrorKind::MtuLessThanReal(data.len() as u16));
         }
 
-        if packet.flags.test(StreamPacketFlags::Fin) {
+        if packet.flags.contains(StreamPacketFlags::Fin) {
             if let Some(seqno) = state.fin_seqno {
                 if seqno != packet.seqno {
                     warn!("double FIN packet with different seqno");

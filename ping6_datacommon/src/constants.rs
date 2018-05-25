@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 mod raw {
     pub const STREAM_SYN: u8 = 128;
     pub const STREAM_ACK: u8 = 64;
@@ -7,15 +9,14 @@ mod raw {
 
 use self::raw::*;
 
-gen_enum!(pub StreamPacketFlags: u8;
-    (STREAM_SYN => Syn),
-    (STREAM_ACK => Ack),
-    (STREAM_FIN => Fin),
-    (STREAM_WS => WS)
+bitflags!(
+    pub struct StreamPacketFlags: u8 {
+        const Syn = STREAM_SYN;
+        const Ack = STREAM_ACK;
+        const Fin = STREAM_FIN;
+        const WS = STREAM_WS;
+    }
 );
-gen_flag_set!(pub StreamPacketFlagSet, StreamPacketFlags: u8);
-pub const ALL_STREAM_PACKET_FLAGS: u8
-    = STREAM_SYN | STREAM_ACK | STREAM_FIN | STREAM_WS;
 
 pub const IPV6_HEADER_SIZE: usize = 40;
 

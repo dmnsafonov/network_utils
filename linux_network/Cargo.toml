@@ -7,6 +7,7 @@ authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 async = ["bytes", "mio", "owning_ref", "tokio"]
 
 [dependencies]
+bitflags = "^1.0.3"
 boolean_enums = { path = "../boolean_enums" }
 bytes = { version = "^0.4.7", optional = true }
 error-chain = "^0.11.0"
