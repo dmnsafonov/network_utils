@@ -84,7 +84,9 @@ fn ifreq_with_ifname<T>(ifname: T) -> Result<ifreq> where
     let ifname_ref = ifname.as_ref();
     let ifname_bytes = ifname_ref.as_bytes();
     if ifname_bytes.len() >= IFNAMSIZ {
-        bail!(ErrorKind::IfNameTooLong(ifname_ref.to_string()));
+        bail!(Error::IfNameTooLong {
+            if_name: ifname_ref.to_string()
+        });
     }
     copy_nonoverlapping(ifname_bytes.as_ptr(),
         ifr.ifr_name.as_mut_ptr() as *mut u8,
@@ -151,12 +153,12 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
     if err != 0 {
         match err {
             EAI_SYSTEM => bail!(::std::io::Error::last_os_error()),
-            _ => bail!(ErrorKind::AddrError(
-                    addr_str.as_ref().to_string(),
-                    CStr::from_ptr(gai_strerror(err))
-                    .to_string_lossy()
-                    .into_owned()
-                ))
+            _ => bail!(Error::AddrError {
+                    addr: addr_str.as_ref().to_string(),
+                    explanation: CStr::from_ptr(gai_strerror(err))
+                        .to_string_lossy()
+                        .into_owned()
+                })
         }
     }
 

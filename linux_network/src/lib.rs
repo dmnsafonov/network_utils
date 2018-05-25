@@ -1,6 +1,8 @@
 #[macro_use] extern crate bitflags;
 #[cfg(feature = "async")] extern crate bytes;
-#[macro_use] extern crate error_chain;
+#[macro_use] extern crate enum_kinds_macros;
+extern crate enum_kinds_traits;
+#[macro_use] extern crate failure;
 extern crate interfaces;
 #[macro_use] extern crate log;
 #[cfg(feature = "async")] extern crate mio;
@@ -15,7 +17,6 @@ extern crate pnet_packet;
 
 #[macro_use] mod util;
 #[macro_use] pub mod bpf;
-pub mod epoll;
 pub mod errors;
 pub mod constants;
 pub mod functions;
@@ -33,10 +34,11 @@ pub mod futures {
     pub use socket::futures::*;
 }
 
+pub use enum_kinds_traits::ToKind;
+
 use nix::libc;
 
 pub use self::bpf::*;
-pub use self::epoll::*;
 pub use self::constants::*;
 pub use self::functions::*;
 pub use self::socket::*;

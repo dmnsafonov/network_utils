@@ -30,7 +30,7 @@ use std::process::exit;
 use std::os::unix::prelude::*;
 use std::rc::*;
 
-use failure::SyncFailure;
+use failure::ResultExt;
 use log::LogLevel::*;
 use nix::Errno;
 use nix::libc;
@@ -134,7 +134,7 @@ fn the_main(config: &Config) -> Result<()> {
     }
 
     if config.daemonize {
-        umask(UmaskPermissions::empty()).map_err(SyncFailure::new)?;
+        umask(UmaskPermissions::empty()).context("setting umask failed")?;
         create_pid_file(&config.pid_file)?;
     }
 
@@ -147,30 +147,7 @@ fn the_main(config: &Config) -> Result<()> {
 }
 
 fn serve_requests(config: &Config) -> Result<()> {
-    let signals = setup_signalfd()?;
-    let epoll = EPoll::new().map_err(SyncFailure::new)?;
-    epoll.borrow_mut().add(Rc::clone(&signals), EPOLLIN)
-        .map_err(SyncFailure::new)?;
-
-    let mut servers = HashMap::with_capacity(config.interfaces.len());
-    for i in &config.interfaces {
-        let s = Server::new(i, Rc::clone(&epoll))?;
-        servers.insert(s.as_raw_fd(), s);
-    }
-
-    for ev in &*epoll.borrow() {
-        let fd = ev.data() as RawFd;
-
-        if fd == signals.borrow().as_raw_fd() {
-            break; // TODO
-        }
-
-        let server = servers.get_mut(&fd).unwrap();
-
-        server.serve(ev.events());
-    }
-
-    Ok(())
+    unimplemented!()
 }
 
 fn create_pid_file<T>(pid_filename: T) -> Result<()>
@@ -212,14 +189,16 @@ fn create_pid_file<T>(pid_filename: T) -> Result<()>
 fn lock_file<T>(file: &mut File, filename: T) -> Result<()>
         where T: AsRef<str> {
     if let Err(he) = fcntl_lock_fd(file) {
-        match linux_network::errors::error_to_errno(&he)
-            .map(Errno::from_i32) {
-                Some(Errno::EACCES) | Some(Errno::EAGAIN) => {
-                    bail!(Error::AlreadyRunning {
-                        filename: filename.as_ref().to_string()
-                    });
-                },
-                _ => bail!(SyncFailure::new(he))
+        let errno = linux_network::errors::error_to_errno(
+            he.downcast_ref::<linux_network::errors::Error>().unwrap()
+        ).map(Errno::from_i32);
+        match errno {
+            Some(Errno::EACCES) | Some(Errno::EAGAIN) => {
+                bail!(Error::AlreadyRunning {
+                    filename: filename.as_ref().to_string()
+                });
+            },
+            _ => bail!(he)
         }
     }
     Ok(())
@@ -235,14 +214,23 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
         | SecBits::NoRootLocked
         | SecBits::NoCapAmbientRaise
         | SecBits::NoCapAmbientRaiseLocked;
-    set_securebits(bits).map_err(SyncFailure::new)?;
+    set_securebits(bits)
+        .map_err(|e| Error::SecurebitsError(
+            ::failure::Error::from(e).compat())
+        )?;
 
-    drop_supplementary_groups().map_err(SyncFailure::new)?;
+    drop_supplementary_groups().context("cannot drop supplementary groups")?;
     debug!("dropped supplementary groups");
     if let Some(ref su) = *su {
-        let bits = get_securebits().map_err(SyncFailure::new)?
+        let bits = get_securebits()
+                .map_err(|e| Error::SecurebitsError(
+                    ::failure::Error::from(e).compat())
+                )?
             | SecBits::KeepCaps;
-        set_securebits(bits).map_err(SyncFailure::new)?;
+        set_securebits(bits)
+            .map_err(|e| Error::SecurebitsError(
+                ::failure::Error::from(e).compat())
+            )?;
 
         switch::set_current_gid(su.gid).map_err(Error::PrivDrop)?;
         switch::set_current_uid(su.uid).map_err(Error::PrivDrop)?;
@@ -253,10 +241,13 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
 
     bits.remove(SecBits::KeepCaps);
     bits.insert(SecBits::KeepCapsLocked);
-    set_securebits(bits).map_err(SyncFailure::new)?;
+    set_securebits(bits)
+        .map_err(|e| Error::SecurebitsError(
+            ::failure::Error::from(e).compat())
+        )?;
     debug!("securebits set to 0b{:?}", bits);
 
-    set_no_new_privs().map_err(SyncFailure::new)?;
+    set_no_new_privs().context("cannot set NO_NEW_PRIVS")?;
     debug!("PR_SET_NO_NEW_PRIVS set");
 
     let mut caps = Capabilities::new().map_err(Error::PrivDrop)?;

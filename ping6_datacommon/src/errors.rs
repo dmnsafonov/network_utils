@@ -1,22 +1,13 @@
-error_chain!(
-    errors {
-        Priv {
-            description("privilege operation error (is cap_net_raw+p not set \
-                on the executable?)")
-        }
-    }
+use ::std::io;
 
-    foreign_links {
-        IoError(::std::io::Error);
-        NixError(::nix::Error);
-        Seccomp(::seccomp::SeccompError);
-        TimerError(::tokio_timer::Error);
-    }
+pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
-    links {
-        LinuxNetwork (
-            ::linux_network::errors::Error,
-            ::linux_network::errors::ErrorKind
-        );
-    }
-);
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "error polling timer")]
+    TimerError(#[cause] ::tokio_timer::Error),
+
+    #[fail(display = "privilege operation error (is cap_net_raw+p not set \
+        on the executable?)")]
+    Priv(#[cause] io::Error)
+}

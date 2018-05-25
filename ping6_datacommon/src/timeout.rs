@@ -63,7 +63,7 @@ impl<S,E> Stream for TimeoutResultStream<S> where
             },
             Err(e) => {
                 self.stream.take().unwrap();
-                Err(Error::from(e).into())
+                Err(Error::TimerError(e).into())
             }
         }
     }

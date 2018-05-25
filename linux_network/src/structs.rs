@@ -2,7 +2,7 @@ use ::std::fmt::*;
 
 use ::libc::*;
 
-use ::errors::{ErrorKind, Result};
+use ::errors::{Error, Result};
 use ::*;
 
 pub mod raw {
@@ -95,7 +95,7 @@ impl MacAddr {
     pub fn from_bytes<T>(x: T) -> Result<MacAddr> where T: AsRef<[u8]> {
         let s = x.as_ref();
         if s.len() != 6 {
-            bail!(ErrorKind::WrongSize);
+            bail!(Error::WrongSize);
         }
 
         let mut arr = [0; 6];

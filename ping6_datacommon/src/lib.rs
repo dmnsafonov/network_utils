@@ -1,7 +1,7 @@
 #[macro_use] extern crate bitflags;
 extern crate byteorder;
 extern crate capabilities;
-#[macro_use] extern crate error_chain;
+#[macro_use] extern crate failure;
 extern crate futures;
 #[macro_use] extern crate log;
 extern crate nix;
@@ -73,13 +73,15 @@ pub fn make_socket_addr<T>(addr_str: T, resolve: Resolve)
 }
 
 pub fn gain_net_raw() -> Result<()> {
-    let err = || ErrorKind::Priv;
     let mut caps = Capabilities::from_current_proc()
-        .chain_err(&err)?;
+        .map_err(Error::Priv)?;
     if !caps.update(&[Capability::CAP_NET_RAW], Flag::Effective, true) {
-        bail!(err());
+        bail!(Error::Priv(io::Error::new(
+            io::ErrorKind::Other,
+            "cannot update capset"
+        )));
     }
-    caps.apply().chain_err(err)?;
+    caps.apply().map_err(Error::Priv)?;
     debug!("gained CAP_NET_RAW");
     Ok(())
 }
@@ -87,7 +89,7 @@ pub fn gain_net_raw() -> Result<()> {
 pub fn drop_caps() -> Result<()> {
     Capabilities::new()?
         .apply()
-        .chain_err(|| ErrorKind::Priv)?;
+        .map_err(Error::Priv)?;
     debug!("dropped all capabilities");
     Ok(())
 }

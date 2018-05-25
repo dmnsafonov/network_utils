@@ -13,9 +13,9 @@ macro_rules! n1try {
             let err = ::std::io::Error::last_os_error();
             let oserr =  err.raw_os_error().unwrap() as c_int;
             if oserr == EINTR {
-                bail!(ErrorKind::Interrupted);
+                bail!(Error::Interrupted(err));
             } else if check_for_eagain(oserr) {
-                bail!(ErrorKind::Again);
+                bail!(Error::Again(err));
             } else {
                 bail!(err);
             }
@@ -30,7 +30,7 @@ macro_rules! try_async_val {
     ($e:expr) => (
         match $e {
             Err(e) => {
-                match *e.kind() {
+                match e.kind() {
                     Again => return Ok(Async::NotReady),
                     _ => return Err(e)
                 }
@@ -68,10 +68,20 @@ pub fn addr_from_segments(ad: &[u8; 16]) -> Ipv6Addr {
    )
 }
 
-pub fn log_if_err<T,E>(x: ::std::result::Result<T,E>)
-        where E: ::error_chain::ChainedError {
+pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
     if let Err(e) = x {
-        error!("{}", e.display_chain());
+        let mut out = String::new();
+
+        let mut first = true;;
+        for i in e.causes() {
+            if !first {
+                out += ": ";
+            }
+            out += &format!("{}", i);
+            first = false;
+        }
+
+        error!("{}", out);
     }
 }
 

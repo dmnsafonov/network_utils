@@ -9,7 +9,7 @@ use ::pnet_packet::*;
 use ::pnet_packet::ipv6::*;
 
 use ::*;
-use ::errors::{Error, ErrorKind, Result, ResultExt};
+use ::errors::{Error, Result};
 use ::util::*;
 
 pub use ::nix::sys::socket::SockFlag;
@@ -88,7 +88,7 @@ impl IpV6RawSocket {
 
 impl Drop for IpV6RawSocket {
     fn drop(&mut self) {
-        log_if_err(::nix::unistd::close(self.0).map_err(Error::from));
+        log_if_err(::nix::unistd::close(self.0).map_err(|e| e.into()));
     }
 }
 
@@ -125,10 +125,13 @@ impl IpV6PacketSocket {
             -> Result<IpV6PacketSocket> where
             T: AsRef<str> {
         let name = if_name.as_ref();
-        let err = || ErrorKind::NoInterface(name.to_string());
         let iface = ::interfaces::Interface::get_by_name(name)
-            .chain_err(&err)?
-            .ok_or(err())?;
+            .map_err(|e| Error::GetInterfaceError {
+                name: name.to_string(),
+                cause: e
+            })?.ok_or(Error::NoInterface {
+                name: name.to_string()
+            })?;
         let if_addr = MacAddr::from_bytes(iface.hardware_addr()?.as_bytes())?;
 
         let sock = socket(
@@ -164,7 +167,9 @@ impl IpV6PacketSocket {
     pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlags)
             -> Result<(Ipv6, MacAddr)> { unsafe {
         let mut packet = MutableIpv6Packet::owned(vec![0; maxsize])
-            .ok_or(ErrorKind::BufferTooSmall(maxsize))?;
+            .ok_or(Error::BufferTooSmall {
+                len: maxsize as usize
+            })?;
 
         let mut addr: sockaddr_ll = zeroed();
         let mut addr_size = size_of_val(&addr) as socklen_t;
@@ -215,7 +220,7 @@ impl IpV6PacketSocket {
 
 impl Drop for IpV6PacketSocket {
     fn drop(&mut self) {
-        log_if_err(::nix::unistd::close(self.fd).map_err(Error::from));
+        log_if_err(::nix::unistd::close(self.fd).map_err(|e| e.into()));
     }
 }
 
@@ -433,20 +438,23 @@ pub mod futures {
             &mut self,
             buf: &'a mut [u8],
             flags: RecvFlags
-        ) -> Result<(&'a mut [u8], SocketAddrV6)> {
+        ) -> std::result::Result<(&'a mut [u8], SocketAddrV6), Error> {
             let mut poll_evented = self.0.lock().unwrap();
             let ready = Ready::readable();
 
-            if let Async::NotReady = poll_evented.poll_read_ready(ready)? {
-                bail!(Again);
+            if let Async::NotReady = poll_evented.poll_read_ready(ready)
+                    .map_err(Error::TokioError)? {
+                return Err(make_again());
             }
 
             match poll_evented.get_mut().recvfrom(buf, flags) {
                 Err(e) => {
-                    if let Again = *e.kind() {
-                        poll_evented.clear_read_ready(ready)?;
+                    if let Again = e.downcast_ref::<Error>().unwrap().kind() {
+                        poll_evented.clear_read_ready(ready)
+                            .map_err(Error::TokioError)?;
                     }
-                    Err(e)
+                    let new_e: ::failure::Error = e.into();
+                    Err(Error::SocketError(new_e.compat()))
                 },
                 Ok(x) => Ok(x)
             }
@@ -457,19 +465,22 @@ pub mod futures {
             buf: &[u8],
             addr: SocketAddrV6,
             flags: SendFlags
-        ) -> Result<size_t> {
+        ) -> ::std::result::Result<size_t, Error> {
             let mut poll_evented = self.0.lock().unwrap();
 
-            if let Async::NotReady = poll_evented.poll_write_ready()? {
-                bail!(Again);
+            if let Async::NotReady = poll_evented.poll_write_ready()
+                    .map_err(Error::TokioError)? {
+                return Err(make_again());
             }
 
             match poll_evented.get_mut().sendto(buf, addr, flags) {
                 Err(e) => {
-                    if let Again = *e.kind() {
-                        poll_evented.clear_write_ready()?;
+                    if let Again = e.downcast_ref::<Error>().unwrap().kind() {
+                        poll_evented.clear_write_ready()
+                            .map_err(Error::TokioError)?;
                     }
-                    Err(e)
+                    let new_e: ::failure::Error = e.into();
+                    Err(Error::SocketError(new_e.compat()))
                 },
                 Ok(x) => Ok(x)
             }
@@ -620,20 +631,23 @@ pub mod futures {
             &mut self,
             maxsize: size_t,
             flags: RecvFlags
-        ) -> Result<(Ipv6, MacAddr)> {
+        ) -> ::std::result::Result<(Ipv6, MacAddr), Error> {
             let mut poll_evented = self.0.lock().unwrap();
             let ready = Ready::readable();
 
-            if let Async::NotReady = poll_evented.poll_read_ready(ready)? {
-                bail!(Again);
+            if let Async::NotReady = poll_evented.poll_read_ready(ready)
+                    .map_err(Error::TokioError)? {
+                return Err(make_again());
             }
 
             match poll_evented.get_mut().recvpacket(maxsize, flags) {
                 Err(e) => {
-                    if let Again = *e.kind() {
-                        poll_evented.clear_read_ready(ready)?;
+                    if let Again = e.downcast_ref::<Error>().unwrap().kind() {
+                        poll_evented.clear_read_ready(ready)
+                            .map_err(Error::TokioError)?;
                     }
-                    Err(e)
+                    let new_e: ::failure::Error = e.into();
+                    Err(Error::SocketError(new_e.compat()))
                 },
                 Ok(x) => Ok(x)
             }
@@ -644,19 +658,22 @@ pub mod futures {
             packet: &Ipv6,
             dest: Option<MacAddr>,
             flags: SendFlags
-        ) -> Result<size_t> {
+        ) -> ::std::result::Result<size_t, Error> {
             let mut poll_evented = self.0.lock().unwrap();
 
-            if let Async::NotReady = poll_evented.poll_write_ready()? {
-                bail!(Again);
+            if let Async::NotReady = poll_evented.poll_write_ready()
+                    .map_err(Error::TokioError)? {
+                return Err(make_again());
             }
 
             match poll_evented.get_mut().sendpacket(packet, dest, flags) {
                 Err(e) => {
-                    if let Again = *e.kind() {
-                        poll_evented.clear_write_ready()?;
+                    if let Again = e.downcast_ref::<Error>().unwrap().kind() {
+                        poll_evented.clear_write_ready()
+                            .map_err(Error::TokioError)?;
                     }
-                    Err(e)
+                    let new_e: ::failure::Error = e.into();
+                    Err(Error::SocketError(new_e.compat()))
                 },
                 Ok(x) => Ok(x)
             }
@@ -783,6 +800,13 @@ pub mod futures {
 
     impl SocketCommon for IpV6RawSocketAdapter {}
     impl SocketCommon for IpV6PacketSocketAdapter {}
+
+    fn make_again() -> Error {
+        Error::Again(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "request would block"
+        ))
+    }
 }
 
 unsafe fn as_sockaddr<T>(x: &T) -> &sockaddr {

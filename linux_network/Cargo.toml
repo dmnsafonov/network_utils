@@ -10,7 +10,9 @@ async = ["bytes", "mio", "owning_ref", "tokio"]
 bitflags = "^1.0.3"
 boolean_enums = { path = "../boolean_enums" }
 bytes = { version = "^0.4.7", optional = true }
-error-chain = "^0.11.0"
+enum-kinds-macros = "^0.1.1"
+enum-kinds-traits = "^0.1.0"
+failure = "^0.1.1"
 interfaces = "^0.0.3"
 log = "^0.3.8"
 mio = { version = "^0.6.12", optional = true }
