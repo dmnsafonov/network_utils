@@ -14,3 +14,32 @@ bpf_stmt!(B::RET | B::K, ::std::u32::MAX);
 
 bpf_stmt!(B::RET | B::K, 0);
 */
+
+use ::std::sync::{Arc, atomic::*};
+
+use ::tokio::prelude::*;
+
+use ::config::InterfaceConfig;
+
+pub struct Server {
+
+}
+
+impl Server {
+    pub fn new(
+        ifc: &InterfaceConfig,
+        fast_quit: Arc<AtomicBool>,
+        quit: Arc<AtomicBool>
+    ) -> Server {
+        unimplemented!()
+    }
+}
+
+impl Future for Server {
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        unimplemented!()
+    }
+}

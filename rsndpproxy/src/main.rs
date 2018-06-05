@@ -4,6 +4,7 @@ extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;
 #[macro_use] extern crate failure;
+extern crate futures;
 extern crate interfaces;
 extern crate ipnetwork;
 #[macro_use] extern crate log;
@@ -12,6 +13,9 @@ extern crate pnet_packet;
 extern crate serde;
 #[macro_use] extern crate serde_derive;
 extern crate syslog;
+extern crate tokio;
+extern crate tokio_timer;
+extern crate tokio_signal;
 extern crate toml;
 extern crate users;
 
@@ -22,21 +26,20 @@ mod errors;
 mod server;
 mod util;
 
-use std::cell::*;
-use std::collections::HashMap;
 use std::fs::*;
 use std::io;
 use std::process::exit;
 use std::os::unix::prelude::*;
-use std::rc::*;
+use std::sync::{Arc, atomic::*};
 
 use failure::ResultExt;
+use futures::future::poll_fn;
+use futures::prelude::*;
 use log::LogLevel::*;
 use nix::Errno;
 use nix::libc;
-use nix::sys::signal::*;
-use nix::sys::signalfd::*;
 use nix::unistd::*;
+use tokio_signal::unix as signal;
 use users::*;
 
 use linux_network::*;
@@ -69,7 +72,7 @@ fn early_main() -> Result<()> {
 
     setup_logging(&config)?;
 
-    log_if_err(the_main(&config));
+    log_if_err(the_main(config));
     Ok(())
 }
 
@@ -114,15 +117,17 @@ fn setup_logging(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn the_main(config: &Config) -> Result<()> {
+fn the_main(config: Config) -> Result<()> {
     info!("{} version {} started", crate_name!(), crate_version!());
+
+    let config = Arc::new(config);
 
     if log_enabled!(Debug) {
         debug!("verbose logging on");
         debug!("configuration read from {}",
             config.config_file.to_string_lossy());
         debug!("received configuration:");
-        for i in toml::to_string(&config)?.lines() {
+        for i in toml::to_string(&*config)?.lines() {
             debug!("\t{}", i);
         }
         debug!("daemonize is {}", if config.daemonize {"on"} else {"off"});
@@ -140,13 +145,59 @@ fn the_main(config: &Config) -> Result<()> {
 
     drop_privileges(&config.su)?;
 
-    serve_requests(&config)?;
+    let config_clone = config.clone();
+    tokio::run(poll_fn(move || {
+        setup_server(config_clone.clone()).map_err(|_| ())?;
+        Ok(Async::Ready(()))
+    }));
 
     info!("{} stopping", crate_name!());
     Ok(())
 }
 
-fn serve_requests(config: &Config) -> Result<()> {
+fn setup_server(config: Arc<Config>) -> Result<()> {
+    let fast_quit = Arc::new(AtomicBool::new(false));
+    let quit = Arc::new(AtomicBool::new(false));
+
+    handle_signals(fast_quit.clone(), quit.clone());
+    serve_requests(config, fast_quit, quit)?;
+    Ok(())
+}
+
+fn handle_signals(
+    fast_quit: Arc<AtomicBool>,
+    quit: Arc<AtomicBool>
+) {
+    let mut interrupted = signal::Signal::new(signal::SIGINT).flatten_stream();
+    let mut terminated = signal::Signal::new(signal::SIGTERM).flatten_stream();
+
+    tokio::spawn(poll_fn(move || {
+        if let Async::Ready(s) = terminated.poll().map_err(|_| ())? {
+            assert_eq!(s.unwrap(), signal::SIGTERM);
+            fast_quit.store(true, Ordering::Relaxed);
+            return Ok(Async::Ready(()));
+        }
+        Ok(Async::NotReady)
+    }));
+
+    tokio::spawn(poll_fn(move || {
+        if let Async::Ready(s) = interrupted.poll().map_err(|_| ())? {
+            assert_eq!(s.unwrap(), signal::SIGINT);
+            quit.store(true, Ordering::Relaxed);
+            return Ok(Async::Ready(()));
+        }
+        Ok(Async::NotReady)
+    }));
+}
+
+fn serve_requests(
+    config: Arc<Config>,
+    fast_quit: Arc<AtomicBool>,
+    quit: Arc<AtomicBool>
+) -> Result<()> {
+    for i in &config.interfaces {
+        tokio::spawn(Server::new(i, fast_quit.clone(), quit.clone()));
+    }
     unimplemented!()
 }
 
@@ -277,20 +328,4 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     // TODO: chroot, namespaces
 
     Ok(())
-}
-
-fn setup_signalfd() -> Result<Rc<RefCell<SignalFd>>> {
-    let mut signals = SigSet::empty();
-    signals.add(Signal::SIGHUP);
-    signals.add(Signal::SIGINT);
-    signals.add(Signal::SIGTERM);
-    signals.add(Signal::SIGQUIT);
-    signals.thread_block()?;
-    debug!("blocked signals");
-
-    signals.remove(Signal::SIGHUP);
-    let ret = SignalFd::with_flags(&signals, SFD_NONBLOCK)?;
-    debug!("set up signalfd");
-
-    Ok(Rc::new(RefCell::new(ret)))
 }

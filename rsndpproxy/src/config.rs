@@ -35,7 +35,10 @@ pub struct InterfaceConfig {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PrefixConfig {
     pub prefix: Ipv6Prefix,
-    #[serde(default)] pub router: bool
+    #[serde(default)] pub router: bool,
+    #[serde(rename = "reply-unconditionally")]
+    #[serde(default)]
+    pub reply_unconditionally: bool
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
