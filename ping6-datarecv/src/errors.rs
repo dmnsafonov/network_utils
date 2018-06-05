@@ -1,42 +1,44 @@
-error_chain!(
-    errors {
-        RecvBufferOverrunOnStart {
-            description("receive buffer space depleted before completing \
-                handshake")
-        }
+use ::std::io;
 
-        MtuLessThanReal(packet_size: u16) {
-            description("received packet greater then the assumed mtu")
-            display("Received packet larger than the assumed MTU ({}).  \
+pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
+
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "io error")]
+    IoError(#[cause] io::Error),
+
+    #[fail(display = "io error")]
+    LinuxNetworkError(#[cause] ::linux_network::errors::Error),
+
+    #[fail(display = "receive buffer space depleted before completing \
+        handshake")]
+    RecvBufferOverrunOnStart,
+
+    #[fail(display = "Received packet larger than the assumed MTU ({}).  \
                 Consider specifying the interface to listen on.  \
-                Default MTU is the safe guess of 1280.", packet_size)
-        }
+                Default MTU is the safe guess of 1280.", packet_size)]
+    MtuLessThanReal {
+        packet_size: u16
+    },
 
-        SpawnError {
-            description("failed to spawn task on the thread pool")
-        }
+    #[fail(display = "failed to spawn task on the thread pool")]
+    SpawnError,
 
-        TimedOut {
-            description("operation timed out")
-        }
+    #[fail(display = "operation timed out")]
+    TimedOut,
+
+    #[fail(display = "timer operation failed")]
+    TimerError(#[cause] ::tokio_timer::Error)
+}
+
+impl From<::linux_network::errors::Error> for Error {
+    fn from(err: ::linux_network::errors::Error) -> Error {
+        Error::LinuxNetworkError(err)
     }
+}
 
-    foreign_links {
-        AddrParseError(::std::net::AddrParseError);
-        IoError(::std::io::Error);
-        LogInit(::log::SetLoggerError);
-        Seccomp(::seccomp::SeccompError);
-        TimerError(::tokio_timer::Error);
+impl From<::tokio_timer::Error> for Error {
+    fn from(err: ::tokio_timer::Error) -> Error {
+        Error::TimerError(err)
     }
-
-    links {
-        LinuxNetwork (
-            ::linux_network::errors::Error,
-            ::linux_network::errors::ErrorKind
-        );
-        Ping6DataCommon (
-            ::ping6_datacommon::Error,
-            ::ping6_datacommon::ErrorKind
-        );
-    }
-);
+}

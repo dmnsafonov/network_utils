@@ -33,7 +33,10 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
             match sock.recvfrom(&mut raw_buf, RecvFlags::empty()) {
                 x@Ok(_) => x,
                 Err(e) => {
-                    if let Interrupted = *e.kind() {
+                    let err_opt =
+                        e.downcast_ref::<::linux_network::errors::Error>()
+                            .map(|x| x.kind());
+                    if let Some(Interrupted) = err_opt {
                         debug!("system call interrupted");
                         continue;
                     } else {

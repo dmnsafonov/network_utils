@@ -4,7 +4,7 @@ extern crate env_logger;
 #[macro_use] extern crate enum_extract;
 #[macro_use] extern crate enum_kinds_macros;
 extern crate enum_kinds_traits;
-#[macro_use] extern crate error_chain;
+#[macro_use] extern crate failure;
 #[macro_use] extern crate futures;
 extern crate libc;
 #[macro_use] extern crate log;
@@ -38,7 +38,20 @@ use errors::Result;
 use stream::stream_mode;
 use util::InitState;
 
-quick_main!(the_main);
+fn main() {
+    if let Err(e) = the_main() {
+        let mut first = true;;
+        for i in e.causes() {
+            if !first {
+                eprint!(": ");
+            }
+            eprint!("{}", i);
+            first = false;
+        }
+        eprintln!("");
+    }
+}
+
 fn the_main() -> Result<()> {
     let state = init()?;
 
