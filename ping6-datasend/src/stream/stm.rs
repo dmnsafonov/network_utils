@@ -18,12 +18,15 @@ use ::ping6_datacommon::*;
 use ::send_box::SendBox;
 
 use ::config::*;
-use ::errors::{Error, ErrorKind, Result};
+use ::errors::{Error, Result};
 use ::stdin_iterator::StdinBytesReader;
 use ::stream::buffers::*;
 use ::stream::packet::*;
 
-type StreamE<T> = ::futures::stream::Stream<Item = T, Error = Error>;
+type StreamE<T> = ::futures::stream::Stream<
+    Item = T,
+    Error = ::failure::Error
+>;
 
 // TODO: tune or make configurable
 const TMP_BUFFER_SIZE: usize = 64 * 1024;
@@ -111,7 +114,7 @@ pub enum StreamMachine<'s> {
     ConnectionTerminated(TerminationReason),
 
     #[state_machine_future(error)]
-    ErrorState(Error)
+    ErrorState(::failure::Error)
 }
 
 pub enum TerminationReason {
@@ -147,7 +150,7 @@ impl Deref for NextData {
 impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     fn poll_init_state<'a>(
         state: &'a mut RentToOwn<'a, InitState<'s>>
-    ) -> Poll<AfterInitState<'s>, Error> {
+    ) -> Poll<AfterInitState<'s>, ::failure::Error> {
         let mut common = state.take().common;
 
         let send_future = make_first_syn_future(&mut common);
@@ -160,7 +163,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_send_first_syn<'a>(
         state: &'a mut RentToOwn<'a, SendFirstSyn<'s>>
-    ) -> Poll<AfterSendFirstSyn<'s>, Error> {
+    ) -> Poll<AfterSendFirstSyn<'s>, ::failure::Error> {
         debug!("sending first SYN packet");
         let size = try_ready!(state.send.poll());
         debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
@@ -199,7 +202,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_wait_for_syn_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForSynAck<'s>>
-    ) -> Poll<AfterWaitForSynAck<'s>, Error> {
+    ) -> Poll<AfterWaitForSynAck<'s>, ::failure::Error> {
         debug!("waiting for SYN+ACK");
         let (data, dst) = match state.recv_stream.poll() {
             Err(e) => bail!(e),
@@ -215,7 +218,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     next_action: Some(st.recv_stream)
                 })
             }
-            Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
+            Ok(Async::Ready(None)) => bail!(Error::TimedOut)
         };
 
         let state = state.take();
@@ -252,7 +255,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_send_ack<'a>(
         state: &'a mut RentToOwn<'a, SendAck<'s>>
-    ) -> Poll<AfterSendAck<'s>, Error> {
+    ) -> Poll<AfterSendAck<'s>, ::failure::Error> {
         debug!("sending first ACK");
         let size = try_ready!(state.send_ack.poll());
         debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
@@ -282,7 +285,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_send_data<'a>(
         state: &'a mut RentToOwn<'a, SendData<'s>>
-    ) -> Poll<AfterSendData<'s>, Error> {
+    ) -> Poll<AfterSendData<'s>, ::failure::Error> {
         debug!("sending data");
 
         let mut activity = true;
@@ -325,21 +328,21 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_send_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, SendFinAck<'s>>
-    ) -> Poll<AfterSendFinAck<'s>, Error> {
+    ) -> Poll<AfterSendFinAck<'s>, ::failure::Error> {
         debug!("sending FIN+ACK");
         unimplemented!()
     }
 
     fn poll_wait_for_last_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
-    ) -> Poll<AfterWaitForLastAck<'s>, Error> {
+    ) -> Poll<AfterWaitForLastAck<'s>, ::failure::Error> {
         debug!("waiting for last ACK");
         unimplemented!()
     }
 
     fn poll_send_fin<'a>(
         state: &'a mut RentToOwn<'a, SendFin<'s>>
-    ) -> Poll<AfterSendFin<'s>, Error> {
+    ) -> Poll<AfterSendFin<'s>, ::failure::Error> {
         debug!("sending FIN");
         let size = try_ready!(state.send_fut.poll());
         debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
@@ -381,7 +384,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_wait_for_fin_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForFinAck<'s>>
-    ) -> Poll<AfterWaitForFinAck<'s>, Error> {
+    ) -> Poll<AfterWaitForFinAck<'s>, ::failure::Error> {
         debug!("waiting for FIN+ACK");
         match state.recv_stream.poll() {
             Err(e) => bail!(e),
@@ -397,7 +400,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     next_action: Some(st.recv_stream)
                 })
             }
-            Ok(Async::Ready(None)) => bail!(ErrorKind::TimedOut)
+            Ok(Async::Ready(None)) => bail!(Error::TimedOut)
         };
 
         let mut common = state.take().common;
@@ -417,7 +420,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
     fn poll_send_last_ack<'a>(
         state: &'a mut RentToOwn<'a, SendLastAck>
-    ) -> Poll<AfterSendLastAck, Error> {
+    ) -> Poll<AfterSendLastAck, ::failure::Error> {
         debug!("sending last ACK");
         let size = try_ready!(state.send_fut.poll());
         debug_assert_eq!(size, STREAM_CLIENT_FULL_HEADER_SIZE);
@@ -465,7 +468,10 @@ fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
 }
 
 fn make_recv_packets_stream<'a>(common: &mut StreamCommonState<'a>)
-        -> impl Stream<Item = (Bytes, SocketAddrV6), Error = Error> {
+        -> impl Stream<
+            Item = (Bytes, SocketAddrV6),
+            Error = ::failure::Error
+        > {
     let csrc = common.src;
     let cdst = common.dst;
     let mtu = common.mtu as usize;
@@ -504,7 +510,10 @@ fn make_connection_timeout_instant() -> Instant {
 }
 
 fn make_recv_ack_or_fin<'a>(common: &mut StreamCommonState<'a>)
-        -> impl Stream<Item = (Bytes, SocketAddrV6), Error = Error> {
+        -> impl Stream<
+            Item = (Bytes, SocketAddrV6),
+            Error = ::failure::Error
+        > {
     make_recv_packets_stream(common)
         .filter(|&(ref packet_buff, _)| {
             let packet = parse_stream_server_packet(&packet_buff);
@@ -714,7 +723,7 @@ fn poll_timeout(state: &mut SendData) -> Result<bool> {
     }
 
     if let Async::Ready(_) = state.connection_timeout.poll()? {
-        bail!(ErrorKind::TimedOut);
+        bail!(Error::TimedOut);
     }
 
     Ok(false)

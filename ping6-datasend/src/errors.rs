@@ -1,40 +1,48 @@
-error_chain!(
-    errors {
-        PayloadTooBig(size: usize) {
-            description("packet payload is too big")
-            display("packet payload size {} is too big", size)
-        }
+pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
-        SpawnError {
-            description("failed to spawn task on the thread pool")
-        }
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "ping6-data error")]
+    CommonLibError(#[cause] ::ping6_datacommon::errors::Error),
 
-        TimedOut {
-            description("operation timed out")
-        }
+    #[fail(display = "io error")]
+    LinuxNetworkError(#[cause] ::linux_network::errors::Error),
 
-        WrongLength(len: usize, exp: usize) {
-            description("message is smaller than the length specified")
-            display("message of length {} expected, {} bytes read", exp, len)
-        }
+    #[fail(display = "packet payload size {} is too big", size)]
+    PayloadTooBig {
+        size: usize
+    },
+
+    #[fail(display = "failed to spawn task on the thread pool")]
+    SpawnError,
+
+    #[fail(display = "operation timed out")]
+    TimedOut,
+
+    #[fail(display = "timer operation failed")]
+    TimerError(#[cause] ::tokio_timer::Error),
+
+    #[fail(display = "message of length {} expected, {} bytes read", exp, len)]
+    WrongLengthMessage {
+        len: usize,
+        exp: usize
     }
+}
 
-    foreign_links {
-        AddrParseError(::std::net::AddrParseError);
-        IoError(::std::io::Error);
-        LogInit(::log::SetLoggerError);
-        Seccomp(::seccomp::SeccompError);
-        TimerError(::tokio_timer::Error);
+impl From<::ping6_datacommon::errors::Error> for Error {
+    fn from(err: ::ping6_datacommon::errors::Error) -> Error {
+        Error::CommonLibError(err)
     }
+}
 
-    links {
-        LinuxNetwork (
-            ::linux_network::errors::Error,
-            ::linux_network::errors::ErrorKind
-        );
-        Ping6DataCommon (
-            ::ping6_datacommon::Error,
-            ::ping6_datacommon::ErrorKind
-        );
+impl From<::linux_network::errors::Error> for Error {
+    fn from(err: ::linux_network::errors::Error) -> Error {
+        Error::LinuxNetworkError(err)
     }
-);
+}
+
+impl From<::tokio_timer::Error> for Error {
+    fn from(err: ::tokio_timer::Error) -> Error {
+        Error::TimerError(err)
+    }
+}

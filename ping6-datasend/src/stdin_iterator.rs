@@ -7,15 +7,13 @@ use ::mio;
 use ::mio::*;
 use ::mio::event::Evented;
 use ::mio::unix::EventedFd;
-//use ::tokio_core::reactor::*;
-//use ::tokio_io::AsyncRead;
 use ::tokio::prelude::*;
 use ::tokio::reactor::*;
 
 use ::ping6_datacommon::*;
 use ::linux_network::*;
 
-use ::errors::{ErrorKind, Result};
+use ::errors::{Error, Result};
 
 pub struct StdinBytesIterator<'a> {
     tin: MovableIoLock<'a, io::Stdin>
@@ -44,7 +42,10 @@ impl<'a> Iterator for StdinBytesIterator<'a> {
         let mut buf = vec![0; len];
         match self.tin.read(&mut buf[..len]) {
             Ok(x) if x == len => (),
-            Ok(x) => return Some(Err(ErrorKind::WrongLength(x, len).into())),
+            Ok(x) => return Some(Err(Error::WrongLengthMessage {
+                len: len,
+                exp: x
+            }.into())),
             Err(e) => return Some(Err(e.into()))
         };
 

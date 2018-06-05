@@ -11,7 +11,7 @@ use ::linux_network::*;
 use ::ping6_datacommon::*;
 
 use ::config::*;
-use ::errors::{ErrorKind, Result};
+use ::errors::{Error, Result};
 use ::util::*;
 use ::stdin_iterator::*;
 
@@ -41,7 +41,9 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
         match sock.sendto(packet.packet(), dst, SendFlags::empty()) {
             Ok(_) => (),
             Err(e) => {
-                if let Interrupted = *e.kind() {
+                let err = e.downcast_ref::<::linux_network::errors::Error>()
+                    .map(|x| x.kind());
+                if let Some(Interrupted) = err {
                     info!("system call interrupted");
                     return Ok(true);
                 } else {
@@ -76,7 +78,9 @@ fn form_checked_payload<T>(payload: T)
     let b = payload.as_ref();
     let len = b.len();
     if len > ::std::u16::MAX as usize {
-        bail!(ErrorKind::PayloadTooBig(len));
+        bail!(Error::PayloadTooBig {
+            size: len
+        });
     }
 
     let checksum = ping6_data_checksum(b);

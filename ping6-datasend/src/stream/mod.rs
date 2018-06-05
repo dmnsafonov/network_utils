@@ -14,7 +14,7 @@ use ::linux_network::*;
 use ::ping6_datacommon::*;
 
 use ::config::*;
-use ::errors::{ErrorKind, Result};
+use ::errors::{Error, Result};
 use ::stdin_iterator::StdinBytesReader;
 use ::util::InitState;
 
@@ -84,6 +84,6 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
     }));
     debug!("protocol state machine spawned");
 
-    rt.shutdown_on_idle().wait().map_err(|_| ErrorKind::SpawnError)?;
+    rt.shutdown_on_idle().wait().map_err(|_| Error::SpawnError)?;
     Ok(())
 }
