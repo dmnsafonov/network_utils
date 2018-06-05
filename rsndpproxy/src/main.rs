@@ -196,9 +196,9 @@ fn serve_requests(
     quit: Arc<AtomicBool>
 ) -> Result<()> {
     for i in &config.interfaces {
-        tokio::spawn(Server::new(i, fast_quit.clone(), quit.clone()));
+        tokio::spawn(Server::new(i, fast_quit.clone(), quit.clone())?);
     }
-    unimplemented!()
+    Ok(())
 }
 
 fn create_pid_file<T>(pid_filename: T) -> Result<()>
