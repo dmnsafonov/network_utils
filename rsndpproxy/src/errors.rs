@@ -9,9 +9,6 @@ pub enum Error {
         filename: String
     },
 
-    #[fail(display = "privilege dropping error")]
-    PrivDrop(#[cause] io::Error),
-
     #[fail(display = "io error on file {}", name)]
     FileIo {
         name: String,
@@ -23,10 +20,14 @@ pub enum Error {
         name: String
     },
 
-    #[fail(display = "cannot get the mac address of the interface {}", if_name)]
+    #[fail(display = "cannot get the mac address of the interface {} ({})", if_name, expl)]
     NoMac {
-        if_name: String
+        if_name: String,
+        expl: String
     },
+
+    #[fail(display = "privilege dropping error")]
+    PrivDrop(#[cause] io::Error),
 
     #[fail(display = "setting securebits failed")]
     SecurebitsError(#[cause] ::failure::Compat<::failure::Error>)

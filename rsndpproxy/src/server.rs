@@ -33,7 +33,6 @@ impl Server {
             sock_raw
         )?;
 
-        sock.setsockopt(&SockOpts::BindToDevice::new(&ifc.name))?;
         sock.setsockopt(&SockOpts::DontRoute::new(&true))?;
         sock.setsockopt(&SockOpts::V6Only::new(&true))?;
 
