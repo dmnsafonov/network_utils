@@ -15,3 +15,6 @@ send ack immediately if what we are receiving is a retrans
 
 [ping6]
 now that rust has inclusive ranges, remove IRange
+
+[linux_network]
+move get_mtu to be a socket method
