@@ -1,8 +1,7 @@
 use ::std::ffi::OsString;
-use ::std::str::FromStr;
 
 use ::clap::{App, Arg};
-use ::ipnetwork::Ipv6Network;
+use ::ip_network::Ipv6Network;
 use ::libc::{uid_t, gid_t};
 use ::serde::*;
 use ::serde::de::Visitor;
@@ -32,50 +31,13 @@ pub struct InterfaceConfig {
     #[serde(rename = "prefix")] pub prefixes: Vec<PrefixConfig>
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PrefixConfig {
-    pub prefix: Ipv6Prefix,
+    pub prefix: Ipv6Network,
     #[serde(default)] pub router: bool,
     #[serde(rename = "reply-unconditionally")]
     #[serde(default)]
     pub reply_unconditionally: bool
-}
-
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Ipv6Prefix(Ipv6Network);
-
-impl Serialize for Ipv6Prefix {
-    fn serialize<S>(&self, serializer: S)
-            -> ::std::result::Result<S::Ok, S::Error>
-            where S: Serializer {
-        serializer.serialize_str(&format!("{}", self.0))
-    }
-}
-
-impl<'de> Deserialize<'de> for Ipv6Prefix {
-    fn deserialize<D>(deserializer: D)
-            -> ::std::result::Result<Ipv6Prefix, D::Error>
-            where D: Deserializer<'de> {
-        deserializer.deserialize_str(Ipv6PrefixVisitor)
-    }
-}
-
-struct Ipv6PrefixVisitor;
-impl<'de> Visitor<'de> for Ipv6PrefixVisitor {
-    type Value = Ipv6Prefix;
-
-    fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
-            -> ::std::fmt::Result {
-        formatter.write_str("an IPv6 prefix")
-    }
-
-    fn visit_str<E>(self, value: &str)
-            -> ::std::result::Result<Self::Value, E>
-            where E: ::serde::de::Error {
-        Ipv6Network::from_str(value)
-            .map(Ipv6Prefix)
-            .map_err(|e| E::custom(e))
-    }
 }
 
 #[derive(Clone, Debug)]

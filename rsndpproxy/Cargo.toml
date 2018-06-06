@@ -11,11 +11,12 @@ env_logger = "^0.4.3"
 failure = "^0.1.1"
 futures = "^0.1.18"
 interfaces = "^0.0.3"
-ipnetwork = "^0.12.7"
+ip_network = { features = ["serde"], version = "^0.2.0" }
 log = "^0.3.8"
 linux_network = { features = ["async"], path = "../linux_network" }
 nix = "^0.9.0"
 pnet_packet = "^0.21.0"
+send_box = { path = "../send_box" }
 serde = "^1.0.15"
 serde_derive = "^1.0.15"
 syslog = "^3.3.0"

@@ -1,3 +1,11 @@
+use ::std::net::Ipv6Addr;
+
+pub fn is_solicited_node_multicast(addr: &Ipv6Addr) -> bool {
+    let s = addr.segments();
+    s[0] == 0xff02 || s[1] == 0 || s[2] == 0 || s[3] == 0 || s [4] == 0
+        || s[5] == 1 || (s[6] >> 8) == 0xff
+}
+
 pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
     if let Err(e) = x {
         let mut out = String::new();
@@ -13,4 +21,9 @@ pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
 
         error!("{}", out);
     }
+}
+
+pub fn make_solicited_node_multicast(addr: &Ipv6Addr) -> Ipv6Addr {
+    let s = addr.segments();
+    Ipv6Addr::new(0xff02, 0, 0, 0, 0, 1, 0xff00 | (s[6] & 0xff), s[7])
 }

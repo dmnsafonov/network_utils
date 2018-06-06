@@ -1,19 +1,30 @@
+use ::std::net::Ipv6Addr;
 use ::std::sync::{Arc, atomic::*};
 
 use ::failure::ResultExt;
+use ::futures::stream::unfold;
+use ::pnet_packet::icmpv6::{Icmpv6Types, ndp::*};
 use ::tokio::prelude::*;
 
 use ::linux_network::{*, futures, futures::*};
 
-use ::config::InterfaceConfig;
+use ::config::*;
 use ::errors::{Error, Result};
+use ::packet::*;
+use ::util::make_solicited_node_multicast;
+use ::send_box::SendBox;
+
+type StreamE<T> = Stream<Item = T, Error = ::failure::Error>;
 
 pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,
+    input: SendBox<StreamE<Solicitation>>,
     fast_quit: Arc<AtomicBool>,
     quit: Arc<AtomicBool>,
     drop_allmulti: bool,
-    ifname: String
+    ifname: String,
+    mtu: usize,
+    prefixes: Arc<Vec<PrefixConfig>>
 }
 
 impl Server {
@@ -42,12 +53,21 @@ impl Server {
 
         let drop_allmulti = !sock.set_allmulti(true, &ifc.name)?;
 
+        let mtu = get_interface_mtu(&sock, &ifc.name)? as usize;
+
+        let prefixes = Arc::new(ifc.prefixes.clone());
+
         Ok(Server {
-            sock,
+            sock: sock.clone(),
+            input: unsafe { SendBox::new(Box::new(
+                Self::make_input_stream(sock, mtu, prefixes.clone())
+            )) },
             fast_quit,
             quit,
             drop_allmulti,
-            ifname: ifc.name.clone()
+            ifname: ifc.name.clone(),
+            mtu,
+            prefixes
         })
     }
 
@@ -71,6 +91,55 @@ impl Server {
 
             bpf_stmt!(B::RET | B::K, 0);
         )
+    }
+
+    fn make_input_stream(
+        sock: IpV6PacketSocketAdapter,
+        mtu: usize,
+        prefixes: Arc<Vec<PrefixConfig>>
+    ) -> impl Stream<
+        Item = Solicitation,
+        Error = ::failure::Error
+    > {
+        unfold((sock, mtu), move |(mut sock, mtu)| {
+            Some(sock.recvpacket(mtu, RecvFlags::empty())
+                .map(move |x| (x, (sock, mtu)))
+                .map_err(|e| e.into())
+            )
+        }).filter_map(move |packet| {
+            let solicit = match parse_solicitation(&packet.0.payload) {
+                Some(s) => s,
+                None => return None
+            };
+
+            for i in &*prefixes {
+                if i.prefix.contains(solicit.src) {
+                    return None;
+                }
+
+                if i.prefix.get_netmask() > 104 {
+                    let n_mask = i.prefix.get_netmask();
+                    let get_bits = |addr: &Ipv6Addr| -> u32 {
+                        let s = addr.segments();
+                        let last_bits = ((s[6] as u32 & 0xff) << 16)
+                            | s[7] as u32;
+                        last_bits >> (128 - n_mask)
+                    };
+
+                    let dst_bits = get_bits(&solicit.dst);
+                    let prefix_bits = get_bits(&i.prefix.get_network_address());
+                    if dst_bits != prefix_bits {
+                        return None;
+                    }
+                }
+
+                if !i.prefix.contains(solicit.target) {
+                    return None;
+                }
+            }
+
+            Some(solicit)
+        })
     }
 }
 
