@@ -1,4 +1,5 @@
 use ::std::ffi::OsString;
+use ::std::str::FromStr;
 
 use ::clap::{App, Arg};
 use ::ip_network::Ipv6Network;
@@ -24,7 +25,7 @@ pub struct Config {
     #[serde(rename = "interface")] pub interfaces: Vec<InterfaceConfig>
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct InterfaceConfig {
     pub name: String,
     #[serde(default = "DEFAULT_MAX_QUEUED")] pub max_queued: usize,
@@ -33,6 +34,8 @@ pub struct InterfaceConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PrefixConfig {
+    #[serde(serialize_with="serialize_ipnetwork")]
+    #[serde(deserialize_with="deserialize_ipnetwork")]
     pub prefix: Ipv6Network,
     #[serde(default)] pub router: bool,
     #[serde(rename = "reply-unconditionally")]
@@ -107,6 +110,36 @@ impl<'de> Visitor<'de> for SuTargetVisitor {
             uid: user.uid(),
             gid: group.gid()
         })
+    }
+}
+
+fn serialize_ipnetwork<S>(netw: &Ipv6Network, serializer: S)
+        -> ::std::result::Result<S::Ok, S::Error> where S: Serializer {
+    serializer.serialize_str(&format!("{}", netw))
+}
+
+fn deserialize_ipnetwork<'de, D>(deserializer: D)
+        -> ::std::result::Result<Ipv6Network, D::Error>
+        where D: Deserializer<'de> {
+    deserializer.deserialize_str(IpNetworkVisitor)
+}
+
+struct IpNetworkVisitor;
+impl<'de> Visitor<'de> for IpNetworkVisitor {
+    type Value = Ipv6Network;
+
+    fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
+            -> ::std::fmt::Result {
+        formatter.write_str("a IPv6 prefix")
+    }
+
+    fn visit_str<E>(self, value: &str)
+            -> ::std::result::Result<Self::Value, E>
+            where E: ::serde::de::Error {
+        Ipv6Network::from_str(value)
+            .map_err(|e|
+                E::custom(format!("not a valid IPv6 network prefix: {}", e))
+            )
     }
 }
 

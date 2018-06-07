@@ -38,20 +38,25 @@ impl Server {
             SockFlag::empty(),
             &ifc.name
         )?;
+        debug!("created raw socket");
 
         let mut sock = futures::IpV6PacketSocketAdapter::new(
             &::tokio::reactor::Handle::current(),
             sock_raw
         )?;
+        debug!("registered raw socket in the reactor");
 
         sock.setsockopt(&SockOpts::DontRoute::new(&true))?;
-        sock.setsockopt(&SockOpts::V6Only::new(&true))?;
+//        sock.setsockopt(&SockOpts::V6Only::new(&true))?;
 
         let filter = Self::create_filter();
         sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))?;
         sock.setsockopt(&SockOpts::LockFilter::new(&true))?;
 
+        debug!("packet filtration set");
+
         let drop_allmulti = !sock.set_allmulti(true, &ifc.name)?;
+        debug!("ensured allmulti is set on the interface");
 
         let mtu = get_interface_mtu(&sock, &ifc.name)? as usize;
 
@@ -159,6 +164,10 @@ impl Future for Server {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        unimplemented!()
+        debug!("receiving a solicitation");
+        let solicit = try_ready!(self.input.poll().map_err(|_| ()));
+        debug!("received a solicitation: {:?}", solicit);
+
+        Ok(Async::NotReady)
     }
 }

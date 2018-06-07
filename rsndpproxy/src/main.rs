@@ -4,7 +4,7 @@ extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;
 #[macro_use] extern crate failure;
-extern crate futures;
+#[macro_use] extern crate futures;
 extern crate interfaces;
 extern crate ip_network;
 #[macro_use] extern crate log;
@@ -35,7 +35,7 @@ use std::os::unix::prelude::*;
 use std::sync::{Arc, atomic::*};
 
 use failure::ResultExt;
-use futures::future::poll_fn;
+use futures::future::*;
 use futures::prelude::*;
 use log::LogLevel::*;
 use nix::Errno;
@@ -162,6 +162,8 @@ fn setup_server(config: Arc<Config>) -> Result<()> {
     let quit = Arc::new(AtomicBool::new(false));
 
     handle_signals(fast_quit.clone(), quit.clone());
+    debug!("signal handlers installed");
+
     serve_requests(config, fast_quit, quit)?;
     Ok(())
 }
@@ -198,7 +200,15 @@ fn serve_requests(
     quit: Arc<AtomicBool>
 ) -> Result<()> {
     for i in &config.interfaces {
-        tokio::spawn(Server::new(i, fast_quit.clone(), quit.clone())?);
+        let j = i.clone();
+        let fast_quit_clone = fast_quit.clone();
+        let quit_clone = quit.clone();
+        tokio::spawn(Server::new(
+            &j,
+            fast_quit_clone.clone(),
+            quit_clone.clone()
+        )?);
+        debug!("server for interface {} started", i.name);
     }
     Ok(())
 }
@@ -298,7 +308,7 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
         .map_err(|e| Error::SecurebitsError(
             ::failure::Error::from(e).compat())
         )?;
-    debug!("securebits set to 0b{:?}", bits);
+    debug!("securebits set to {:?}", bits);
 
     set_no_new_privs().context("cannot set NO_NEW_PRIVS")?;
     debug!("PR_SET_NO_NEW_PRIVS set");

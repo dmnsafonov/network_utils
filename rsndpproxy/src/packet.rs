@@ -9,6 +9,7 @@ use ::linux_network::MacAddr;
 
 use ::util::is_solicited_node_multicast;
 
+#[derive(Debug)]
 pub struct Solicitation {
     pub src: Ipv6Addr,
     pub dst: Ipv6Addr,
