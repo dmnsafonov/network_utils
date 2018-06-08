@@ -8,19 +8,23 @@ pub fn is_solicited_node_multicast(addr: &Ipv6Addr) -> bool {
 
 pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
     if let Err(e) = x {
-        let mut out = String::new();
-
-        let mut first = true;;
-        for i in e.causes() {
-            if !first {
-                out += ": ";
-            }
-            out += &format!("{}", i);
-            first = false;
-        }
-
-        error!("{}", out);
+        log_err(e);
     }
+}
+
+pub fn log_err(err: ::failure::Error) {
+    let mut out = String::new();
+
+    let mut first = true;;
+    for i in err.causes() {
+        if !first {
+            out += ": ";
+        }
+        out += &format!("{}", i);
+        first = false;
+    }
+
+    error!("{}", out);
 }
 
 pub fn make_solicited_node_multicast(addr: &Ipv6Addr) -> Ipv6Addr {

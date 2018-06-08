@@ -149,7 +149,7 @@ fn the_main(config: Config) -> Result<()> {
 
     let config_clone = config.clone();
     tokio::run(poll_fn(move || {
-        setup_server(config_clone.clone()).map_err(|_| ())?;
+        setup_server(config_clone.clone()).map_err(|e| log_err(e))?;
         Ok(Async::Ready(()))
     }));
 
@@ -175,23 +175,27 @@ fn handle_signals(
     let mut interrupted = signal::Signal::new(signal::SIGINT).flatten_stream();
     let mut terminated = signal::Signal::new(signal::SIGTERM).flatten_stream();
 
-    tokio::spawn(poll_fn(move || {
-        if let Async::Ready(s) = terminated.poll().map_err(|_| ())? {
-            assert_eq!(s.unwrap(), signal::SIGTERM);
-            fast_quit.store(true, Ordering::Relaxed);
-            return Ok(Async::Ready(()));
-        }
-        Ok(Async::NotReady)
-    }));
+    tokio::spawn(
+        poll_fn(move || {
+            if let Async::Ready(s) = terminated.poll()? {
+                assert_eq!(s.unwrap(), signal::SIGTERM);
+                fast_quit.store(true, Ordering::Relaxed);
+                return Ok(Async::Ready(()));
+            }
+            Ok(Async::NotReady)
+        }).map_err(|e| log_err(e))
+    );
 
-    tokio::spawn(poll_fn(move || {
-        if let Async::Ready(s) = interrupted.poll().map_err(|_| ())? {
-            assert_eq!(s.unwrap(), signal::SIGINT);
-            quit.store(true, Ordering::Relaxed);
-            return Ok(Async::Ready(()));
-        }
-        Ok(Async::NotReady)
-    }));
+    tokio::spawn(
+        poll_fn(move || {
+            if let Async::Ready(s) = interrupted.poll()? {
+                assert_eq!(s.unwrap(), signal::SIGINT);
+                quit.store(true, Ordering::Relaxed);
+                return Ok(Async::Ready(()));
+            }
+            Ok(Async::NotReady)
+        }).map_err(|e| log_err(e))
+    );
 }
 
 fn serve_requests(
@@ -203,11 +207,15 @@ fn serve_requests(
         let j = i.clone();
         let fast_quit_clone = fast_quit.clone();
         let quit_clone = quit.clone();
-        tokio::spawn(Server::new(
-            &j,
-            fast_quit_clone.clone(),
-            quit_clone.clone()
-        )?);
+        tokio::spawn(
+            result(
+                Server::new(
+                    &j,
+                    fast_quit_clone.clone(),
+                    quit_clone.clone()
+                ).map_err(|e| log_err(e))
+            ).flatten()
+        );
         debug!("server for interface {} started", i.name);
     }
     Ok(())

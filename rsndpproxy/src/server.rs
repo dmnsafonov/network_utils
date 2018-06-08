@@ -47,7 +47,6 @@ impl Server {
         debug!("registered raw socket in the reactor");
 
         sock.setsockopt(&SockOpts::DontRoute::new(&true))?;
-//        sock.setsockopt(&SockOpts::V6Only::new(&true))?;
 
         let filter = Self::create_filter();
         sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))?;
