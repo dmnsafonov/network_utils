@@ -1,5 +1,6 @@
 #![recursion_limit="128"]
 
+#[macro_use] extern crate bitflags;
 extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;
@@ -23,6 +24,7 @@ extern crate linux_network;
 extern crate send_box;
 
 mod config;
+mod constants;
 mod errors;
 mod packet;
 mod server;

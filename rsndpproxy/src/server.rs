@@ -111,7 +111,7 @@ impl Server {
                 .map_err(|e| e.into())
             )
         }).filter_map(move |packet| {
-            let solicit = match parse_solicitation(&packet.0.payload) {
+            let solicit = match Solicitation::parse(&packet.0.payload) {
                 Some(s) => s,
                 None => return None
             };
@@ -163,9 +163,11 @@ impl Future for Server {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        debug!("receiving a solicitation");
+        debug!("polling for a solicitation");
         let solicit = try_ready!(self.input.poll().map_err(|_| ()));
         debug!("received a solicitation: {:?}", solicit);
+
+        unimplemented!();
 
         Ok(Async::NotReady)
     }

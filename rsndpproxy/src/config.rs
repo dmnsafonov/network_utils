@@ -40,7 +40,10 @@ pub struct PrefixConfig {
     #[serde(default)] pub router: bool,
     #[serde(rename = "reply-unconditionally")]
     #[serde(default)]
-    pub reply_unconditionally: bool
+    pub reply_unconditionally: bool,
+    #[serde(rename = "override")]
+    #[serde(default)]
+    pub override_flag: bool
 }
 
 #[derive(Clone, Debug)]
