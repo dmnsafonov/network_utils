@@ -23,6 +23,7 @@ extern crate users;
 extern crate linux_network;
 extern crate send_box;
 
+mod broadcast;
 mod config;
 mod constants;
 mod errors;
@@ -34,7 +35,7 @@ use std::fs::*;
 use std::io;
 use std::process::exit;
 use std::os::unix::prelude::*;
-use std::sync::{Arc, atomic::*};
+use std::sync::Arc;
 
 use failure::ResultExt;
 use futures::future::*;
@@ -48,6 +49,8 @@ use users::*;
 
 use linux_network::*;
 use linux_network::Permissions;
+
+use broadcast::*;
 use config::*;
 use errors::{Error, Result};
 use server::*;
@@ -149,6 +152,10 @@ fn the_main(config: Config) -> Result<()> {
 
     drop_privileges(&config.su)?;
 
+    if config.interfaces.len() == 0 {
+        bail!("You must configure at least one interface.");
+    }
+
     let config_clone = config.clone();
     tokio::run(poll_fn(move || {
         setup_server(config_clone.clone()).map_err(|e| log_err(e))?;
@@ -159,68 +166,90 @@ fn the_main(config: Config) -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum QuitKind {
+    Fast, Normal
+}
+
 fn setup_server(config: Arc<Config>) -> Result<()> {
-    let fast_quit = Arc::new(AtomicBool::new(false));
-    let quit = Arc::new(AtomicBool::new(false));
+    let (quit_rx, quit_tx) = broadcaster(config.interfaces.len());
 
-    handle_signals(fast_quit.clone(), quit.clone());
-    debug!("signal handlers installed");
+    handle_signals(quit_tx);
+    handle_requests(&config.interfaces, quit_rx);
 
-    serve_requests(config, fast_quit, quit)?;
     Ok(())
 }
 
-fn handle_signals(
-    fast_quit: Arc<AtomicBool>,
-    quit: Arc<AtomicBool>
-) {
+fn handle_signals(mut sender: Sender<QuitKind>) {
     let mut interrupted = signal::Signal::new(signal::SIGINT).flatten_stream();
     let mut terminated = signal::Signal::new(signal::SIGTERM).flatten_stream();
 
+    let mut to_send = None;
+    let mut fast_quit_sent = false;
     tokio::spawn(
         poll_fn(move || {
-            if let Async::Ready(s) = terminated.poll()? {
-                assert_eq!(s.unwrap(), signal::SIGTERM);
-                fast_quit.store(true, Ordering::Relaxed);
-                return Ok(Async::Ready(()));
-            }
-            Ok(Async::NotReady)
-        }).map_err(|e| log_err(e))
-    );
+            let mut active = true;
+            while active {
+                active = false;
 
-    tokio::spawn(
-        poll_fn(move || {
-            if let Async::Ready(s) = interrupted.poll()? {
-                assert_eq!(s.unwrap(), signal::SIGINT);
-                quit.store(true, Ordering::Relaxed);
-                return Ok(Async::Ready(()));
+                if let Some(q) = to_send {
+                    if sender.start_send(q)?.is_ready() {
+                        debug!("sent a quit broadcast to workers");
+                        to_send.take();
+                        active = true;
+                    }
+                }
+
+                if !fast_quit_sent {
+                    if let Async::Ready(s) = interrupted.poll()
+                            .map_err(Error::SignalIOError)? {
+                        assert_eq!(s.unwrap(), signal::SIGINT);
+                        debug!("received SIGINT");
+                        to_send = Some(QuitKind::Normal);
+                        active = true;
+                    }
+                    if let Async::Ready(s) = terminated.poll()
+                            .map_err(Error::SignalIOError)? {
+                        assert_eq!(s.unwrap(), signal::SIGTERM);
+                        debug!("received SIGTERM");
+                        to_send = Some(QuitKind::Fast);
+                        fast_quit_sent = true;
+                        active = true;
+                    }
+                }
+
+                if !sender.are_receivers_present() {
+                    debug!("no signal broadcast readers, \
+                        the broadcast worker quitting");
+                    return Ok(Async::Ready(()));
+                }
             }
+
             Ok(Async::NotReady)
-        }).map_err(|e| log_err(e))
+        }).map_err(log_err)
     );
 }
 
-fn serve_requests(
-    config: Arc<Config>,
-    fast_quit: Arc<AtomicBool>,
-    quit: Arc<AtomicBool>
-) -> Result<()> {
-    for i in &config.interfaces {
-        let j = i.clone();
-        let fast_quit_clone = fast_quit.clone();
-        let quit_clone = quit.clone();
+fn handle_requests(interfaces: &[InterfaceConfig], quit: Receiver<QuitKind>) {
+    let mut quit = Some(quit);
+    for i in 0 .. interfaces.len() {
+        let j = interfaces[i].clone();
+        let quit_to_move =
+            if i == interfaces.len() - 1 {
+                quit.take().unwrap()
+            } else {
+                quit.clone().unwrap()
+            };
         tokio::spawn(
             result(
                 Server::new(
                     &j,
-                    fast_quit_clone.clone(),
-                    quit_clone.clone()
+                    quit_to_move
                 ).map_err(|e| log_err(e))
             ).flatten()
         );
-        debug!("server for interface {} started", i.name);
+        debug!("server for interface {} started", interfaces[i].name);
     }
-    Ok(())
 }
 
 fn create_pid_file<T>(pid_filename: T) -> Result<()>

@@ -32,8 +32,14 @@ pub enum Error {
     #[fail(display = "privilege dropping error")]
     PrivDrop(#[cause] io::Error),
 
+    #[fail(display = "error sending an internal message")]
+    QueueSendError,
+
     #[fail(display = "setting securebits failed")]
-    SecurebitsError(#[cause] ::failure::Compat<::failure::Error>)
+    SecurebitsError(#[cause] ::failure::Compat<::failure::Error>),
+
+    #[fail(display = "waiting for signal failed")]
+    SignalIOError(#[cause] io::Error)
 }
 
 impl From<::linux_network::errors::Error> for Error {

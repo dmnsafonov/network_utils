@@ -1,5 +1,5 @@
 use ::std::net::Ipv6Addr;
-use ::std::sync::{Arc, atomic::*};
+use ::std::sync::Arc;
 
 use ::failure::ResultExt;
 use ::futures::stream::unfold;
@@ -7,20 +7,21 @@ use ::pnet_packet::icmpv6::{Icmpv6Types, ndp::*};
 use ::tokio::prelude::*;
 
 use ::linux_network::{*, futures, futures::*};
+use ::send_box::SendBox;
 
+use ::broadcast::*;
 use ::config::*;
 use ::errors::{Error, Result};
 use ::packet::*;
-use ::util::make_solicited_node_multicast;
-use ::send_box::SendBox;
+use ::util::*;
 
 type StreamE<T> = Stream<Item = T, Error = ::failure::Error>;
 
 pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,
     input: SendBox<StreamE<Solicitation>>,
-    fast_quit: Arc<AtomicBool>,
-    quit: Arc<AtomicBool>,
+    quit: Receiver<::QuitKind>,
+    got_a_normal_quit: bool,
     drop_allmulti: bool,
     ifname: String,
     mtu: usize,
@@ -30,8 +31,7 @@ pub struct Server {
 impl Server {
     pub fn new(
         ifc: &InterfaceConfig,
-        fast_quit: Arc<AtomicBool>,
-        quit: Arc<AtomicBool>
+        quit: Receiver<::QuitKind>
     ) -> Result<Server> {
         let sock_raw = IpV6PacketSocket::new(
             ::linux_network::raw::ETHERTYPE_IPV6 as ::nix::libc::c_int,
@@ -66,8 +66,8 @@ impl Server {
             input: unsafe { SendBox::new(Box::new(
                 Self::make_input_stream(sock, mtu, prefixes.clone())
             )) },
-            fast_quit,
             quit,
+            got_a_normal_quit: false,
             drop_allmulti,
             ifname: ifc.name.clone(),
             mtu,
@@ -152,7 +152,9 @@ impl Drop for Server {
         if self.drop_allmulti {
             ::util::log_if_err(
                 self.sock.set_allmulti(false, &self.ifname)
-                    .context("").map_err(|e| e.into())
+                    .context("error returning allmilti flag to the previous \
+                        state")
+                    .map_err(|e| e.into())
             );
         }
     }
@@ -163,12 +165,28 @@ impl Future for Server {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        debug!("polling for a solicitation");
-        let solicit = try_ready!(self.input.poll().map_err(|_| ()));
-        debug!("received a solicitation: {:?}", solicit);
+        debug!("waiting for a solicitation");
 
-        unimplemented!();
+        let mut active = true;
+        loop {
+            active = false;
 
-        Ok(Async::NotReady)
+            if let Async::Ready(qk) = self.quit.poll()
+                    .map_err(|e| log_err(e.into()))? {
+                debug!("received a signal, quitting");
+                match qk.expect("a quit signal") {
+                    // the distinction will be important when implementing
+                    // querying the target network's interface
+                    ::QuitKind::Fast | ::QuitKind::Normal =>
+                        return Ok(Async::Ready(()))
+                }
+                active = true;
+            }
+
+            let solicit = try_ready!(self.input.poll().map_err(log_err));
+            debug!("received a solicitation: {:?}", solicit);
+
+            //unimplemented!();
+        }
     }
 }
