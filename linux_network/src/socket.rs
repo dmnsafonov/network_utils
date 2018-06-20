@@ -692,12 +692,12 @@ pub mod futures {
             )
         }
 
-        pub fn sendpacket<'a, 'b>(
-            &'a mut self,
-            packet: &'b Ipv6,
+        pub fn sendpacket(
+            &mut self,
+            packet: Ipv6,
             dest: Option<MacAddr>,
             flags: SendFlags
-        ) -> IpV6PacketSocketSendpacketFuture<'b> where 'a: 'b {
+        ) -> IpV6PacketSocketSendpacketFuture {
             IpV6PacketSocketSendpacketFuture::new(
                 self.0.clone(),
                 packet,
@@ -760,24 +760,24 @@ pub mod futures {
         }
     }
 
-    pub struct IpV6PacketSocketSendpacketFuture<'a>(
-        Option<IpV6PacketSocketSendpacketFutureState<'a>>
+    pub struct IpV6PacketSocketSendpacketFuture(
+        Option<IpV6PacketSocketSendpacketFutureState>
     );
 
-    struct IpV6PacketSocketSendpacketFutureState<'a> {
+    struct IpV6PacketSocketSendpacketFutureState {
         sock: IpV6PacketSocketPE,
-        packet: &'a Ipv6,
+        packet: Ipv6,
         destination: Option<MacAddr>,
         flags: SendFlags
     }
 
-    impl<'a> IpV6PacketSocketSendpacketFuture<'a> {
-        fn new<'b>(
+    impl IpV6PacketSocketSendpacketFuture {
+        fn new(
             sock: IpV6PacketSocketPE,
-            packet: &'a Ipv6,
+            packet: Ipv6,
             destination: Option<MacAddr>,
             flags: SendFlags
-        ) -> IpV6PacketSocketSendpacketFuture<'a> where 'b: 'a {
+        ) -> IpV6PacketSocketSendpacketFuture {
             IpV6PacketSocketSendpacketFuture(
                 Some(IpV6PacketSocketSendpacketFutureState {
                     sock: sock,
@@ -789,7 +789,7 @@ pub mod futures {
         }
     }
 
-    impl<'a> Future for IpV6PacketSocketSendpacketFuture<'a> {
+    impl Future for IpV6PacketSocketSendpacketFuture {
         type Item = size_t;
         type Error = Error;
 
@@ -798,8 +798,12 @@ pub mod futures {
                 let state = self.0.as_mut()
                     .expect("pending sendpacket future");
                 try_async!(IpV6PacketSocketAdapter(state.sock.clone())
-                    .sendpacket_direct(state.packet, state.destination.clone(),
-                        state.flags))
+                    .sendpacket_direct(
+                        &state.packet,
+                        state.destination.clone(),
+                        state.flags
+                    )
+                )
             };
             self.0.take();
             len

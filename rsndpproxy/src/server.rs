@@ -20,7 +20,7 @@ type StreamE<T> = Stream<Item = T, Error = ::failure::Error>;
 
 pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,
-    input: SendBox<StreamE<(Solicitation, Ipv6Network, Override)>>,
+    input: SendBox<StreamE<(Solicitation, Override)>>,
     quit: Receiver<::QuitKind>,
     got_a_normal_quit: bool,
     drop_allmulti: bool,
@@ -111,7 +111,7 @@ impl Server {
         prefixes: Arc<Vec<PrefixConfig>>,
         if_name: impl AsRef<str>
     ) -> impl Stream<
-        Item = (Solicitation, Ipv6Network, Override),
+        Item = (Solicitation, Override),
         Error = ::failure::Error
     > {
         unfold((sock, mtu), move |(mut sock, mtu)| {
@@ -157,14 +157,14 @@ impl Server {
                 Some((p, o)) => Some((solicit, p, o.into())),
                 None => None
             }
-        }).filter(|(solicit, prefix, _)| {
+        }).filter_map(|(solicit, prefix, override_flag)| {
             // validate type-specific solicitation features
 
             if is_solicited_node_multicast(&solicit.dst) {
                 // ll address resolution
 
                 if solicit.ll_addr_opt.is_none() {
-                    return false;
+                    return None;
                 }
 
                 if prefix.netmask() > 104 {
@@ -179,16 +179,16 @@ impl Server {
                     let dst_bits = get_bits(&solicit.dst);
                     let prefix_bits = get_bits(&prefix.network_address());
                     if dst_bits != prefix_bits {
-                        return false;
+                        return None;
                     }
                 }
             } else {
                 if !prefix.contains(solicit.dst) {
-                    return false;
+                    return None;
                 }
             }
 
-            true
+            Some((solicit, override_flag))
         })
     }
 }
@@ -230,7 +230,7 @@ impl Future for Server {
                 active = true;
             }
 
-            if let Async::Ready(Some((solicit, prefix, override_flag)))
+            if let Async::Ready(Some((solicit, override_flag)))
                     = self.input.poll().map_err(log_err)? {
                 debug!("received a solicitation: {:?}", solicit);
 
@@ -242,7 +242,15 @@ impl Future for Server {
                 };
                 let adv_packet = adv.solicited_to_ipv6(override_flag.into());
 
-                unimplemented!();
+                ::tokio::spawn(
+                    self.sock.sendpacket(
+                        adv_packet,
+                        Some(solicit.ll_addr_opt.unwrap()),
+                        SendFlags::empty()
+                    ).map(
+                        |_| ()
+                    ).map_err(|e| log_err(Error::LinuxNetworkError(e).into()))
+                );
 
                 active = true;
             }
