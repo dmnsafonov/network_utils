@@ -79,6 +79,9 @@ impl Advertisement {
 
 impl Solicitation {
     pub fn parse(data: impl AsRef<[u8]>) -> Option<Solicitation> {
+        // validates only the points required
+        // by https://tools.ietf.org/html/rfc4861#section-6.1.1
+
         let packet_opt = Ipv6Packet::new(data.as_ref());
         let (icmp_data, src, dst) =
             if packet_opt.is_some() {

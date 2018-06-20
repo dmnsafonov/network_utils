@@ -91,7 +91,6 @@ impl Server {
         use ::linux_network::raw::*;
         use ::nix::libc::*;
 
-        // TODO: expand to cover possible ipv6 options
         bpf_filter!(
             bpf_stmt!(B::LD | B::H | B::ABS, 12);
             bpf_jump!(B::JMP | B::JEQ | B::K, ETHERTYPE_IPV6, 0, 5);
@@ -186,6 +185,8 @@ impl Server {
                     }
                 }
             } else {
+                // neighbor reachability detection
+
                 if !prefix.contains(solicit.dst) {
                     return None;
                 }

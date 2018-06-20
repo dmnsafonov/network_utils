@@ -42,5 +42,5 @@ elif [[ "$1" == "kill" ]]; then
     killall -9 ping6-datasend
     killall -9 ping6-datarecv
 else
-    echo 'use setup, clean, send, recv or permissions'
+    echo 'use setup, clean, send, recv, permissions, or kill'
 fi
