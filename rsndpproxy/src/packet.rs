@@ -25,8 +25,10 @@ pub struct Solicitation {
     pub ll_addr_opt: Option<MacAddr>
 }
 
+gen_boolean_enum!(pub Override);
+
 impl Advertisement {
-    fn solicited_to_ipv6(&self, override_flag: bool) -> Ipv6 {
+    pub fn solicited_to_ipv6(&self, override_flag: Override) -> Ipv6 {
         let mut icmp_buff = vec![0; NEIGHBOR_ADVERT_SIZE
             + NEIGHBOR_ADVERT_LL_ADDR_OPTION_SIZE];
         {
@@ -36,12 +38,12 @@ impl Advertisement {
             icmp.set_icmpv6_type(Icmpv6Types::NeighborAdvert);
             icmp.set_icmpv6_code(Icmpv6Codes::NoCode);
             icmp.set_flags(match override_flag {
-                true => NdpAdvertFlags::Override,
-                false => NdpAdvertFlags::empty()
+                Override::Yes => NdpAdvertFlags::Override,
+                Override::No => NdpAdvertFlags::empty()
             }.bits());
             icmp.set_target_addr(self.target);
             match self.ll_addr_opt {
-                Some(mac) => icmp.set_options(&[NdpOption {
+                Some(ref mac) => icmp.set_options(&[NdpOption {
                     option_type: NdpOptionTypes::TargetLLAddr,
                     length: 1,
                     data: mac.as_bytes().to_vec()

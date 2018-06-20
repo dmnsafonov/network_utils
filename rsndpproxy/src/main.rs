@@ -1,6 +1,7 @@
 #![recursion_limit="128"]
 
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate boolean_enums;
 extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;

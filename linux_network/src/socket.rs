@@ -204,7 +204,7 @@ impl IpV6PacketSocket {
         addr_ll.sll_ifindex = self.if_index;
         addr_ll.sll_halen = 6;
         addr_ll.sll_addr[0..6].copy_from_slice(
-            dest.unwrap_or(self.macaddr).as_bytes()
+            dest.as_ref().unwrap_or(&self.macaddr).as_bytes()
         );
 
         Ok(n1try!(::libc::sendto(
@@ -216,6 +216,10 @@ impl IpV6PacketSocket {
             addr_size)) as size_t
         )
     }}
+
+    pub fn get_mac(&self) -> MacAddr {
+        self.macaddr.clone()
+    }
 }
 
 impl Drop for IpV6PacketSocket {
@@ -701,6 +705,10 @@ pub mod futures {
                 flags
             )
         }
+
+        pub fn get_mac(&self) -> MacAddr {
+            self.0.lock().unwrap().get_ref().get_mac()
+        }
     }
 
     impl AsRawFd for IpV6PacketSocketAdapter {
@@ -790,7 +798,7 @@ pub mod futures {
                 let state = self.0.as_mut()
                     .expect("pending sendpacket future");
                 try_async!(IpV6PacketSocketAdapter(state.sock.clone())
-                    .sendpacket_direct(state.packet, state.destination,
+                    .sendpacket_direct(state.packet, state.destination.clone(),
                         state.flags))
             };
             self.0.take();

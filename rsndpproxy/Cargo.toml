@@ -6,6 +6,7 @@ description = "Simple NDP proxy implementation, written in Rust."
 
 [dependencies]
 bitflags = "^1.0.3"
+boolean_enums = { path = "../boolean_enums" }
 capabilities = "^0.3.0"
 clap = "^2.26.2"
 env_logger = "^0.4.3"

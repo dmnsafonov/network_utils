@@ -1,8 +1,9 @@
 use ::std::net::Ipv6Addr;
-use ::std::sync::Arc;
+use ::std::sync::{Arc, atomic::*};
 
 use ::failure::ResultExt;
 use ::futures::stream::unfold;
+use ::ip_network::Ipv6Network;
 use ::pnet_packet::icmpv6::{Icmpv6Types, ndp::*};
 use ::tokio::prelude::*;
 
@@ -19,13 +20,14 @@ type StreamE<T> = Stream<Item = T, Error = ::failure::Error>;
 
 pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,
-    input: SendBox<StreamE<Solicitation>>,
+    input: SendBox<StreamE<(Solicitation, Ipv6Network, Override)>>,
     quit: Receiver<::QuitKind>,
     got_a_normal_quit: bool,
     drop_allmulti: bool,
     ifname: String,
     mtu: usize,
-    prefixes: Arc<Vec<PrefixConfig>>
+    prefixes: Arc<Vec<PrefixConfig>>,
+    queued_sends: Arc<AtomicUsize>
 }
 
 impl Server {
@@ -64,14 +66,20 @@ impl Server {
         Ok(Server {
             sock: sock.clone(),
             input: unsafe { SendBox::new(Box::new(
-                Self::make_input_stream(sock, mtu, prefixes.clone())
+                Self::make_input_stream(
+                    sock,
+                    mtu,
+                    prefixes.clone(),
+                    ifc.name.clone()
+                )
             )) },
             quit,
             got_a_normal_quit: false,
             drop_allmulti,
             ifname: ifc.name.clone(),
             mtu,
-            prefixes
+            prefixes,
+            queued_sends: Arc::new(AtomicUsize::new(0))
         })
     }
 
@@ -100,9 +108,10 @@ impl Server {
     fn make_input_stream(
         sock: IpV6PacketSocketAdapter,
         mtu: usize,
-        prefixes: Arc<Vec<PrefixConfig>>
+        prefixes: Arc<Vec<PrefixConfig>>,
+        if_name: impl AsRef<str>
     ) -> impl Stream<
-        Item = Solicitation,
+        Item = (Solicitation, Ipv6Network, Override),
         Error = ::failure::Error
     > {
         unfold((sock, mtu), move |(mut sock, mtu)| {
@@ -110,19 +119,56 @@ impl Server {
                 .map(move |x| (x, (sock, mtu)))
                 .map_err(|e| e.into())
             )
-        }).filter_map(move |packet| {
+        }).filter_map(move |packet| { // validate common solicitation features
             let solicit = match Solicitation::parse(&packet.0.payload) {
                 Some(s) => s,
                 None => return None
             };
 
+            let mut prefix = None;
             for i in &*prefixes {
                 if i.prefix.contains(solicit.src) {
+                    continue;
+                }
+
+                if !i.prefix.contains(solicit.target) {
+                    continue;
+                }
+
+                if solicit.src.is_unspecified() {
+                    warn!(
+                        "Duplicate address detection occurred \
+                            on interface {} for address {} (configured \
+                            prefix {}).  Part of the proxied subnet \
+                            is on the {} side!",
+                        if_name.as_ref(),
+                        solicit.src,
+                        i.prefix,
+                        if_name.as_ref()
+                    );
                     return None;
                 }
 
-                if i.prefix.get_netmask() > 104 {
-                    let n_mask = i.prefix.get_netmask();
+                prefix = Some((i.prefix.clone(), i.override_flag));
+                break;
+            }
+
+            match prefix {
+                Some((p, o)) => Some((solicit, p, o.into())),
+                None => None
+            }
+        }).filter(|(solicit, prefix, _)| {
+            // validate type-specific solicitation features
+
+            if is_solicited_node_multicast(&solicit.dst) {
+                // ll address resolution
+
+                if solicit.ll_addr_opt.is_none() {
+                    return false;
+                }
+
+                if prefix.netmask() > 104 {
+                    let n_mask = prefix.netmask();
                     let get_bits = |addr: &Ipv6Addr| -> u32 {
                         let s = addr.segments();
                         let last_bits = ((s[6] as u32 & 0xff) << 16)
@@ -131,18 +177,18 @@ impl Server {
                     };
 
                     let dst_bits = get_bits(&solicit.dst);
-                    let prefix_bits = get_bits(&i.prefix.get_network_address());
+                    let prefix_bits = get_bits(&prefix.network_address());
                     if dst_bits != prefix_bits {
-                        return None;
+                        return false;
                     }
                 }
-
-                if !i.prefix.contains(solicit.target) {
-                    return None;
+            } else {
+                if !prefix.contains(solicit.dst) {
+                    return false;
                 }
             }
 
-            Some(solicit)
+            true
         })
     }
 }
@@ -168,7 +214,7 @@ impl Future for Server {
         debug!("waiting for a solicitation");
 
         let mut active = true;
-        loop {
+        while active {
             active = false;
 
             if let Async::Ready(qk) = self.quit.poll()
@@ -177,16 +223,31 @@ impl Future for Server {
                 match qk.expect("a quit signal") {
                     // the distinction will be important when implementing
                     // querying the target network's interface
+                    // currently queued packets are purposefully omitted
                     ::QuitKind::Fast | ::QuitKind::Normal =>
                         return Ok(Async::Ready(()))
                 }
                 active = true;
             }
 
-            let solicit = try_ready!(self.input.poll().map_err(log_err));
-            debug!("received a solicitation: {:?}", solicit);
+            if let Async::Ready(Some((solicit, prefix, override_flag)))
+                    = self.input.poll().map_err(log_err)? {
+                debug!("received a solicitation: {:?}", solicit);
 
-            //unimplemented!();
+                let adv = Advertisement {
+                    src: solicit.target,
+                    dst: solicit.src,
+                    target: solicit.target,
+                    ll_addr_opt: Some(self.sock.get_mac())
+                };
+                let adv_packet = adv.solicited_to_ipv6(override_flag.into());
+
+                unimplemented!();
+
+                active = true;
+            }
         }
+
+        Ok(Async::NotReady)
     }
 }

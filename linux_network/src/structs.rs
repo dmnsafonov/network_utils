@@ -84,7 +84,7 @@ impl icmp6_filter {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct MacAddr([u8; 6]);
 
 impl MacAddr {
