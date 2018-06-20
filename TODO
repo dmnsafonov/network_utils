@@ -21,3 +21,9 @@ move get_mtu to be a socket method
 
 [all]
 error logging in spawned tasks
+
+[rsndpproxy]
+check configured prefixes for overlap
+
+[rsndpproxy]
+fix locking for everything in the sockets
