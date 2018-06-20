@@ -2,6 +2,7 @@ use ::std::net::Ipv6Addr;
 use ::std::sync::{Arc, atomic::*};
 
 use ::failure::ResultExt;
+use ::futures::future::poll_fn;
 use ::futures::stream::unfold;
 use ::ip_network::Ipv6Network;
 use ::pnet_packet::icmpv6::{Icmpv6Types, ndp::*};
@@ -27,7 +28,8 @@ pub struct Server {
     ifname: String,
     mtu: usize,
     prefixes: Arc<Vec<PrefixConfig>>,
-    queued_sends: Arc<AtomicUsize>
+    queued_sends: Arc<AtomicUsize>,
+    max_queued: usize
 }
 
 impl Server {
@@ -79,7 +81,8 @@ impl Server {
             ifname: ifc.name.clone(),
             mtu,
             prefixes,
-            queued_sends: Arc::new(AtomicUsize::new(0))
+            queued_sends: Arc::new(AtomicUsize::new(0)),
+            max_queued: ifc.max_queued
         })
     }
 
@@ -220,6 +223,7 @@ impl Future for Server {
             if let Async::Ready(qk) = self.quit.poll()
                     .map_err(|e| log_err(e.into()))? {
                 debug!("received a signal, quitting");
+                active = true;
                 match qk.expect("a quit signal") {
                     // the distinction will be important when implementing
                     // querying the target network's interface
@@ -227,12 +231,12 @@ impl Future for Server {
                     ::QuitKind::Fast | ::QuitKind::Normal =>
                         return Ok(Async::Ready(()))
                 }
-                active = true;
             }
 
             if let Async::Ready(Some((solicit, override_flag)))
                     = self.input.poll().map_err(log_err)? {
                 debug!("received a solicitation: {:?}", solicit);
+                active = true;
 
                 let adv = Advertisement {
                     src: solicit.target,
@@ -242,6 +246,20 @@ impl Future for Server {
                 };
                 let adv_packet = adv.solicited_to_ipv6(override_flag.into());
 
+                let queued_sends = self.queued_sends.clone();
+
+                let queued = queued_sends.fetch_add(1, Ordering::Relaxed);
+                if queued >= self.max_queued {
+                    warn!(
+                        "Maximum queued packet number ({}) \
+                            for interface {} exceeded.",
+                        self.max_queued,
+                        self.ifname
+                    );
+                    queued_sends.fetch_sub(1, Ordering::Relaxed);
+                    continue;
+                }
+
                 ::tokio::spawn(
                     self.sock.sendpacket(
                         adv_packet,
@@ -249,10 +267,12 @@ impl Future for Server {
                         SendFlags::empty()
                     ).map(
                         |_| ()
-                    ).map_err(|e| log_err(Error::LinuxNetworkError(e).into()))
+                    ).map_err(
+                        |e| log_err(Error::LinuxNetworkError(e).into())
+                    ).inspect(move |_| {
+                        queued_sends.fetch_sub(1, Ordering::Relaxed);
+                    })
                 );
-
-                active = true;
             }
         }
 
