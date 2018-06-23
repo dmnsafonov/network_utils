@@ -108,7 +108,7 @@ impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         self.inner.rx_tasks.write().unwrap()[self.id].take();
         let n_rx = self.inner.rx_count.fetch_sub(1, Ordering::Relaxed);
-        assert!(n_rx >= 1);
+        debug_assert!(n_rx >= 1);
         if n_rx == 1 {
             self.notify_sender();
         }

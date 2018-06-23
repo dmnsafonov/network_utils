@@ -6,7 +6,7 @@ extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;
 #[macro_use] extern crate failure;
-#[macro_use] extern crate futures;
+extern crate futures;
 extern crate interfaces;
 extern crate ip_network;
 #[macro_use] extern crate log;

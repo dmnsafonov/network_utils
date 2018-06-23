@@ -30,20 +30,24 @@ if [[ "$1" == "setup" ]]; then
     ip netns exec rsp-middle ip addr add fc00::1:ffff/104 dev rsp-mid-in
     ip netns exec rsp-middle ip addr add fc00::2:ffff/64 dev rsp-mid-out
 
-    ip netns exec rsp-inner ip addr add fc00::1:1/64 dev rsp-inner
+    ip netns exec rsp-inner ip addr add fc00::1:1/104 dev rsp-inner
+    ip netns exec rsp-inner ip -6 route add default via fc00::1:ffff dev rsp-inner
+
     ip netns exec rsp-outer ip addr add fc00::2:1/64 dev rsp-outer
 elif [[ "$1" == "clean" ]]; then
     ip netns del rsp-inner
     ip netns del rsp-middle
     ip netns del rsp-outer
 elif [[ "$1" == "innershell" ]]; then
-    ip netns exec inner bash
+    ip netns exec rsp-inner bash --rcfile rsndpp-inner-rc
 elif [[ "$1" == "middleshell" ]]; then
-    ip netns exec middle bash
+    ip netns exec rsp-middle bash --rcfile rsndpp-middle-rc
 elif [[ "$1" == "outershell" ]]; then
-    ip netns exec outer bash
+    ip netns exec rsp-outer bash --rcfile rsndpp-outer-rc
 elif [[ "$1" == "kill" ]]; then
     killall -9 rsndpproxy
+elif [[ "$1" == "___" ]]; then
+    export PS1="($2) $PS1" bash
 else
     echo 'use setup, clean, innershell, middleshell, or outershell'
 fi
