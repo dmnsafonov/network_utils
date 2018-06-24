@@ -35,12 +35,14 @@ impl Advertisement {
             let mut icmp = MutableNeighborAdvertPacket::new(&mut icmp_buff)
                 .unwrap();
 
+            let mut flags = NdpAdvertFlags::Solicited;
+            if let Override::Yes = override_flag {
+                flags |= NdpAdvertFlags::Override;
+            }
+
             icmp.set_icmpv6_type(Icmpv6Types::NeighborAdvert);
             icmp.set_icmpv6_code(Icmpv6Codes::NoCode);
-            icmp.set_flags(match override_flag {
-                Override::Yes => NdpAdvertFlags::Override,
-                Override::No => NdpAdvertFlags::empty()
-            }.bits());
+            icmp.set_flags(flags.bits());
             icmp.set_target_addr(self.target);
             match self.ll_addr_opt {
                 Some(ref mac) => icmp.set_options(&[NdpOption {
@@ -66,7 +68,7 @@ impl Advertisement {
             version: 6,
             traffic_class: 0,
             flow_label: 0,
-            payload_length: (IPV6_HEADER_SIZE + NEIGHBOR_ADVERT_SIZE
+            payload_length: (NEIGHBOR_ADVERT_SIZE
                 + NEIGHBOR_ADVERT_LL_ADDR_OPTION_SIZE) as u16,
             next_header: IpNextHeaderProtocols::Icmpv6,
             hop_limit: 255,
@@ -78,25 +80,13 @@ impl Advertisement {
 }
 
 impl Solicitation {
-    pub fn parse(data: impl AsRef<[u8]>) -> Option<Solicitation> {
+    pub fn parse(packet: &Ipv6) -> Option<Solicitation> {
         // validates only the points required
         // by https://tools.ietf.org/html/rfc4861#section-6.1.1
 
-        let packet_opt = Ipv6Packet::new(data.as_ref());
-        let (icmp_data, src, dst) =
-            if packet_opt.is_some() {
-                let packet = packet_opt.as_ref().unwrap();
-                if packet.get_hop_limit() != 255 {
-                     return None;
-                }
-                (
-                    packet.payload(),
-                    packet.get_source(),
-                    packet.get_destination()
-                )
-            } else {
-                return None;
-            };
+        let icmp_data = &packet.payload;
+        let src = packet.source;
+        let dst = packet.destination;
 
         let solicit = match NeighborSolicitPacket::new(icmp_data.as_ref()) {
             Some(packet) => packet.from_packet(),
@@ -112,10 +102,10 @@ impl Solicitation {
         if solicit.icmpv6_type != icmpv6::Icmpv6Types::NeighborSolicit
                 || solicit.icmpv6_code != Icmpv6Codes::NoCode
                 || solicit.checksum != checksum
-                || solicit.payload.len() < 24
+                || icmp_data.len() < 24
                 || solicit.target_addr.is_multicast()
-                || (!src.is_unspecified()
-                    || is_solicited_node_multicast(&dst)) {
+                || (src.is_unspecified()
+                    || !is_solicited_node_multicast(&dst)) {
             return None;
         }
 

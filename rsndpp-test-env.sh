@@ -4,11 +4,6 @@ if [[ "$1" == "setup" ]]; then
     ip link add rsp-inner type veth peer name rsp-mid-in
     ip link add rsp-outer type veth peer name rsp-mid-out
 
-    sysctl -q net.ipv6.conf.rsp-inner.forwarding=0
-    sysctl -q net.ipv6.conf.rsp-outer.forwarding=0
-    sysctl -q net.ipv6.conf.rsp-mid-in.forwarding=1
-    sysctl -q net.ipv6.conf.rsp-mid-out.forwarding=1
-
     ip netns add rsp-inner
     ip netns add rsp-middle
     ip netns add rsp-outer
@@ -34,6 +29,10 @@ if [[ "$1" == "setup" ]]; then
     ip netns exec rsp-inner ip -6 route add default via fc00::1:ffff dev rsp-inner
 
     ip netns exec rsp-outer ip addr add fc00::2:1/64 dev rsp-outer
+
+    ip netns exec rsp-inner sysctl -q net.ipv6.conf.all.forwarding=0
+    ip netns exec rsp-middle sysctl -q net.ipv6.conf.all.forwarding=1
+    ip netns exec rsp-outer sysctl -q net.ipv6.conf.all.forwarding=0
 elif [[ "$1" == "clean" ]]; then
     ip netns del rsp-inner
     ip netns del rsp-middle

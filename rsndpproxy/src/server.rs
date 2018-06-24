@@ -113,13 +113,18 @@ impl Server {
         Item = (Solicitation, Override),
         Error = ::failure::Error
     > {
+        let if_name_clone = if_name.as_ref().to_string();
+
         unfold((sock, mtu), move |(mut sock, mtu)| {
             Some(sock.recvpacket(mtu, RecvFlags::empty())
                 .map(move |x| (x, (sock, mtu)))
                 .map_err(|e| e.into())
             )
-        }).filter_map(move |packet| { // validate common solicitation features
-            let solicit = match Solicitation::parse(&packet.0.payload) {
+        }).filter_map(move |(packet, _)| { // TODO: use macaddr later
+            // validate common solicitation features
+            debug!("received a packet on {}", if_name.as_ref());
+
+            let solicit = match Solicitation::parse(&packet) {
                 Some(s) => s,
                 None => return None
             };
@@ -156,8 +161,12 @@ impl Server {
                 Some((p, o)) => Some((solicit, p, o.into())),
                 None => None
             }
-        }).filter_map(|(solicit, prefix, override_flag)| {
+        }).filter_map(move |(solicit, prefix, override_flag)| {
             // validate type-specific solicitation features
+            debug!(
+                "the packet received on {} is generally valid",
+                if_name_clone
+            );
 
             if is_solicited_node_multicast(&solicit.dst) {
                 // ll address resolution
@@ -233,7 +242,12 @@ impl Future for Server {
 
             if let Async::Ready(Some((solicit, override_flag)))
                     = self.input.poll().map_err(log_err)? {
-                debug!("received a solicitation: {:?}", solicit);
+                debug!(
+                    "the solicitation received on {} must be proxied, \
+                        the solicitation is {:?}",
+                    self.ifname,
+                    solicit
+                );
                 active = true;
 
                 let adv = Advertisement {
@@ -271,6 +285,7 @@ impl Future for Server {
                         queued_sends.fetch_sub(1, Ordering::Relaxed);
                     })
                 );
+                debug!("advertisement queued on {}", self.ifname);
             }
         }
 

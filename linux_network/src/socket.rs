@@ -213,13 +213,15 @@ impl IpV6PacketSocket {
             dest.as_ref().unwrap_or(&self.macaddr).as_bytes()
         );
 
-        Ok(n1try!(::libc::sendto(
-            self.fd,
-            ref_to_cvoid(buf.packet()),
-            len as size_t,
-            flags.bits(),
-            as_sockaddr(&addr_ll),
-            addr_size)) as size_t
+        Ok(n1try!(
+            ::libc::sendto(
+                self.fd,
+                ref_to_cvoid(buf.packet()),
+                len as size_t,
+                flags.bits(),
+                as_sockaddr(&addr_ll),
+                addr_size)
+            ) as size_t
         )
     }}
 
