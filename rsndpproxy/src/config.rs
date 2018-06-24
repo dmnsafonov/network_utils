@@ -16,6 +16,9 @@ const DEFAULT_PID_PATH: &str = "/run/rsndpproxy.pid";
 #[allow(non_snake_case)]
 fn DEFAULT_MAX_QUEUED() -> usize { 42 }
 
+#[allow(non_snake_case)]
+fn DEFAULT_ROUTER_FLAG() -> Router { Router::Yes }
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     #[serde(skip)] pub config_file: OsString,
@@ -39,14 +42,14 @@ pub struct PrefixConfig {
     #[serde(deserialize_with="deserialize_ipnetwork")]
     pub prefix: Ipv6Network,
     #[serde(rename = "router")]
-    #[serde(default)]
+    #[serde(default = "DEFAULT_ROUTER_FLAG")]
     pub router_flag: Router,
-    #[serde(rename = "reply-unconditionally")]
-    #[serde(default)]
-    pub reply_unconditionally: bool,
     #[serde(rename = "override")]
     #[serde(default)]
-    pub override_flag: Override
+    pub override_flag: Override,
+    #[serde(rename = "reply-unconditionally")]
+    #[serde(default)]
+    pub reply_unconditionally: bool
 }
 
 gen_boolean_enum!(pub serde Override);
