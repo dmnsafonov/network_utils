@@ -116,12 +116,12 @@ pub struct IpV6PacketSocket {
     fd: RawFd,
     if_index: c_int,
     macaddr: MacAddr,
-    proto: c_int
+    proto: c_ushort
 }
 unsafe impl Sync for IpV6PacketSocket {}
 
 impl IpV6PacketSocket {
-    pub fn new<T>(proto: c_int, flags: SockFlag, if_name: T)
+    pub fn new<T>(proto: u16, flags: SockFlag, if_name: T)
             -> Result<IpV6PacketSocket> where
             T: AsRef<str> {
         let name = if_name.as_ref();
@@ -134,11 +134,13 @@ impl IpV6PacketSocket {
             })?;
         let if_addr = MacAddr::from_bytes(iface.hardware_addr()?.as_bytes())?;
 
+        let proto = proto.to_be() as c_ushort;
+
         let sock = socket(
             AddressFamily::Packet,
             SockType::Datagram,
             flags,
-            proto
+            proto as c_int
         )?;
 
         let mut ret = IpV6PacketSocket {
@@ -152,7 +154,7 @@ impl IpV6PacketSocket {
         unsafe {
             let mut addr: sockaddr_ll = zeroed();
             addr.sll_family = AF_PACKET as c_ushort;
-            addr.sll_protocol = proto as c_ushort;
+            addr.sll_protocol = proto;
             addr.sll_ifindex = ret.if_index;
             n1try!(bind(
                 sock,
@@ -200,7 +202,7 @@ impl IpV6PacketSocket {
         let addr_size = size_of_val(&addr_ll) as socklen_t;
 
         addr_ll.sll_family = AF_PACKET as c_ushort;
-        addr_ll.sll_protocol = self.proto as c_ushort;
+        addr_ll.sll_protocol = self.proto;
         addr_ll.sll_ifindex = self.if_index;
         addr_ll.sll_halen = 6;
         addr_ll.sll_addr[0..6].copy_from_slice(

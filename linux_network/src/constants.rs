@@ -75,7 +75,7 @@ pub mod raw {
     pub const BPF_K: u16 = 0x00;
     pub const BPF_X: u16 = 0x08;
 
-    pub const ETHERTYPE_IPV6: u32 = 0x86dd;
+    pub const ETHERTYPE_IPV6: u16 = 0x86dd;
 }
 
 use ::libc::*;

@@ -27,10 +27,10 @@ if [[ "$1" == "setup" ]]; then
     ip netns exec rsp-middle ip link set rsp-mid-out up
     ip netns exec rsp-outer ip link set rsp-outer up
 
-    ip netns exec rsp-middle ip addr add fc00::1:ffff/104 dev rsp-mid-in
+    ip netns exec rsp-middle ip addr add fc00::1:ffff/112 dev rsp-mid-in
     ip netns exec rsp-middle ip addr add fc00::2:ffff/64 dev rsp-mid-out
 
-    ip netns exec rsp-inner ip addr add fc00::1:1/104 dev rsp-inner
+    ip netns exec rsp-inner ip addr add fc00::1:1/112 dev rsp-inner
     ip netns exec rsp-inner ip -6 route add default via fc00::1:ffff dev rsp-inner
 
     ip netns exec rsp-outer ip addr add fc00::2:1/64 dev rsp-outer
