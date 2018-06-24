@@ -78,9 +78,9 @@ fn form_checked_payload<T>(payload: T)
     let b = payload.as_ref();
     let len = b.len();
     if len > ::std::u16::MAX as usize {
-        bail!(Error::PayloadTooBig {
+        return Err(Error::PayloadTooBig {
             size: len
-        });
+        }.into());
     }
 
     let checksum = ping6_data_checksum(b);

@@ -95,7 +95,7 @@ impl MacAddr {
     pub fn from_bytes<T>(x: T) -> Result<MacAddr> where T: AsRef<[u8]> {
         let s = x.as_ref();
         if s.len() != 6 {
-            bail!(Error::WrongSize);
+            return Err(Error::WrongSize.into());
         }
 
         let mut arr = [0; 6];

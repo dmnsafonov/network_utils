@@ -39,6 +39,9 @@ pub enum Error {
     #[fail(display = "system call was interrupted")]
     Interrupted(#[cause] io::Error),
 
+    #[fail(display = "io error")]
+    IoError(#[cause] io::Error),
+
     #[fail(display = "no \"{}\" network interface", name)]
     NoInterface {
         name: String

@@ -76,10 +76,10 @@ pub fn gain_net_raw() -> Result<()> {
     let mut caps = Capabilities::from_current_proc()
         .map_err(Error::Priv)?;
     if !caps.update(&[Capability::CAP_NET_RAW], Flag::Effective, true) {
-        bail!(Error::Priv(io::Error::new(
+        return Err(Error::Priv(io::Error::new(
             io::ErrorKind::Other,
             "cannot update capset"
-        )));
+        )).into());
     }
     caps.apply().map_err(Error::Priv)?;
     debug!("gained CAP_NET_RAW");

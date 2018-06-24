@@ -13,11 +13,11 @@ macro_rules! n1try {
             let err = ::std::io::Error::last_os_error();
             let oserr =  err.raw_os_error().unwrap() as c_int;
             if oserr == EINTR {
-                bail!(Error::Interrupted(err));
+                return Err(Error::Interrupted(err).into());
             } else if check_for_eagain(oserr) {
-                bail!(Error::Again(err));
+                return Err(Error::Again(err).into());
             } else {
-                bail!(err);
+                return Err(Error::IoError(err).into());
             }
         } else {
             ret

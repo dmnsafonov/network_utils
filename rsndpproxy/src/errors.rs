@@ -15,25 +15,11 @@ pub enum Error {
         #[cause] cause: io::Error
     },
 
-    #[fail(display = "cannot find network interface {}", name)]
-    NoInterface {
-        name: String
-    },
-
-    #[fail(display = "cannot get the mac address of the interface {} ({})", if_name, expl)]
-    NoMac {
-        if_name: String,
-        expl: String
-    },
-
     #[fail(display = "io error")]
     LinuxNetworkError(#[cause] ::linux_network::errors::Error),
 
     #[fail(display = "privilege dropping error")]
     PrivDrop(#[cause] io::Error),
-
-    #[fail(display = "error sending an internal message")]
-    QueueSendError,
 
     #[fail(display = "setting securebits failed")]
     SecurebitsError(#[cause] ::failure::Compat<::failure::Error>),

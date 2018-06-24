@@ -297,11 +297,11 @@ fn lock_file<T>(file: &mut File, filename: T) -> Result<()>
         ).map(Errno::from_i32);
         match errno {
             Some(Errno::EACCES) | Some(Errno::EAGAIN) => {
-                bail!(Error::AlreadyRunning {
+                return Err(Error::AlreadyRunning {
                     filename: filename.as_ref().to_string()
-                });
+                }.into());
             },
-            _ => bail!(he)
+            _ => return Err(he)
         }
     }
     Ok(())
@@ -361,18 +361,18 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     ];
 
     if !caps.update(&req_caps, Flag::Permitted, true) {
-        bail!(Error::PrivDrop(io::Error::new(
+        return Err(Error::PrivDrop(io::Error::new(
             io::ErrorKind::Other,
             "cannot update a capset"
-        )));
+        )).into());
     }
     caps.apply().map_err(Error::PrivDrop)?;
 
     if !caps.update(&req_caps, Flag::Effective, true) {
-        bail!(Error::PrivDrop(io::Error::new(
+        return Err(Error::PrivDrop(io::Error::new(
             io::ErrorKind::Other,
             "cannot update a capset"
-        )));
+        )).into());
     }
     caps.apply().map_err(Error::PrivDrop)?;
     debug!("dropped linux capabilities");

@@ -205,7 +205,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterWaitForSynAck<'s>, ::failure::Error> {
         debug!("waiting for SYN+ACK");
         let (data, dst) = match state.recv_stream.poll() {
-            Err(e) => bail!(e),
+            Err(e) => return Err(e),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
@@ -218,7 +218,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     next_action: Some(st.recv_stream)
                 })
             }
-            Ok(Async::Ready(None)) => bail!(Error::TimedOut)
+            Ok(Async::Ready(None)) => return Err(Error::TimedOut.into())
         };
 
         let state = state.take();
@@ -387,7 +387,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterWaitForFinAck<'s>, ::failure::Error> {
         debug!("waiting for FIN+ACK");
         match state.recv_stream.poll() {
-            Err(e) => bail!(e),
+            Err(e) => return Err(e),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
@@ -400,7 +400,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     next_action: Some(st.recv_stream)
                 })
             }
-            Ok(Async::Ready(None)) => bail!(Error::TimedOut)
+            Ok(Async::Ready(None)) => return Err(Error::TimedOut.into())
         };
 
         let mut common = state.take().common;
@@ -723,7 +723,7 @@ fn poll_timeout(state: &mut SendData) -> Result<bool> {
     }
 
     if let Async::Ready(_) = state.connection_timeout.poll()? {
-        bail!(Error::TimedOut);
+        return Err(Error::TimedOut.into());
     }
 
     Ok(false)

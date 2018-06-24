@@ -233,7 +233,9 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         } else {
                             let mut order = order_ref.lock().unwrap();
                             if order.get_space_left() < data.len() {
-                                bail!(Error::RecvBufferOverrunOnStart);
+                                return Err(
+                                    Error::RecvBufferOverrunOnStart.into()
+                                );
                             }
                             seqno_tracker_ref.lock().unwrap()
                                 .add(Wrapping(packet.seqno));
@@ -270,7 +272,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterWaitForAck<'s>, ::failure::Error> {
         debug!("waiting for first ACK");
         let (_,_) = match state.recv_stream.poll() {
-            Err(e) => bail!(e),
+            Err(e) => return Err(e),
             Ok(Async::NotReady) => return Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(x)))) => x,
             Ok(Async::Ready(Some(TimedResult::TimedOut))) => {
@@ -484,7 +486,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         debug!("waiting for last ACK");
 
         match state.recv_stream.poll() {
-            Err(e) => bail!(e),
+            Err(e) => return Err(e),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Ok(Async::Ready(Some(TimedResult::InTime(_)))) =>
                 transition!(ConnectionTerminated(
@@ -510,7 +512,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             }
             Ok(Async::Ready(None)) => {
                 debug!("timeout while waiting for the last ACK packet");
-                bail!(Error::TimedOut);
+                return Err(Error::TimedOut.into());
             }
         }
     }
@@ -650,9 +652,9 @@ fn poll_recv_stream(
         let packet = parse_stream_client_packet(&data);
 
         if data.len() > state.common.mtu as usize {
-            bail!(Error::MtuLessThanReal {
+            return Err(Error::MtuLessThanReal {
                 packet_size: data.len() as u16
-            });
+            }.into());
         }
 
         if packet.flags.contains(StreamPacketFlags::Fin) {
@@ -720,7 +722,7 @@ fn poll_timeout(
     if let Async::Ready(_) = state.timeout.poll()? {
         state.ack_sender_handle.stop();
         ack_sending_task.notify();
-        bail!(Error::TimedOut);
+        return Err(Error::TimedOut.into());
     }
     Ok(())
 }
