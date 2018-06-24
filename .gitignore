@@ -1,9 +1,9 @@
 Cargo.lock
 target/
-**/*.rs.bk
-*/work/
+*.rs.bk
+work/
 bin/
-first_task/
-second_task/
-final_task/
+/first_task/
+/second_task/
+/final_task/
 test
