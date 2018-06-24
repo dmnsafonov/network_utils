@@ -2,10 +2,7 @@ use ::std::net::Ipv6Addr;
 use ::std::sync::{Arc, atomic::*};
 
 use ::failure::ResultExt;
-use ::futures::future::poll_fn;
 use ::futures::stream::unfold;
-use ::ip_network::Ipv6Network;
-use ::pnet_packet::icmpv6::{Icmpv6Types, ndp::*};
 use ::tokio::prelude::*;
 
 use ::linux_network::{*, futures, futures::*};
@@ -23,11 +20,8 @@ pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,
     input: SendBox<StreamE<(Solicitation, Arc<PrefixConfig>)>>,
     quit: Receiver<::QuitKind>,
-    got_a_normal_quit: bool,
     drop_allmulti: bool,
     ifname: String,
-    mtu: usize,
-    prefixes: Vec<Arc<PrefixConfig>>,
     queued_sends: Arc<AtomicUsize>,
     max_queued: usize
 }
@@ -76,11 +70,8 @@ impl Server {
                 )
             )) },
             quit,
-            got_a_normal_quit: false,
             drop_allmulti,
             ifname: ifc.name.clone(),
-            mtu,
-            prefixes,
             queued_sends: Arc::new(AtomicUsize::new(0)),
             max_queued: ifc.max_queued
         })
