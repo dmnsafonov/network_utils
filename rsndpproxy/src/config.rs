@@ -1,5 +1,6 @@
 use ::std::ffi::OsString;
 use ::std::str::FromStr;
+use ::std::sync::Arc;
 
 use ::clap::{App, Arg};
 use ::ip_network::Ipv6Network;
@@ -29,7 +30,7 @@ pub struct Config {
 pub struct InterfaceConfig {
     pub name: String,
     #[serde(default = "DEFAULT_MAX_QUEUED")] pub max_queued: usize,
-    #[serde(rename = "prefix")] pub prefixes: Vec<PrefixConfig>
+    #[serde(rename = "prefix")] pub prefixes: Vec<Arc<PrefixConfig>>
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -37,14 +38,19 @@ pub struct PrefixConfig {
     #[serde(serialize_with="serialize_ipnetwork")]
     #[serde(deserialize_with="deserialize_ipnetwork")]
     pub prefix: Ipv6Network,
-    #[serde(default)] pub router: bool,
+    #[serde(rename = "router")]
+    #[serde(default)]
+    pub router_flag: Router,
     #[serde(rename = "reply-unconditionally")]
     #[serde(default)]
     pub reply_unconditionally: bool,
     #[serde(rename = "override")]
     #[serde(default)]
-    pub override_flag: bool
+    pub override_flag: Override
 }
+
+gen_boolean_enum!(pub serde Override);
+gen_boolean_enum!(pub serde Router);
 
 #[derive(Clone, Debug)]
 pub struct SuTarget {

@@ -1,5 +1,9 @@
 #![recursion_limit="128"]
 
+// for boolean_enums
+#![feature(plugin)]
+#![plugin(interpolate_idents)]
+
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate boolean_enums;
 extern crate capabilities;

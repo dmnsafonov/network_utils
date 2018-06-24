@@ -21,13 +21,13 @@ type StreamE<T> = Stream<Item = T, Error = ::failure::Error>;
 
 pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,
-    input: SendBox<StreamE<(Solicitation, Override)>>,
+    input: SendBox<StreamE<(Solicitation, Arc<PrefixConfig>)>>,
     quit: Receiver<::QuitKind>,
     got_a_normal_quit: bool,
     drop_allmulti: bool,
     ifname: String,
     mtu: usize,
-    prefixes: Arc<Vec<PrefixConfig>>,
+    prefixes: Vec<Arc<PrefixConfig>>,
     queued_sends: Arc<AtomicUsize>,
     max_queued: usize
 }
@@ -63,7 +63,7 @@ impl Server {
 
         let mtu = get_interface_mtu(&sock, &ifc.name)? as usize;
 
-        let prefixes = Arc::new(ifc.prefixes.clone());
+        let prefixes = ifc.prefixes.clone();
 
         Ok(Server {
             sock: sock.clone(),
@@ -107,10 +107,10 @@ impl Server {
     fn make_input_stream(
         sock: IpV6PacketSocketAdapter,
         mtu: usize,
-        prefixes: Arc<Vec<PrefixConfig>>,
+        prefixes: Vec<Arc<PrefixConfig>>,
         if_name: impl AsRef<str>
     ) -> impl Stream<
-        Item = (Solicitation, Override),
+        Item = (Solicitation, Arc<PrefixConfig>),
         Error = ::failure::Error
     > {
         let if_name_clone = if_name.as_ref().to_string();
@@ -153,15 +153,15 @@ impl Server {
                     return None;
                 }
 
-                prefix = Some((i.prefix.clone(), i.override_flag));
+                prefix = Some(i.clone());
                 break;
             }
 
             match prefix {
-                Some((p, o)) => Some((solicit, p, o.into())),
+                Some(p) => Some((solicit, p)),
                 None => None
             }
-        }).filter_map(move |(solicit, prefix, override_flag)| {
+        }).filter_map(move |(solicit, prefix_conf)| {
             // validate type-specific solicitation features
             debug!(
                 "the packet received on {} is generally valid",
@@ -175,8 +175,8 @@ impl Server {
                     return None;
                 }
 
-                if prefix.netmask() > 104 {
-                    let n_mask = prefix.netmask();
+                if prefix_conf.prefix.netmask() > 104 {
+                    let n_mask = prefix_conf.prefix.netmask();
                     let get_bits = |addr: &Ipv6Addr| -> u32 {
                         let s = addr.segments();
                         let last_bits = ((s[6] as u32 & 0xff) << 16)
@@ -185,7 +185,9 @@ impl Server {
                     };
 
                     let dst_bits = get_bits(&solicit.dst);
-                    let prefix_bits = get_bits(&prefix.network_address());
+                    let prefix_bits = get_bits(
+                        &prefix_conf.prefix.network_address()
+                    );
                     if dst_bits != prefix_bits {
                         return None;
                     }
@@ -193,12 +195,12 @@ impl Server {
             } else {
                 // neighbor reachability detection
 
-                if !prefix.contains(solicit.dst) {
+                if !prefix_conf.prefix.contains(solicit.dst) {
                     return None;
                 }
             }
 
-            Some((solicit, override_flag))
+            Some((solicit, prefix_conf))
         })
     }
 }
@@ -240,7 +242,7 @@ impl Future for Server {
                 }
             }
 
-            if let Async::Ready(Some((solicit, override_flag)))
+            if let Async::Ready(Some((solicit, prefix_conf)))
                     = self.input.poll().map_err(log_err)? {
                 debug!(
                     "the solicitation received on {} must be proxied, \
@@ -256,7 +258,10 @@ impl Future for Server {
                     target: solicit.target,
                     ll_addr_opt: Some(self.sock.get_mac())
                 };
-                let adv_packet = adv.solicited_to_ipv6(override_flag.into());
+                let adv_packet = adv.solicited_to_ipv6(
+                    prefix_conf.override_flag,
+                    prefix_conf.router_flag
+                );
 
                 let queued_sends = self.queued_sends.clone();
 

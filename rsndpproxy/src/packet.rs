@@ -6,6 +6,7 @@ use ::pnet_packet::icmpv6::{*, ndp::*};
 
 use ::linux_network::MacAddr;
 
+use ::config::*;
 use ::constants::*;
 use ::util::is_solicited_node_multicast;
 
@@ -25,10 +26,12 @@ pub struct Solicitation {
     pub ll_addr_opt: Option<MacAddr>
 }
 
-gen_boolean_enum!(pub Override);
-
 impl Advertisement {
-    pub fn solicited_to_ipv6(&self, override_flag: Override) -> Ipv6 {
+    pub fn solicited_to_ipv6(
+        &self,
+        override_flag: Override,
+        router_flag: Router
+    ) -> Ipv6 {
         let mut icmp_buff = vec![0; NEIGHBOR_ADVERT_SIZE
             + NEIGHBOR_ADVERT_LL_ADDR_OPTION_SIZE];
         {
@@ -38,6 +41,9 @@ impl Advertisement {
             let mut flags = NdpAdvertFlags::Solicited;
             if let Override::Yes = override_flag {
                 flags |= NdpAdvertFlags::Override;
+            }
+            if let Router::Yes = router_flag {
+                flags |= NdpAdvertFlags::Router;
             }
 
             icmp.set_icmpv6_type(Icmpv6Types::NeighborAdvert);
