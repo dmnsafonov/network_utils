@@ -1,3 +1,5 @@
+#![warn(bare_trait_objects)]
+
 #[macro_use] extern crate bitflags;
 #[cfg(feature = "async")] extern crate bytes;
 #[macro_use] extern crate enum_kinds_macros;

@@ -1,3 +1,5 @@
+#![warn(bare_trait_objects)]
+
 #[macro_use] extern crate bitflags;
 extern crate byteorder;
 extern crate capabilities;

@@ -14,7 +14,7 @@ use ::errors::{Error, Result};
 use ::packet::*;
 use ::util::*;
 
-type StreamE<T> = Stream<Item = T, Error = ::failure::Error>;
+type StreamE<T> = dyn(Stream<Item = T, Error = ::failure::Error>);
 
 pub struct Server {
     sock: futures::IpV6PacketSocketAdapter,

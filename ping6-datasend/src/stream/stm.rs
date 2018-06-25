@@ -23,10 +23,10 @@ use ::stdin_iterator::StdinBytesReader;
 use ::stream::buffers::*;
 use ::stream::packet::*;
 
-type StreamE<T> = ::futures::stream::Stream<
+type StreamE<T> = dyn(::futures::stream::Stream<
     Item = T,
     Error = ::failure::Error
->;
+>);
 
 // TODO: tune or make configurable
 const TMP_BUFFER_SIZE: usize = 64 * 1024;

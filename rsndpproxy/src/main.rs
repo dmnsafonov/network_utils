@@ -1,3 +1,4 @@
+#![warn(bare_trait_objects)]
 #![recursion_limit="128"]
 
 // for boolean_enums

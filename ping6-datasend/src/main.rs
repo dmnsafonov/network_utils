@@ -1,3 +1,5 @@
+#![warn(bare_trait_objects)]
+
 extern crate bytes;
 #[macro_use] extern crate clap;
 extern crate env_logger;

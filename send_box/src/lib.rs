@@ -1,3 +1,5 @@
+#![warn(bare_trait_objects)]
+
 use std::ops::*;
 use std::sync::atomic::*;
 

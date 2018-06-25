@@ -1,3 +1,5 @@
+#![warn(bare_trait_objects)]
+
 // the need for that crate itself arises due to #[repr(TYPE_ALIAS)]
 // still being unimplemented
 // TODO: replace #[repr(TYPE_ALIAS)]

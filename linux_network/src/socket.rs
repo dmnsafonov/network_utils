@@ -255,7 +255,7 @@ pub trait SocketCommon where
         let name = ifname.as_ref();
         let iff_allmulti = IFF_ALLMULTI as c_short;
 
-        let mut flags = get_interface_flags(self as &AsRawFd, name)?;
+        let mut flags = get_interface_flags(self as &dyn AsRawFd, name)?;
         let prev = (flags & iff_allmulti) != 0;
 
         if allmulti {
@@ -263,7 +263,7 @@ pub trait SocketCommon where
         } else {
             flags &= !iff_allmulti;
         }
-        set_interface_flags(self as &AsRawFd, name, flags)?;
+        set_interface_flags(self as &dyn AsRawFd, name, flags)?;
 
         Ok(prev)
     }

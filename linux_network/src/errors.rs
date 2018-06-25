@@ -4,7 +4,7 @@ use ::failure::Fail;
 
 pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
-pub fn error_to_errno(x: &Fail) -> Option<i32> {
+pub fn error_to_errno(x: &dyn Fail) -> Option<i32> {
     x.downcast_ref::<io::Error>().and_then(|e| e.raw_os_error())
 }
 

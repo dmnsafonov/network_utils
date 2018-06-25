@@ -24,11 +24,11 @@ use ::stream::packet::*;
 use ::stream::stdout::StdoutBytesWriter;
 use ::stream::util::make_send_fut;
 
-type FutureE<T> = ::futures::Future<Item = T, Error = ::failure::Error>;
-type StreamE<T> = ::futures::stream::Stream<
+type FutureE<T> = dyn(::futures::Future<Item = T, Error = ::failure::Error>);
+type StreamE<T> = dyn(::futures::stream::Stream<
     Item = T,
     Error = ::failure::Error
->;
+>);
 
 #[derive(StateMachineFuture)]
 pub enum StreamMachine<'s> {

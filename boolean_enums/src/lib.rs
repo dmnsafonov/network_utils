@@ -1,3 +1,5 @@
+#![warn(bare_trait_objects)]
+
 #[macro_export]
 macro_rules! gen_boolean_enum {
     ($name:ident) => (

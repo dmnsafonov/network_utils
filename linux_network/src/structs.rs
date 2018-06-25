@@ -106,7 +106,7 @@ impl MacAddr {
 
 impl Debug for MacAddr {
     fn fmt(&self, f: &mut Formatter) -> ::std::fmt::Result {
-        (self as &Display).fmt(f)
+        (self as &dyn Display).fmt(f)
     }
 }
 
