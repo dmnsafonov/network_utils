@@ -99,6 +99,8 @@ fn init() -> Result<InitState> {
     sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
     debug!("set icmpv6 type filter");
 
+    sock.setsockopt(&SockOpts::V6MtuDiscover::new(&V6PmtuType::Do))?;
+
     setup_signal_handler()?;
 
     setup_seccomp(&sock, StdoutUse::Yes,

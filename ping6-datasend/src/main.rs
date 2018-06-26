@@ -91,6 +91,8 @@ fn init() -> Result<InitState> {
     sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
     debug!("set icmpv6 type filter");
 
+    sock.setsockopt(&SockOpts::V6MtuDiscover::new(&V6PmtuType::Do))?;
+
     let src = make_socket_addr(&config.source, Resolve::No)?;
 
     let dst = make_socket_addr(&config.destination, Resolve::Yes)?;
