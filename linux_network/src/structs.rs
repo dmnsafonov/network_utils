@@ -88,6 +88,10 @@ impl icmp6_filter {
 pub struct MacAddr([u8; 6]);
 
 impl MacAddr {
+    pub fn new(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8) -> MacAddr {
+        MacAddr([a, b, c, d, e, f])
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0[..]
     }

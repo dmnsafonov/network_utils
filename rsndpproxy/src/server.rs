@@ -164,7 +164,7 @@ impl Server {
                 .map(move |x| (x, (sock, mtu)))
                 .map_err(|e| e.into())
             )
-        }).filter_map(move |(packet, _)| { // TODO: use macaddr later
+        }).filter_map(move |(packet, _)| {
             // validate common solicitation features
             debug!("received a packet on {}", if_name.as_ref());
 
@@ -172,6 +172,9 @@ impl Server {
                 Some(s) => s,
                 None => return None
             };
+
+            // TODO: use source macaddr to validate the multicast macs
+            // to correspond to the ipv6 multicast address
 
             let mut prefix = None;
             for i in &*prefixes {
