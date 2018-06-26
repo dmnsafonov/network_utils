@@ -45,8 +45,13 @@ elif [[ "$1" == "outershell" ]]; then
     ip netns exec rsp-outer bash --rcfile rsndpp-outer-rc
 elif [[ "$1" == "kill" ]]; then
     killall -9 rsndpproxy
-elif [[ "$1" == "___" ]]; then
-    export PS1="($2) $PS1" bash
+elif [[ "$1" == "list-pids" ]]; then
+    echo inner:
+    ip netns pids rsp-inner
+    echo middle:
+    ip netns pids rsp-middle
+    echo outer:
+    ip netns pids rsp-outer
 else
-    echo 'use setup, clean, innershell, middleshell, or outershell'
+    echo 'use setup, clean, innershell, middleshell, outershell, or list-pids'
 fi
