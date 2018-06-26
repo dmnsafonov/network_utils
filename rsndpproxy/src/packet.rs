@@ -36,14 +36,10 @@ impl Advertisement {
         let mut icmp_bytes = BytesMut::with_capacity(size);
 
         {
-            let mut buff = unsafe {
-                icmp_bytes.advance_mut(size);
-                icmp_bytes.bytes_mut()
-            };
+            let mut buff = unsafe { icmp_bytes.bytes_mut() };
 
             {
-                let mut icmp = MutableNeighborAdvertPacket::new(buff.as_mut())
-                    .unwrap();
+                let mut icmp = MutableNeighborAdvertPacket::new(buff).unwrap();
 
                 let mut flags = NdpAdvertFlags::Solicited;
                 if let Override::Yes = override_flag {
@@ -76,7 +72,8 @@ impl Advertisement {
             );
             icmp.set_checksum(checksum);
         }
-
+        unsafe { icmp_bytes.advance_mut(size); }
+        
         icmp_bytes.freeze()
     }
 }
