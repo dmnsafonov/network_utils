@@ -30,6 +30,3 @@ fix locking for everything in the sockets
 
 [rsndpproxy]
 validate values read from config
-
-[rsndpproxy]
-use system routing tables to determine the source address
