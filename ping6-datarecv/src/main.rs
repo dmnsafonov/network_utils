@@ -69,7 +69,7 @@ fn init() -> Result<InitState> {
     let config = get_config();
 
     gain_net_raw()?;
-    let mut sock = IpV6RawSocket::new(
+    let mut sock = IPv6RawSocket::new(
         IpProto::IcmpV6.bits(),
         SockFlag::empty()
     )?;

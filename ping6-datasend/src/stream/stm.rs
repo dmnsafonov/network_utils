@@ -41,7 +41,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(WaitForSynAck))]
     SendFirstSyn {
         common: StreamCommonState<'s>,
-        send: futures::IpV6RawSocketSendtoFuture,
+        send: futures::IPv6RawSocketSendtoFuture,
         next_action: Option<SendBox<StreamE<
             TimedResult<(Bytes, SocketAddrV6)>
         >>>
@@ -58,7 +58,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(SendData))]
     SendAck {
         common: StreamCommonState<'s>,
-        send_ack: futures::IpV6RawSocketSendtoFuture
+        send_ack: futures::IPv6RawSocketSendtoFuture
     },
 
     #[state_machine_future(transitions(SendFin, SendFinAck))]
@@ -68,7 +68,7 @@ pub enum StreamMachine<'s> {
         tmp_buf: RefCell<Vec<u8>>,
         next_data: RefCell<Option<NextData>>,
         retransmit_queue: RefCell<VecDeque<(Vec<u8>, u16)>>,
-        send_fut: RefCell<Option<futures::IpV6RawSocketSendtoFuture>>,
+        send_fut: RefCell<Option<futures::IPv6RawSocketSendtoFuture>>,
         recv_stream: RefCell<SendBox<
             StreamE<(Bytes, SocketAddrV6)>
         >>,
@@ -91,7 +91,7 @@ pub enum StreamMachine<'s> {
     #[state_machine_future(transitions(WaitForFinAck))]
     SendFin {
         common: StreamCommonState<'s>,
-        send_fut: futures::IpV6RawSocketSendtoFuture,
+        send_fut: futures::IPv6RawSocketSendtoFuture,
         next_action: Option<SendBox<StreamE<
             TimedResult<(Bytes, SocketAddrV6)>
         >>>
@@ -107,7 +107,7 @@ pub enum StreamMachine<'s> {
 
     #[state_machine_future(transitions(ConnectionTerminated))]
     SendLastAck {
-        send_fut: futures::IpV6RawSocketSendtoFuture
+        send_fut: futures::IPv6RawSocketSendtoFuture
     },
 
     #[state_machine_future(ready)]
@@ -441,7 +441,7 @@ fn make_send_fut<'a>(
     flags: StreamPacketFlags,
     payload: &[u8],
     override_seqno: Option<u16>
-) -> futures::IpV6RawSocketSendtoFuture {
+) -> futures::IPv6RawSocketSendtoFuture {
     let dst = common.dst;
     let seqno = override_seqno.unwrap_or(common.next_seqno.0);
 
@@ -463,7 +463,7 @@ fn make_send_fut<'a>(
 }
 
 fn make_first_syn_future<'a>(common: &mut StreamCommonState<'a>)
-        -> futures::IpV6RawSocketSendtoFuture {
+        -> futures::IPv6RawSocketSendtoFuture {
     make_send_fut(common, StreamPacketFlags::Syn, &[], None)
 }
 
@@ -572,7 +572,7 @@ fn fill_read_buf(
 }
 
 fn poll_send_fut(
-    mut send_fut_opt: RefMut<Option<futures::IpV6RawSocketSendtoFuture>>
+    mut send_fut_opt: RefMut<Option<futures::IPv6RawSocketSendtoFuture>>
 ) -> Result<bool> {
     if let ref mut send_fut@Some(_) = *send_fut_opt {
         if let Async::Ready(_)
@@ -733,7 +733,7 @@ pub struct StreamCommonState<'a> {
     pub config: &'a Config,
     pub src: SocketAddrV6,
     pub dst: SocketAddrV6,
-    pub sock: futures::IpV6RawSocketAdapter,
+    pub sock: futures::IPv6RawSocketAdapter,
     pub mtu: u16,
     pub data_source: StdinBytesReader<'a>,
     pub send_buf: BytesMut,

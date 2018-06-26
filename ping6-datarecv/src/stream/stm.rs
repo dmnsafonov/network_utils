@@ -47,7 +47,7 @@ pub enum StreamMachine<'s> {
     SendSynAck {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
-        send_syn_ack: futures::IpV6RawSocketSendtoFuture,
+        send_syn_ack: futures::IPv6RawSocketSendtoFuture,
         next_action: Option<SendBox<
             StreamE<TimedResult<(Bytes, SocketAddrV6)>>
         >>
@@ -79,7 +79,7 @@ pub enum StreamMachine<'s> {
         common: StreamCommonState<'s>,
         active: ActiveStreamCommonState,
         fin_seqno: u16,
-        send_fut: futures::IpV6RawSocketSendtoFuture,
+        send_fut: futures::IPv6RawSocketSendtoFuture,
         next_action: Option<SendBox<
             StreamE<TimedResult<(Bytes, SocketAddrV6)>>
         >>
@@ -599,7 +599,7 @@ fn make_syn_ack_future<'a>(
     dst: SocketAddrV6,
     seqno_start: u16,
     seqno_end: u16
-) -> futures::IpV6RawSocketSendtoFuture {
+) -> futures::IPv6RawSocketSendtoFuture {
     make_send_fut(
         common,
         dst,
@@ -614,7 +614,7 @@ fn make_fin_ack_future<'a>(
     common: &mut StreamCommonState<'a>,
     dst: SocketAddrV6,
     seqno: u16
-) -> futures::IpV6RawSocketSendtoFuture {
+) -> futures::IPv6RawSocketSendtoFuture {
     make_send_fut(
         common,
         dst,
@@ -731,7 +731,7 @@ pub struct StreamCommonState<'a> {
     pub config: &'a Config,
     pub src: SocketAddrV6,
     pub window_size: u32,
-    pub sock: futures::IpV6RawSocketAdapter,
+    pub sock: futures::IPv6RawSocketAdapter,
     pub mtu: u16,
     pub data_out: StdoutBytesWriter<'a>,
     pub send_buf: BytesMut,

@@ -7,12 +7,12 @@ use ::pnet_packet::icmpv6::*;
 use ::pnet_packet::icmpv6::ndp::Icmpv6Codes;
 use ::pnet_packet::*;
 
-use ::linux_network::IpV6RawSocket;
+use ::linux_network::IPv6RawSocket;
 
 use ::config::Config;
 use ::errors::Result;
 
-pub type InitState = (Config, Option<Ipv6Addr>, IpV6RawSocket);
+pub type InitState = (Config, Option<Ipv6Addr>, IPv6RawSocket);
 
 pub fn validate_icmpv6(
         packet: &Icmpv6Packet,

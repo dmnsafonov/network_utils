@@ -16,8 +16,8 @@ pub struct AckSender {
     src: Ipv6Addr,
     dst: SocketAddrV6,
     send_buf: BytesMut,
-    sock: IpV6RawSocketAdapter,
-    send_fut: Option<IpV6RawSocketSendtoFuture>,
+    sock: IPv6RawSocketAdapter,
+    send_fut: Option<IPv6RawSocketSendtoFuture>,
     ranges_to_send: VecDeque<IRange<Wrapping<u16>>>,
     set_ws_packet: bool
 }
@@ -28,7 +28,7 @@ impl AckSender {
         src: Ipv6Addr,
         dst: SocketAddrV6,
         mtu: u16,
-        sock: IpV6RawSocketAdapter
+        sock: IPv6RawSocketAdapter
     ) -> AckSender {
         AckSender {
             ack_gen, src, dst,

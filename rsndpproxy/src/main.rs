@@ -7,6 +7,7 @@
 
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate boolean_enums;
+extern crate bytes;
 extern crate capabilities;
 #[macro_use] extern crate clap;
 extern crate env_logger;

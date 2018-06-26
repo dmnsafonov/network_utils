@@ -76,6 +76,13 @@ pub mod raw {
     pub const BPF_X: u16 = 0x08;
 
     pub const ETHERTYPE_IPV6: u16 = 0x86dd;
+
+    pub const IPV6_MTU_DISCOVER: c_int = 23;
+
+    pub const IPV6_PMTUDISC_DONT: c_int = 0;
+    pub const IPV6_PMTUDISC_WANT: c_int = 1;
+    pub const IPV6_PMTUDISC_DO: c_int = 2;
+    pub const IPV6_PMTUDISC_PROBE: c_int = 3;
 }
 
 use ::libc::*;
@@ -156,14 +163,14 @@ bitflags!(
 
 // not exhaustive
 gen_enum!(pub IpProto: c_int;
-    (IPPROTO_IPV6 => IpV6),
+    (IPPROTO_IPV6 => IPv6),
     (IPPROTO_ICMPV6 => IcmpV6)
 );
 
 // not exhaustive
 gen_enum!(pub SockOptLevel: c_int;
     (SOL_SOCKET => Socket),
-    (IPPROTO_IPV6 => IpV6),
+    (IPPROTO_IPV6 => IPv6),
     (IPPROTO_ICMPV6 => IcmpV6)
 );
 
@@ -175,7 +182,16 @@ gen_enum!(pub SockOpt: c_int;
     (SO_DONTROUTE => DontRoute),
     (IPV6_V6ONLY => V6Only),
     (SO_ATTACH_FILTER => AttachFilter),
-    (SO_LOCK_FILTER => LockFilter)
+    (SO_LOCK_FILTER => LockFilter),
+    (IPV6_UNICAST_HOPS => UnicastHops),
+    (IPV6_MTU_DISCOVER => V6MtuDiscover)
+);
+
+gen_enum!(pub V6PmtuType: c_int;
+    (IPV6_PMTUDISC_DONT => Dont),
+    (IPV6_PMTUDISC_WANT => Want),
+    (IPV6_PMTUDISC_DO => Do),
+    (IPV6_PMTUDISC_PROBE => Probe)
 );
 
 gen_enum!(pub IcmpV6Type: uint8_t;

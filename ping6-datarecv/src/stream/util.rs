@@ -9,7 +9,7 @@ use ::ping6_datacommon::*;
 use ::stream::packet::make_stream_server_icmpv6_packet;
 
 pub fn make_send_fut_raw<'a>(
-    mut sock: futures::IpV6RawSocketAdapter,
+    mut sock: futures::IPv6RawSocketAdapter,
     mut send_buf: &mut BytesMut,
     src: Ipv6Addr,
     dst: SocketAddrV6,
@@ -17,7 +17,7 @@ pub fn make_send_fut_raw<'a>(
     seqno_start: u16,
     seqno_end: u16,
     payload: &[u8]
-) -> futures::IpV6RawSocketSendtoFuture {
+) -> futures::IPv6RawSocketSendtoFuture {
     let packet = make_stream_server_icmpv6_packet(
         &mut send_buf,
         src,
@@ -42,7 +42,7 @@ pub fn make_send_fut<'a>(
     seqno_start: u16,
     seqno_end: u16,
     payload: &[u8]
-) -> futures::IpV6RawSocketSendtoFuture {
+) -> futures::IPv6RawSocketSendtoFuture {
     make_send_fut_raw(
         common.sock.clone(),
         &mut common.send_buf,

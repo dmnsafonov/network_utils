@@ -1,4 +1,4 @@
-use ::std::net::Ipv6Addr;
+use ::std::net::*;
 use ::std::sync::{Arc, atomic::*};
 
 use ::failure::ResultExt;
@@ -17,64 +17,117 @@ use ::util::*;
 type StreamE<T> = dyn(Stream<Item = T, Error = ::failure::Error>);
 
 pub struct Server {
-    sock: futures::IpV6PacketSocketAdapter,
+    recv_sock: futures::IPv6PacketSocketAdapter,
+    send_sock: futures::IPv6RawSocketAdapter,
     input: SendBox<StreamE<(Solicitation, Arc<PrefixConfig>)>>,
     quit: Receiver<::QuitKind>,
-    drop_allmulti: bool,
+    drop_allmulti: DropAllmulti,
     ifname: String,
     queued_sends: Arc<AtomicUsize>,
     max_queued: usize
 }
+
+gen_boolean_enum!(DropAllmulti);
 
 impl Server {
     pub fn new(
         ifc: &InterfaceConfig,
         quit: Receiver<::QuitKind>
     ) -> Result<Server> {
-        let sock_raw = IpV6PacketSocket::new(
-            ::linux_network::raw::ETHERTYPE_IPV6,
-            SockFlag::empty(),
-            &ifc.name
-        )?;
-        debug!("created raw socket");
+        let (recv_sock, drop_allmulti) = Self::setup_recv_socket(ifc)?;
+        let send_sock = Self::setup_send_socket(ifc)?;
 
-        let mut sock = futures::IpV6PacketSocketAdapter::new(
-            &::tokio::reactor::Handle::current(),
-            sock_raw
-        )?;
-        debug!("registered raw socket in the reactor");
-
-        sock.setsockopt(&SockOpts::DontRoute::new(&true))?;
-
-        let filter = Self::create_filter();
-        sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))?;
-        sock.setsockopt(&SockOpts::LockFilter::new(&true))?;
-
-        debug!("packet filtration set");
-
-        let drop_allmulti = !sock.set_allmulti(true, &ifc.name)?;
-        debug!("ensured allmulti is set on the interface");
-
-        let mtu = get_interface_mtu(&sock, &ifc.name)? as usize;
-
+        let mtu = get_interface_mtu(&recv_sock, &ifc.name)? as usize;
         let prefixes = ifc.prefixes.clone();
 
+        let input = Self::make_input_stream(
+                recv_sock.clone(),
+                mtu,
+                prefixes.clone(),
+                ifc.name.clone()
+            );
+
         Ok(Server {
-            sock: sock.clone(),
-            input: unsafe { SendBox::new(Box::new(
-                Self::make_input_stream(
-                    sock,
-                    mtu,
-                    prefixes.clone(),
-                    ifc.name.clone()
-                )
-            )) },
+            recv_sock,
+            send_sock,
+            input: unsafe { SendBox::new(Box::new(input)) },
             quit,
             drop_allmulti,
             ifname: ifc.name.clone(),
             queued_sends: Arc::new(AtomicUsize::new(0)),
             max_queued: ifc.max_queued
         })
+    }
+
+    fn setup_recv_socket(
+        ifc: &InterfaceConfig
+    ) -> Result<(futures::IPv6PacketSocketAdapter, DropAllmulti)> {
+        let recv_sock_raw = IPv6PacketSocket::new(
+            ::linux_network::raw::ETHERTYPE_IPV6,
+            SockFlag::empty(),
+            &ifc.name
+        )?;
+        debug!("created a packet socket for interface {}", ifc.name);
+
+        let mut recv_sock = futures::IPv6PacketSocketAdapter::new(
+            &::tokio::reactor::Handle::current(),
+            recv_sock_raw
+        )?;
+        debug!(
+            "registered the packet socket for interface {} in the reactor",
+            ifc.name
+        );
+
+        recv_sock.setsockopt(&SockOpts::DontRoute::new(&true))?;
+
+        let filter = Self::create_filter();
+        recv_sock.setsockopt(&SockOpts::AttachFilter::new(filter.get()))?;
+        recv_sock.setsockopt(&SockOpts::LockFilter::new(&true))?;
+
+        debug!(
+            "packet filtration set on the packet socket for interface {}",
+            ifc.name
+        );
+
+        let drop_allmulti = !recv_sock.set_allmulti(true, &ifc.name)?;
+        debug!("ensured allmulti is set on interface {}", ifc.name);
+
+        Ok((recv_sock, drop_allmulti.into()))
+    }
+
+    fn setup_send_socket(
+        ifc: &InterfaceConfig
+    ) -> Result<futures::IPv6RawSocketAdapter> {
+        let send_sock_raw = IPv6RawSocket::new(
+            IpProto::IcmpV6.bits(),
+            SockFlag::empty()
+        )?;
+        debug!("created a raw socket for interface {}", ifc.name);
+
+        let mut send_sock = futures::IPv6RawSocketAdapter::new(
+            &::tokio::reactor::Handle::current(),
+            send_sock_raw
+        )?;
+        debug!(
+            "registered the raw socket for interface {} in the reactor",
+            ifc.name
+        );
+
+        send_sock.setsockopt(&SockOpts::BindToDevice::new(&ifc.name))?;
+        debug!("bound the raw socket to interface {}", ifc.name);
+
+        let filter = icmp6_filter::new();
+        send_sock.setsockopt(&SockOpts::IcmpV6Filter::new(&filter))?;
+        debug!(
+            "set icmpv6 filter on the raw socket for interface {}",
+            ifc.name
+        );
+
+        send_sock.setsockopt(&SockOpts::DontRoute::new(&true))?;
+        send_sock.setsockopt(&SockOpts::UnicastHops::new(&255))?;
+        send_sock.setsockopt(&SockOpts::V6MtuDiscover::new(&V6PmtuType::Do))?;
+
+        Ok(send_sock)
     }
 
     fn create_filter() -> Box<BpfProg> {
@@ -96,7 +149,7 @@ impl Server {
     }
 
     fn make_input_stream(
-        sock: IpV6PacketSocketAdapter,
+        sock: IPv6PacketSocketAdapter,
         mtu: usize,
         prefixes: Vec<Arc<PrefixConfig>>,
         if_name: impl AsRef<str>
@@ -198,9 +251,9 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        if self.drop_allmulti {
+        if self.drop_allmulti.into() {
             ::util::log_if_err(
-                self.sock.set_allmulti(false, &self.ifname)
+                self.recv_sock.set_allmulti(false, &self.ifname)
                     .context("error returning allmilti flag to the previous \
                         state")
                     .map_err(|e| e.into())
@@ -247,9 +300,9 @@ impl Future for Server {
                     src: solicit.target,
                     dst: solicit.src,
                     target: solicit.target,
-                    ll_addr_opt: Some(self.sock.get_mac())
+                    ll_addr_opt: Some(self.recv_sock.get_interface_mac())
                 };
-                let adv_packet = adv.solicited_to_ipv6(
+                let adv_packet = adv.solicited_to_packet(
                     prefix_conf.override_flag,
                     prefix_conf.router_flag
                 );
@@ -268,10 +321,16 @@ impl Future for Server {
                     continue;
                 }
 
+                let dst = SocketAddrV6::new(
+                    solicit.src,
+                    0,
+                    0,
+                    self.recv_sock.get_interface_index() as u32
+                );
                 ::tokio::spawn(
-                    self.sock.sendpacket(
+                    self.send_sock.sendto(
                         adv_packet,
-                        Some(solicit.ll_addr_opt.unwrap()),
+                        dst,
                         SendFlags::empty()
                     ).map(
                         |_| ()

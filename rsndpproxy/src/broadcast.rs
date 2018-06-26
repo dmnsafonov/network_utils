@@ -8,7 +8,7 @@ use ::futures::{task, task::Task};
 
 use ::errors::Error;
 
-// TODO: remove next_id, track free ids in a heap
+// TODO: remove next_id, track free ids in a hashset
 // necessary for actual proxying of ndp requests
 struct Inner<T> {
     rx_tasks: RwLock<Vec<Option<Task>>>,

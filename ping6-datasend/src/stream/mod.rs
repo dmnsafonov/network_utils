@@ -44,7 +44,7 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
         None => IPV6_MIN_MTU
     };
 
-    let async_sock = futures::IpV6RawSocketAdapter::new(rt.reactor(), sock)?;
+    let async_sock = futures::IPv6RawSocketAdapter::new(rt.reactor(), sock)?;
     let stdin = io::stdin();
     let data = StdinBytesReader::new(
         rt.reactor(),
