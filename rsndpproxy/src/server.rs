@@ -34,6 +34,12 @@ impl Server {
         ifc: &InterfaceConfig,
         quit: Receiver<::QuitKind>
     ) -> Result<Server> {
+        for i in &ifc.prefixes {
+            if !i.reply_unconditionally {
+                unimplemented!();
+            }
+        }
+
         let (recv_sock, drop_allmulti) = Self::setup_recv_socket(ifc)?;
         let send_sock = Self::setup_send_socket(ifc)?;
 
