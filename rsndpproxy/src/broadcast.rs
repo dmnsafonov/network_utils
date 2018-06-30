@@ -52,21 +52,19 @@ pub fn broadcaster<T>(max_receivers: usize) -> (Receiver<T>, Sender<T>) {
     (receiver, sender)
 }
 
-impl<T> Clone for Receiver<T> {
-    fn clone(&self) -> Self {
-        let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
-        self.inner.rx_count.fetch_add(1, Ordering::Relaxed);
-        debug_assert!(self.inner.rx_tasks.read().unwrap()[id].is_some());
-        assert!(id < self.inner.rx_tasks.read().unwrap().len());
+impl<T> Receiver<T> {
+    pub fn clone(other: &Receiver<T>) -> Receiver<T> {
+        let id = other.inner.next_id.fetch_add(1, Ordering::Relaxed);
+        other.inner.rx_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert!(other.inner.rx_tasks.read().unwrap()[id].is_some());
+        assert!(id < other.inner.rx_tasks.read().unwrap().len());
 
         Receiver {
-            inner: self.inner.clone(),
+            inner: other.inner.clone(),
             id
         }
     }
-}
 
-impl<T> Receiver<T> {
     fn fill_task_if_empty(&self) {
         if self.inner.rx_tasks.read().unwrap()[self.id].is_none() {
             mem::swap(

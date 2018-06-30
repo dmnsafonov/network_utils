@@ -245,7 +245,7 @@ fn handle_requests(interfaces: &[InterfaceConfig], quit: Receiver<QuitKind>) {
             if i == interfaces.len() - 1 {
                 quit.take().unwrap()
             } else {
-                quit.clone().unwrap()
+                Receiver::clone(quit.as_ref().unwrap())
             };
         tokio::spawn(
             result(
