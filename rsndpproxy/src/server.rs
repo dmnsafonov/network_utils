@@ -221,40 +221,61 @@ impl Server {
                 if_name_clone
             );
 
-            if is_solicited_node_multicast(&solicit.dst) {
-                // ll address resolution
-
-                if solicit.ll_addr_opt.is_none() {
-                    return None;
-                }
-
-                if prefix_conf.prefix.netmask() > 104 {
-                    let n_mask = prefix_conf.prefix.netmask();
-                    let get_bits = |addr: &Ipv6Addr| -> u32 {
-                        let s = addr.segments();
-                        let last_bits = ((s[6] as u32 & 0xff) << 16)
-                            | s[7] as u32;
-                        last_bits >> (128 - n_mask)
-                    };
-
-                    let dst_bits = get_bits(&solicit.dst);
-                    let prefix_bits = get_bits(
-                        &prefix_conf.prefix.network_address()
-                    );
-                    if dst_bits != prefix_bits {
-                        return None;
-                    }
-                }
-            } else {
-                // neighbor reachability detection
-
-                if !prefix_conf.prefix.contains(solicit.dst) {
-                    return None;
-                }
+            let is_ll_res = Self::validate_ll_address_resolution(
+                &solicit,
+                &prefix_conf
+            );
+            let is_nud = Self::validate_neighbor_unreachability_detection(
+                &solicit,
+                &prefix_conf
+            );
+            if !is_ll_res && !is_nud {
+                return None;
             }
 
             Some((solicit, prefix_conf))
         })
+    }
+
+    fn validate_ll_address_resolution(
+        solicit: &Solicitation,
+        prefix_conf: &PrefixConfig
+    ) -> bool {
+        if !is_solicited_node_multicast(&solicit.dst)
+                || solicit.ll_addr_opt.is_none() {
+            return false;
+        }
+
+        if prefix_conf.prefix.netmask() > 104 {
+            let n_mask = prefix_conf.prefix.netmask();
+            let get_bits = |addr: &Ipv6Addr| -> u32 {
+                let s = addr.segments();
+                let last_bits = ((s[6] as u32 & 0xff) << 16)
+                    | s[7] as u32;
+                last_bits >> (128 - n_mask)
+            };
+
+            let dst_bits = get_bits(&solicit.dst);
+            let prefix_bits = get_bits(
+                &prefix_conf.prefix.network_address()
+            );
+            if dst_bits != prefix_bits {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn validate_neighbor_unreachability_detection(
+        solicit: &Solicitation,
+        prefix_conf: &PrefixConfig
+    ) -> bool {
+        if is_solicited_node_multicast(&solicit.dst)
+                || !prefix_conf.prefix.contains(solicit.dst) {
+            return false;
+        }
+        true
     }
 }
 
