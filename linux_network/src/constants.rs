@@ -29,10 +29,23 @@ pub mod raw {
     pub const ND_NEIGHBOR_ADVERT: uint8_t = 136;
     pub const ND_REDIRECT: uint8_t = 137;
 
+    #[cfg(target_env = "gnu")]
     pub const SIOCGIFFLAGS: c_ulong = 0x8913;
+    #[cfg(target_env = "gnu")]
     pub const SIOCSIFFLAGS: c_ulong = 0x8914;
+    #[cfg(target_env = "gnu")]
     pub const SIOCGIFINDEX: c_ulong = 0x8933;
+    #[cfg(target_env = "gnu")]
     pub const SIOCGIFMTU: c_ulong = 0x8921;
+
+    #[cfg(target_env = "musl")]
+    pub const SIOCGIFFLAGS: c_int = 0x8913;
+    #[cfg(target_env = "musl")]
+    pub const SIOCSIFFLAGS: c_int = 0x8914;
+    #[cfg(target_env = "musl")]
+    pub const SIOCGIFINDEX: c_int = 0x8933;
+    #[cfg(target_env = "musl")]
+    pub const SIOCGIFMTU: c_int = 0x8921;
 
     pub const BPF_LD: u16 = 0x00;
     pub const BPF_LDX: u16 = 0x01;
@@ -83,6 +96,14 @@ pub mod raw {
     pub const IPV6_PMTUDISC_WANT: c_int = 1;
     pub const IPV6_PMTUDISC_DO: c_int = 2;
     pub const IPV6_PMTUDISC_PROBE: c_int = 3;
+
+    #[cfg(target_env = "musl")]
+    pub const SO_ATTACH_FILTER: c_int = 26;
+    #[cfg(target_env = "musl")]
+    pub const SO_LOCK_FILTER: c_int = 44;
+
+    #[cfg(target_env = "musl")]
+    pub const F_WRLCK: c_int = 1;
 }
 
 use ::libc::*;

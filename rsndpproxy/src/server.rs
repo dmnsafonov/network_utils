@@ -366,8 +366,9 @@ impl Future for Server {
                         |_| ()
                     ).map_err(
                         |e| log_err(Error::LinuxNetworkError(e).into())
-                    ).inspect(move |_| {
+                    ).then(move |x| {
                         queued_sends.fetch_sub(1, Ordering::Relaxed);
+                        x
                     })
                 );
                 debug!("advertisement queued on {}", self.ifname);
