@@ -362,7 +362,6 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     let mut caps = Capabilities::new().map_err(Error::PrivDrop)?;
     let req_caps = [
         Capability::CAP_NET_ADMIN,
-        Capability::CAP_NET_BROADCAST,
         Capability::CAP_NET_RAW
     ];
 
