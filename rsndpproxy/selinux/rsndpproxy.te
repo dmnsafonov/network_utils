@@ -1,0 +1,45 @@
+policy_module(rsndpproxy, 0.0.1)
+
+require {
+	class capability { net_admin net_raw setgid setuid };
+	class netlink_route_socket { create nlmsg_read read write };
+	class packet_socket { bind create ioctl read setopt };
+	class process setcap;
+	class rawip_socket { create ioctl setopt write };
+	class udp_socket { create ioctl };
+
+	type etc_t;
+	type var_run_t;
+}
+
+type rsndpproxy_t;
+type rsndpproxy_exec_t;
+type rsndpproxy_var_run_t;
+type rsndpproxy_conf_t;
+
+init_daemon_domain(rsndpproxy_t, rsndpproxy_exec_t)
+
+files_pid_file(rsndpproxy_var_run_t)
+manage_files_pattern(rsndpproxy_t, var_run_t, rsndpproxy_var_run_t)
+rw_files_pattern(rsndpproxy_t, var_run_t, rsndpproxy_var_run_t)
+filetrans_pattern(rsndpproxy_t, var_run_t, rsndpproxy_var_run_t, file)
+
+files_type(rsndpproxy_conf_t)
+read_files_pattern(rsndpproxy_t, etc_t, rsndpproxy_conf_t)
+
+auth_read_passwd(rsndpproxy_t)
+miscfiles_read_localization(rsndpproxy_t)
+dev_read_sysfs(rsndpproxy_t)
+logging_send_syslog_msg(rsndpproxy_t)
+
+allow rsndpproxy_t self : capability { net_admin net_raw setgid setuid };
+allow rsndpproxy_t self : process setcap;
+
+allow rsndpproxy_t self : rawip_socket { create ioctl setopt write };
+allow rsndpproxy_t self : packet_socket { bind create ioctl read setopt };
+
+allow rsndpproxy_t self : netlink_route_socket { create nlmsg_read read write };
+
+allow rsndpproxy_t self : udp_socket { create ioctl };
+
+corenet_raw_sendrecv_generic_if(rsndpproxy_t)
