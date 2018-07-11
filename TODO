@@ -1,9 +1,6 @@
 [all]
 maybe, remake the async sockets using macros
 
-[all]
-migrate to failure [done for the rsndpproxy crate]
-
 [ping6]
 add packet number (u64) in the stream to the checksum
 
