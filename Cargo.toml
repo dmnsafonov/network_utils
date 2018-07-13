@@ -7,3 +7,6 @@ members = [
     "rsndpproxy",
     "send_box"
 ]
+
+[patch.crates-io]
+seccomp-sys = { path = "../seccomp-sys" }
