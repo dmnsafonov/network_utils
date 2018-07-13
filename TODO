@@ -27,3 +27,6 @@ fix locking for everything in the sockets
 
 [rsndpproxy]
 validate values read from config
+
+[ping6]
+add musl support
