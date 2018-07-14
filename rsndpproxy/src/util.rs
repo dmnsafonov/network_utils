@@ -12,6 +12,7 @@ pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
     }
 }
 
+#[allow(needless_pass_by_value)]
 pub fn log_err(err: ::failure::Error) {
     let mut out = String::new();
 

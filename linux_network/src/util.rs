@@ -57,14 +57,14 @@ pub unsafe fn ref_to_mut_cvoid<T: ?Sized>(x: &mut T) -> *mut c_void {
 
 pub fn addr_from_segments(ad: &[u8; 16]) -> Ipv6Addr {
     Ipv6Addr::new(
-        (ad[0] as u16) << 8 | (ad[1] as u16),
-        (ad[2] as u16) << 8 | (ad[3] as u16),
-        (ad[4] as u16) << 8 | (ad[5] as u16),
-        (ad[6] as u16) << 8 | (ad[7] as u16),
-        (ad[8] as u16) << 8 | (ad[9] as u16),
-        (ad[10] as u16) << 8 | (ad[11] as u16),
-        (ad[12] as u16) << 8 | (ad[13] as u16),
-        (ad[14] as u16) << 8 | (ad[15] as u16)
+        (u16::from(ad[0]) << 8) | u16::from(ad[1]),
+        (u16::from(ad[2]) << 8) | u16::from(ad[3]),
+        (u16::from(ad[4]) << 8) | u16::from(ad[5]),
+        (u16::from(ad[6]) << 8) | u16::from(ad[7]),
+        (u16::from(ad[8]) << 8) | u16::from(ad[9]),
+        (u16::from(ad[10]) << 8) | u16::from(ad[11]),
+        (u16::from(ad[12]) << 8) | u16::from(ad[13]),
+        (u16::from(ad[14]) << 8) | u16::from(ad[15])
    )
 }
 

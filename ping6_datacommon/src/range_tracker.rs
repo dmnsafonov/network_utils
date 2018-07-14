@@ -113,7 +113,7 @@ impl<P, E> RangeTracker<P, E> {
         *self.rangeset.iter().next().expect("nonempty range set")
     }
 
-    pub fn iter<'a>(&'a self) -> RangeTrackerIterator<'a, P, E> {
+    pub fn iter(&self) -> RangeTrackerIterator<P, E> {
         self.into_iter()
     }
 
@@ -136,11 +136,17 @@ impl RangeTracker<NoParent, NoElement> {
     }
 }
 
+impl Default for RangeTracker<NoParent, NoElement> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<P, E> RangeTracker<P, E>
         where for<'a> P: RangeTrackerParentHandle<'a, E> {
     pub fn new_with_parent(tracked: P) -> RangeTracker<P, E> {
         RangeTracker {
-            tracked: tracked,
+            tracked,
             rangeset: BTreeSet::new(),
             offset: 0,
             _phantom: Default::default()
@@ -180,8 +186,8 @@ impl<P, E> RangeTracker<P, E>
 }
 
 fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool {
-    assert!(slice.len() > 0);
-    assert!(sub.len() > 0);
+    assert!(!slice.is_empty());
+    assert!(!sub.is_empty());
     assert!(slice.len() <= ::std::isize::MAX as usize);
     assert!(sub.len() <= ::std::isize::MAX as usize);
 
@@ -243,14 +249,12 @@ impl PartialOrd for DTRange {
         assert!(other.0 <= other.1);
         if self == other {
             Some(Ordering::Equal)
+        } else if self.0 > other.1 {
+            Some(Ordering::Greater)
+        } else if self.1 < other.0 {
+            Some(Ordering::Less)
         } else {
-            if self.0 > other.1 {
-                Some(Ordering::Greater)
-            } else if self.1 < other.0 {
-                Some(Ordering::Less)
-            } else {
-                None
-            }
+            None
         }
     }
 }

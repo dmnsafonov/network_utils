@@ -47,7 +47,7 @@ impl<'a> RangeTrackerParentHandle<'a, AckWait>
 
 impl AckWaitlist {
     pub fn new(window_size: u32, mtu: u16) -> AckWaitlist {
-        assert!(window_size <= ::std::u16::MAX as u32 + 1);
+        assert!(window_size <= u32::from(::std::u16::MAX) + 1);
         let ret = AckWaitlist(Arc::new(Mutex::new(AckWaitlistImpl {
             inner: VecDeque::with_capacity(
                 window_size as usize * mtu as usize
@@ -123,7 +123,7 @@ impl AckWaitlist {
         let mut removed_something = false;
         for i in tmpvec.drain(..) {
             removed_something = true;
-            theself.del_tracker.track_range(i.into());
+            theself.del_tracker.track_range(i);
         }
         removed_something
     }
@@ -150,7 +150,7 @@ impl AckWaitlist {
         self.iter().next().map(|x| x.seqno)
     }
 
-    pub fn iter<'a>(&'a self) -> AckWaitlistIterator<'a> {
+    pub fn iter(&self) -> AckWaitlistIterator {
         AckWaitlistIterator(OwningHandle::new_with_fn(self.0.clone(),
             |x| unsafe { DerefWrapper(
                 Self::iter_from_lock(
@@ -199,12 +199,12 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
     type Item = (u32, &'a AckWait);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut acked_range_opt = self.0.tracker_iter.peek().map(|x| *x);
+        let mut acked_range_opt = self.0.tracker_iter.peek().cloned();
         while let Some((ind, wait)) = self.0.inner.next() {
             while acked_range_opt.is_some()
                     && acked_range_opt.as_ref().unwrap().1 < ind {
                 self.0.tracker_iter.next();
-                acked_range_opt = self.0.tracker_iter.peek().map(|x| *x);
+                acked_range_opt = self.0.tracker_iter.peek().cloned();
             }
 
             if let Some(acked_range) = acked_range_opt {
@@ -216,7 +216,7 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
             return Some((ind as u32, wait));
         }
 
-        return None;
+        None
     }
 }
 

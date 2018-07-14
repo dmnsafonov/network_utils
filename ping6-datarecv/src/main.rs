@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
+#![warn(clippy)]
 
 extern crate bytes;
 #[macro_use] extern crate clap;

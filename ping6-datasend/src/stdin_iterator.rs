@@ -42,9 +42,9 @@ impl<'a> Iterator for StdinBytesIterator<'a> {
         let mut buf = vec![0; len];
         match self.tin.read(&mut buf[..len]) {
             Ok(x) if x == len => (),
-            Ok(x) => return Some(Err(Error::WrongLengthMessage {
-                len: len,
-                exp: x
+            Ok(exp) => return Some(Err(Error::WrongLengthMessage {
+                len,
+                exp
             }.into())),
             Err(e) => return Some(Err(e.into()))
         };

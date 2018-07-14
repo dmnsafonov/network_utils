@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
+#![warn(clippy)]
 
 #[macro_use] extern crate bitflags;
 #[cfg(feature = "async")] extern crate bytes;

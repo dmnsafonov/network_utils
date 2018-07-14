@@ -66,7 +66,7 @@ pub struct icmp6_filter {
 
 impl icmp6_filter {
     pub fn new() -> icmp6_filter {
-        icmp6_filter { icmp6_filt: [0xffffffff; 8] }
+        icmp6_filter { icmp6_filt: [0xffff_ffff; 8] }
     }
 
     pub fn new_pass() -> icmp6_filter {
@@ -80,18 +80,26 @@ impl icmp6_filter {
 
     pub fn block(&mut self, icmp_type: IcmpV6Type) {
         let tp = icmp_type.bits();
-        self.icmp6_filt[tp as usize >> 5] |= 1 << ((tp & 31));
+        self.icmp6_filt[tp as usize >> 5] |= 1 << (tp & 31);
     }
 }
 
-#[derive(Clone, Eq, Hash, PartialEq)]
+impl Default for icmp6_filter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct MacAddr([u8; 6]);
 
 impl MacAddr {
+    #[allow(many_single_char_names)]
     pub fn new(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8) -> MacAddr {
         MacAddr([a, b, c, d, e, f])
     }
 
+    #[allow(trivially_copy_pass_by_ref)]
     pub fn as_bytes(&self) -> &[u8] {
         &self.0[..]
     }

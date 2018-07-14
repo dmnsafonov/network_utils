@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
+#![warn(clippy)]
 
 #[macro_export]
 macro_rules! gen_boolean_enum {

@@ -64,9 +64,9 @@ pub fn make_stream_client_icmpv6_packet(
     packet_buff.split_to(targlen).freeze()
 }
 
-pub fn parse_stream_server_packet<'a>(
-    packet_buff: &'a [u8]
-) -> StreamServerPacket<'a> {
+pub fn parse_stream_server_packet(
+    packet_buff: &[u8]
+) -> StreamServerPacket {
     debug_assert!(validate_stream_packet(packet_buff, None));
 
     let packet = Icmpv6Packet::new(packet_buff)
@@ -80,7 +80,7 @@ pub fn parse_stream_server_packet<'a>(
         - packet_buff.as_ptr() as usize;
 
     StreamServerPacket {
-        flags: flags,
+        flags,
         seqno_start: BE::read_u16(&payload[4..=5]),
         seqno_end: BE::read_u16(&payload[6..=7]),
         payload: &packet_buff[payload_ind..]

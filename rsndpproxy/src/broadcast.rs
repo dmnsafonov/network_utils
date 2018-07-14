@@ -46,7 +46,7 @@ pub fn broadcaster<T>(max_receivers: usize) -> (Receiver<T>, Sender<T>) {
     };
 
     let sender = Sender {
-        inner: inner
+        inner
     };
 
     (receiver, sender)

@@ -23,7 +23,7 @@ impl<S,E> TimeoutResultStream<S> where
             -> TimeoutResultStream<S> {
         TimeoutResultStream {
             stream: Some(stream),
-            duration: duration,
+            duration,
             sleep: None
         }
     }
@@ -50,7 +50,7 @@ impl<S,E> Stream for TimeoutResultStream<S> where
 
                 return Ok(Async::Ready(x.map(TimedResult::InTime)))
             },
-            Err(e) => return Err(e.into())
+            Err(e) => return Err(e)
         }
 
         match sleep.poll() {

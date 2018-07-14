@@ -140,14 +140,14 @@ impl IPv6PacketSocket {
             AddressFamily::Packet,
             SockType::Datagram,
             flags,
-            proto as c_int
+            c_int::from(proto)
         )?;
 
         let mut ret = IPv6PacketSocket {
             fd: sock,
             if_index: -1,
             macaddr: if_addr,
-            proto: proto
+            proto
         };
         ret.if_index = get_interface_index(&ret, name)?;
 
@@ -230,7 +230,7 @@ impl IPv6PacketSocket {
     }
 
     pub fn get_interface_mac(&self) -> MacAddr {
-        self.macaddr.clone()
+        self.macaddr
     }
 }
 
@@ -590,9 +590,9 @@ pub mod futures {
         ) -> IPv6RawSocketRecvfromFuture {
             IPv6RawSocketRecvfromFuture(
                 Some(IPv6RawSocketRecvfromFutureState {
-                    sock: sock,
-                    buf: buf,
-                    flags: flags
+                    sock,
+                    buf,
+                    flags
                 })
             )
         }
@@ -643,10 +643,10 @@ pub mod futures {
         ) -> IPv6RawSocketSendtoFuture {
             IPv6RawSocketSendtoFuture(
                 Some(IPv6RawSocketSendtoFutureState {
-                    sock: sock,
-                    buf: buf,
-                    addr: addr,
-                    flags: flags
+                    sock,
+                    buf,
+                    addr,
+                    flags
                 })
             )
         }
@@ -660,7 +660,7 @@ pub mod futures {
             let len = {
                 let state = self.0.as_mut().expect("pending sendto future");
                 try_async!(IPv6RawSocketAdapter(state.sock.clone())
-                    .sendto_direct(&mut state.buf, state.addr,
+                    .sendto_direct(&state.buf, state.addr,
                         state.flags))
             };
             self.0.take();
@@ -803,9 +803,9 @@ pub mod futures {
         ) -> IPv6PacketSocketRecvpacketFuture {
             IPv6PacketSocketRecvpacketFuture(
                 Some(IPv6PacketSocketRecvpacketFutureState {
-                    sock: sock,
-                    maxsize: maxsize,
-                    flags: flags
+                    sock,
+                    maxsize,
+                    flags
                 })
             )
         }
@@ -847,10 +847,10 @@ pub mod futures {
         ) -> IPv6PacketSocketSendpacketFuture {
             IPv6PacketSocketSendpacketFuture(
                 Some(IPv6PacketSocketSendpacketFutureState {
-                    sock: sock,
-                    packet: packet,
-                    destination: destination,
-                    flags: flags
+                    sock,
+                    packet,
+                    destination,
+                    flags
                 })
             )
         }
@@ -867,7 +867,7 @@ pub mod futures {
                 try_async!(IPv6PacketSocketAdapter(state.sock.clone())
                     .sendpacket_direct(
                         &state.packet,
-                        state.destination.clone(),
+                        state.destination,
                         state.flags
                     )
                 )
@@ -888,10 +888,12 @@ pub mod futures {
     }
 }
 
+#[allow(transmute_ptr_to_ptr)]
 unsafe fn as_sockaddr<T>(x: &T) -> &sockaddr {
     transmute::<&T, &sockaddr>(x)
 }
 
+#[allow(transmute_ptr_to_ptr)]
 unsafe fn as_sockaddr_mut<T>(x: &mut T) -> &mut sockaddr {
     transmute::<&mut T, &mut sockaddr>(x)
 }

@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
+#![warn(clippy)]
 
 extern crate bytes;
 #[macro_use] extern crate clap;
@@ -101,7 +103,7 @@ fn init() -> Result<InitState> {
     setup_signal_handler()?;
 
     let use_stdin = if let ModeConfig::Datagram(ref datagram_conf) = config.mode {
-        datagram_conf.inline_messages.len() == 0
+        datagram_conf.inline_messages.is_empty()
     } else {
         false
     };

@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
+#![warn(clippy)]
 
 #[macro_use] extern crate bitflags;
 extern crate byteorder;
@@ -250,6 +252,7 @@ pub fn movable_io_lock<'a, T>(io: T)
 pub struct IRange<Idx>(pub Idx, pub Idx);
 
 impl<Idx> IRange<Idx> where Idx: Ord {
+    #[allow(needless_pass_by_value)]
     pub fn contains_point(&self, x: Idx) -> bool {
         x >= self.0 && x <= self.1
     }
@@ -331,7 +334,7 @@ pub fn validate_stream_packet(
         return false;
     }
 
-    return true;
+    true
 }
 
 pub struct DerefWrapper<T>(pub T);

@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
+#![warn(clippy)]
 
 // the need for that crate itself arises due to #[repr(TYPE_ALIAS)]
 // still being unimplemented

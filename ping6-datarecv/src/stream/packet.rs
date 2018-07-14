@@ -13,9 +13,9 @@ pub struct StreamClientPacket<'a> {
     pub payload: &'a [u8]
 }
 
-pub fn parse_stream_client_packet<'a>(
-    packet_buff: &'a [u8]
-) -> StreamClientPacket<'a> {
+pub fn parse_stream_client_packet(
+    packet_buff: &[u8]
+) -> StreamClientPacket {
     debug_assert!(validate_stream_packet(packet_buff, None));
 
     let packet = Icmpv6Packet::new(packet_buff)
@@ -28,19 +28,19 @@ pub fn parse_stream_client_packet<'a>(
     let payload_ind = payload.as_ptr() as usize
         - packet_buff.as_ptr() as usize;
     StreamClientPacket {
-        flags: flags,
-        seqno: seqno,
+        flags,
+        seqno,
         payload: &packet_buff[payload_ind..]
     }
 }
 
-pub fn parse_stream_client_packet_payload<'a>(
-    payload: &'a [u8]
-) -> StreamClientPacket<'a> {
+pub fn parse_stream_client_packet_payload(
+    payload: &[u8]
+) -> StreamClientPacket {
     let flags = StreamPacketFlags::from_bits(payload[3]).unwrap();
 
     StreamClientPacket {
-        flags: flags,
+        flags,
         seqno: BE::read_u16(&payload[4..=5]),
         payload: &payload[6..]
     }

@@ -1,5 +1,6 @@
+#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![recursion_limit="128"]
+#![warn(clippy)]
 
 // for boolean_enums
 #![feature(plugin)]
@@ -42,7 +43,6 @@ use std::fs::*;
 use std::io;
 use std::process::exit;
 use std::os::unix::prelude::*;
-use std::sync::Arc;
 
 use failure::ResultExt;
 use futures::future::*;
@@ -112,10 +112,12 @@ fn daemonize() -> Result<()> {
 
 fn setup_logging(config: &Config) -> Result<()> {
     if config.daemonize {
-        let log_level = match config.verbose_logging {
-            true => log::LogLevelFilter::Debug,
-            false => log::LogLevelFilter::Info
-        };
+        let log_level =
+            if config.verbose_logging {
+                log::LogLevelFilter::Debug
+            } else {
+                log::LogLevelFilter::Info
+            };
         syslog::init(syslog::Facility::LOG_DAEMON,
             log_level, Some(crate_name!()))?;
     } else {
@@ -134,14 +136,12 @@ fn setup_logging(config: &Config) -> Result<()> {
 fn the_main(config: Config) -> Result<()> {
     info!("{} version {} started", crate_name!(), crate_version!());
 
-    let config = Arc::new(config);
-
     if log_enabled!(Debug) {
         debug!("verbose logging on");
         debug!("configuration read from {}",
             config.config_file.to_string_lossy());
         debug!("received configuration:");
-        for i in toml::to_string(&*config)?.lines() {
+        for i in toml::to_string(&config)?.lines() {
             debug!("\t{}", i);
         }
         debug!("daemonize is {}", if config.daemonize {"on"} else {"off"});
@@ -159,13 +159,12 @@ fn the_main(config: Config) -> Result<()> {
 
     drop_privileges(&config.su)?;
 
-    if config.interfaces.len() == 0 {
+    if config.interfaces.is_empty() {
         bail!("You must configure at least one interface.");
     }
 
-    let config_clone = config.clone();
     tokio::run(poll_fn(move || {
-        setup_server(config_clone.clone()).map_err(|e| log_err(e))?;
+        setup_server(&config).map_err(log_err)?;
         Ok(Async::Ready(()))
     }));
 
@@ -178,7 +177,7 @@ pub enum QuitKind {
     Fast, Normal
 }
 
-fn setup_server(config: Arc<Config>) -> Result<()> {
+fn setup_server(config: &Config) -> Result<()> {
     let (quit_rx, quit_tx) = broadcaster(config.interfaces.len());
 
     handle_signals(quit_tx);
@@ -252,7 +251,7 @@ fn handle_requests(interfaces: &[InterfaceConfig], quit: Receiver<QuitKind>) {
                 Server::new(
                     &j,
                     quit_to_move
-                ).map_err(|e| log_err(e))
+                ).map_err(log_err)
             ).flatten()
         );
         debug!("server for interface {} started", interfaces[i].name);
@@ -324,22 +323,16 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
         | SecBits::NoCapAmbientRaise
         | SecBits::NoCapAmbientRaiseLocked;
     set_securebits(bits)
-        .map_err(|e| Error::SecurebitsError(
-            ::failure::Error::from(e).compat())
-        )?;
+        .map_err(|e| Error::SecurebitsError(e.compat()))?;
 
     drop_supplementary_groups().context("cannot drop supplementary groups")?;
     debug!("dropped supplementary groups");
     if let Some(ref su) = *su {
         let bits = get_securebits()
-                .map_err(|e| Error::SecurebitsError(
-                    ::failure::Error::from(e).compat())
-                )?
+                .map_err(|e| Error::SecurebitsError(e.compat()))?
             | SecBits::KeepCaps;
         set_securebits(bits)
-            .map_err(|e| Error::SecurebitsError(
-                ::failure::Error::from(e).compat())
-            )?;
+            .map_err(|e| Error::SecurebitsError(e.compat()))?;
 
         switch::set_current_gid(su.gid).map_err(Error::PrivDrop)?;
         switch::set_current_uid(su.uid).map_err(Error::PrivDrop)?;
@@ -351,9 +344,7 @@ fn drop_privileges(su: &Option<SuTarget>) -> Result<()> {
     bits.remove(SecBits::KeepCaps);
     bits.insert(SecBits::KeepCapsLocked);
     set_securebits(bits)
-        .map_err(|e| Error::SecurebitsError(
-            ::failure::Error::from(e).compat())
-        )?;
+        .map_err(|e| Error::SecurebitsError(e.compat()))?;
     debug!("securebits set to {:?}", bits);
 
     set_no_new_privs().context("cannot set NO_NEW_PRIVS")?;

@@ -119,7 +119,7 @@ impl SeqnoTracker {
     }
 
     pub fn add(&mut self, x: Wrapping<u16>) -> bool {
-        let ax = self.to_sequential(x);
+        let ax = self.pos_to_sequential(x);
         let range = IRange(ax, ax);
         if !self.tracker.is_range_tracked(range).unwrap() {
             self.tracker.track_range(IRange(ax, ax));
@@ -129,7 +129,7 @@ impl SeqnoTracker {
         }
     }
 
-    pub fn to_sequential(&self, x: Wrapping<u16>) -> usize {
+    pub fn pos_to_sequential(&self, x: Wrapping<u16>) -> usize {
         (x - self.window_start).0 as usize
     }
 
@@ -137,18 +137,18 @@ impl SeqnoTracker {
     -> (VecDeque<IRange<Wrapping<u16>>>, Wrapping<u16>) {
         let ret = self.tracker.into_iter().map(|IRange(l,r)| {
             IRange(
-                self.from_sequential(l),
-                self.from_sequential(r)
+                self.pos_from_sequential(l),
+                self.pos_from_sequential(r)
             )
         }).collect();
         let window_start = self.window_start;
         if let Some(x) = self.tracker.take_range() {
-            self.window_start = self.from_sequential(x) + Wrapping(1);
+            self.window_start = self.pos_from_sequential(x) + Wrapping(1);
         }
         (ret, window_start)
     }
 
-    pub fn from_sequential(&self, x: usize) -> Wrapping<u16> {
+    pub fn pos_from_sequential(&self, x: usize) -> Wrapping<u16> {
         Wrapping((x % U16_MAX_P1) as u16) + self.window_start
     }
 
@@ -170,7 +170,7 @@ impl TimedAckSeqnoGenerator {
     pub fn new(tracker: Arc<Mutex<SeqnoTracker>>, dur: Duration)
             -> TimedAckSeqnoGenerator {
         TimedAckSeqnoGenerator {
-            tracker: tracker,
+            tracker,
             period: dur,
             interval: None,
             active: false,

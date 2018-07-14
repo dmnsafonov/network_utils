@@ -32,9 +32,10 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
             payload: vec![]
         };
 
-        packet_descr.payload = match datagram_conf.raw {
-            true => i.into(),
-            false => form_checked_payload(i)?
+        packet_descr.payload = if datagram_conf.raw {
+            i.into()
+        } else {
+            form_checked_payload(i)?
         };
 
         let packet = make_packet(&packet_descr, *src.ip(), *dst.ip());
@@ -47,7 +48,7 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
                     info!("system call interrupted");
                     return Ok(true);
                 } else {
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }
@@ -56,7 +57,7 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
         Ok(true)
     };
 
-    if datagram_conf.inline_messages.len() > 0 {
+    if !datagram_conf.inline_messages.is_empty() {
         for i in &datagram_conf.inline_messages {
             if !process_message(i.as_bytes())? {
                 break;

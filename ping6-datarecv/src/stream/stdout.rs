@@ -77,7 +77,8 @@ impl<'a> Write for StdoutBytesWriter<'a> {
 
 impl<'a> AsyncWrite for StdoutBytesWriter<'a> {
     fn shutdown(&mut self) -> ::futures::Poll<(), io::Error> {
-        Ok(Async::Ready(try_nb!(self.flush())))
+        try_nb!(self.flush());
+        Ok(Async::Ready(()))
     }
 }
 

@@ -1,3 +1,5 @@
+#![allow(large_enum_variant, type_complexity)]
+
 use ::std::net::*;
 use ::std::num::Wrapping;
 use ::std::sync::*;
@@ -181,12 +183,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let seqno_tracker_clone = seqno_tracker.clone();
         let active = ActiveStreamCommonState {
-            dst: dst,
-            next_seqno: next_seqno,
+            dst,
+            next_seqno,
             order: Arc::new(Mutex::new(
                 DataOrderer::new(common.window_size, common.mtu)
             )),
-            seqno_tracker: seqno_tracker,
+            seqno_tracker,
             ack_gen: Some(TimedAckSeqnoGenerator::new(
                 seqno_tracker_clone,
                 Duration::from_millis(ACK_SEND_PERIOD)
@@ -201,8 +203,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         );
 
         transition!(SendSynAck {
-            common: common,
-            active: active,
+            common,
+            active,
             send_syn_ack: send_future,
             next_action: None
         })
@@ -244,9 +246,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                         }
                     };
 
-                    match pass {
-                        true => Ok(Some((data, dst))),
-                        false => Ok(None)
+                    if pass {
+                        Ok(Some((data, dst)))
+                    } else {
+                        Ok(None)
                     }
                 }).filter_map(|x| x);
             let timed = TimeoutResultStream::new(
@@ -261,8 +264,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         });
 
         transition!(WaitForAck {
-            common: common,
-            active: active,
+            common,
+            active,
             recv_stream: timed_packets
         })
     }
@@ -348,7 +351,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 let packet = parse_stream_client_packet(&data);
 
                 let seqno = seqno_tracker_ref.lock().unwrap()
-                    .to_sequential(Wrapping(packet.seqno));
+                    .pos_to_sequential(Wrapping(packet.seqno));
                 debug!("packet position in the receive window: {}",
                     seqno as u32 + 1);
 
@@ -362,12 +365,12 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         transition!(
             ReceivePackets {
-                common: common,
-                active: active,
-                task: task,
+                common,
+                active,
+                task,
                 recv_stream: unsafe { SendBox::new(Box::new(recv_stream)) },
                 write_future: None,
-                timeout: timeout,
+                timeout,
                 ack_sender_handle,
                 fin_seqno: None
             }
@@ -397,7 +400,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
             activity = poll_make_write_data_fut(&mut *state)? || activity;
         }
 
-        poll_timeout(&mut *state, ack_sending_task.clone())?;
+        poll_timeout(&mut *state, &ack_sending_task)?;
 
         if state.fin_seqno.is_some()
                 && state.active.seqno_tracker.lock().unwrap().is_empty()
@@ -448,17 +451,14 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                     let pass = {
                         let packet = parse_stream_client_packet(&data);
 
-                        if packet.flags == StreamPacketFlags::Ack
-                                && packet.seqno == seqno {
-                            true
-                        } else {
-                            false
-                        }
+                        packet.flags == StreamPacketFlags::Ack
+                            && packet.seqno == seqno
                     };
 
-                    match pass {
-                        true => Ok(Some((data, dst))),
-                        false => Ok(None)
+                    if pass {
+                        Ok(Some((data, dst)))
+                    } else {
+                        Ok(None)
                     }
                 }).filter_map(|x| x);
             let timed = TimeoutResultStream::new(
@@ -480,6 +480,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         })
     }
 
+    #[allow(needless_return)]
     fn poll_wait_for_last_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
     ) -> Poll<AfterWaitForLastAck<'s>, ::failure::Error> {
@@ -518,21 +519,21 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     }
 
     fn poll_send_fin<'a>(
-        state: &'a mut RentToOwn<'a, SendFin<'s>>
+        _state: &'a mut RentToOwn<'a, SendFin<'s>>
     ) -> Poll<AfterSendFin<'s>, ::failure::Error> {
         debug!("sending FIN");
         unimplemented!()
     }
 
     fn poll_wait_for_fin_ack<'a>(
-        state: &'a mut RentToOwn<'a, WaitForFinAck<'s>>
+        _state: &'a mut RentToOwn<'a, WaitForFinAck<'s>>
     ) -> Poll<AfterWaitForFinAck<'s>, ::failure::Error> {
         debug!("waiting for FIN+ACK");
         unimplemented!()
     }
 
     fn poll_send_last_ack<'a>(
-        state: &'a mut RentToOwn<'a, SendLastAck<'s>>
+        _state: &'a mut RentToOwn<'a, SendLastAck<'s>>
     ) -> Poll<AfterSendLastAck, ::failure::Error> {
         debug!("sending lack ACK");
         unimplemented!()
@@ -675,7 +676,7 @@ fn poll_recv_stream(
 
         let seqno_is_new = state.active.seqno_tracker.lock().unwrap()
             .add(Wrapping(packet.seqno));
-        if seqno_is_new && packet.payload.len() > 0 {
+        if seqno_is_new && !packet.payload.is_empty() {
             state.timeout.reset(make_connection_timeout_delay());
             state.active.order.lock().unwrap().add(&data);
         }
@@ -717,7 +718,7 @@ fn poll_make_write_data_fut(state: &mut ReceivePackets) -> Result<bool> {
 
 fn poll_timeout(
     state: &mut ReceivePackets,
-    ack_sending_task: Task
+    ack_sending_task: &Task
 ) -> Result<()> {
     if let Async::Ready(_) = state.timeout.poll()? {
         state.ack_sender_handle.stop();

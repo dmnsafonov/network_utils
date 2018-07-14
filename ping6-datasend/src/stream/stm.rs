@@ -1,3 +1,5 @@
+#![allow(large_enum_variant, type_complexity)]
+
 use ::std::cell::*;
 use ::std::collections::VecDeque;
 use ::std::net::SocketAddrV6;
@@ -153,10 +155,10 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
     ) -> Poll<AfterInitState<'s>, ::failure::Error> {
         let mut common = state.take().common;
 
-        let send_future = make_first_syn_future(&mut common);
+        let send = make_first_syn_future(&mut common);
         transition!(SendFirstSyn {
-            common: common,
-            send: send_future,
+            common,
+            send,
             next_action: None
         })
     }
@@ -195,7 +197,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         });
 
         transition!(WaitForSynAck {
-            common: common,
+            common,
             recv_stream: timed_packets
         })
     }
@@ -239,7 +241,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         // TODO: output the server message
 
-        let fut = make_send_fut(
+        let send_ack = make_send_fut(
             &mut common,
             StreamPacketFlags::Ack,
             &[],
@@ -248,8 +250,8 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         common.next_seqno += Wrapping(1);
 
         transition!(SendAck {
-            common: common,
-            send_ack: fut
+            common,
+            send_ack
         })
     }
 
@@ -290,10 +292,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
         let mut activity = true;
         while activity {
-            activity = {
-                let ret = fill_read_buf(&mut *state)?;
-                ret
-            };
+            activity = fill_read_buf(&mut *state)?;
             fill_next_data(&mut *state);
             if state.next_data.borrow().is_some() {
                 make_data_send_fut(&mut *state);
@@ -317,24 +316,24 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
                 );
                 transition!(SendFin {
                     common,
-                    send_fut: send_fut,
+                    send_fut,
                     next_action: None
                 });
             }
         }
 
-        return Ok(Async::NotReady);
+        Ok(Async::NotReady)
     }
 
     fn poll_send_fin_ack<'a>(
-        state: &'a mut RentToOwn<'a, SendFinAck<'s>>
+        _state: &'a mut RentToOwn<'a, SendFinAck<'s>>
     ) -> Poll<AfterSendFinAck<'s>, ::failure::Error> {
         debug!("sending FIN+ACK");
         unimplemented!()
     }
 
     fn poll_wait_for_last_ack<'a>(
-        state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
+        _state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
     ) -> Poll<AfterWaitForLastAck<'s>, ::failure::Error> {
         debug!("waiting for last ACK");
         unimplemented!()
@@ -581,7 +580,7 @@ fn poll_send_fut(
             return Ok(true);
         }
     }
-    return Ok(false)
+    Ok(false)
 }
 
 fn make_data_send_fut<'s>(
@@ -624,7 +623,9 @@ fn fill_next_data(state: &mut SendData) {
             if let Some(window_start) = state.ack_wait.first_seqno() {
                 let stream_conf = get_stream_config(state.common.config);
                 let window_size = stream_conf.window_size;
-                let diff = (state.common.next_seqno - window_start).0 as u32;
+                let diff = u32::from(
+                    (state.common.next_seqno - window_start).0
+                );
                 debug_assert!(diff <= window_size);
                 if diff == window_size {
                     return;
@@ -655,7 +656,7 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
 
         let window_start =
             match state.ack_wait.first_seqno() {
-                Some(first) => first.0 as u32,
+                Some(first) => u32::from(first.0),
                 None => return Ok(false)
             };
         let window_end = window_start + sc.window_size - 1;
@@ -667,15 +668,13 @@ fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
             debug!("received WS+ACK for range [{}, {}]",
                 packet.seqno_start, packet.seqno_end);
             let win_range = IRange(window_start, window_end);
-            if win_range.contains_point(packet.seqno_start as u32) {
-                if state.ack_wait.remove(
+            if win_range.contains_point(u32::from(packet.seqno_start)) {
+                got_new_ack = state.ack_wait.remove(
                     IRange(
                         Wrapping(window_start as u16),
                         Wrapping(packet.seqno_start)
                     )
-                ) {
-                    got_new_ack = true;
-                }
+                );
             }
         } else {
             debug!("received ACK for range [{}, {}]",

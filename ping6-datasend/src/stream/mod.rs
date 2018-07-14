@@ -53,10 +53,10 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
 
     let init_state = StreamCommonState {
         config: unsafe { (&config as *const Config).as_ref().unwrap() },
-        src: src,
-        dst: dst,
+        src,
+        dst,
         sock: async_sock,
-        mtu: mtu,
+        mtu,
         data_source: data,
         send_buf: BytesMut::with_capacity(mtu as usize),
         // if we assumed default mtu, then the incoming packet size is unknown

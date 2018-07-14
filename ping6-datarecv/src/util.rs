@@ -39,12 +39,12 @@ pub fn validate_icmpv6(
         return false;
     }
 
-    return true;
+    true
 }
 
 pub fn write_binary(out: &mut io::StdoutLock, len: &[u8], payload: &[u8])
         -> Result<()> {
-    out.write(len)?;
-    out.write(payload)?;
+    out.write_all(len)?;
+    out.write_all(payload)?;
     Ok(())
 }

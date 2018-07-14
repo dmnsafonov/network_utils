@@ -123,7 +123,7 @@ impl TrimmingBuffer {
                     TrimmingBufferSliceImpl::Direct {
                         parent: self.0.clone(),
                         start: beginning[ind ..= ind].as_ptr(),
-                        len: len
+                        len
                     }
                 } else {
                     let mut ret = Vec::with_capacity(len);
@@ -145,7 +145,7 @@ impl TrimmingBuffer {
                 TrimmingBufferSliceImpl::Direct {
                     parent: self.0.clone(),
                     start: ending[ind ..= ind].as_ptr(),
-                    len: len
+                    len
                 }
             };
             TrimmingBufferSlice(inner)

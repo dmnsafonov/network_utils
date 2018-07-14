@@ -250,8 +250,8 @@ impl Server {
             let n_mask = prefix_conf.prefix.netmask();
             let get_bits = |addr: &Ipv6Addr| -> u32 {
                 let s = addr.segments();
-                let last_bits = ((s[6] as u32 & 0xff) << 16)
-                    | s[7] as u32;
+                let last_bits = ((u32::from(s[6]) & 0xff) << 16)
+                    | u32::from(s[7]);
                 last_bits >> (128 - n_mask)
             };
 
@@ -306,7 +306,7 @@ impl Future for Server {
             if let Async::Ready(qk) = self.quit.poll()
                     .map_err(|e| log_err(e.into()))? {
                 debug!("received a signal, quitting");
-                active = true;
+                // active = true;
                 match qk.expect("a quit signal") {
                     // the distinction will be important when implementing
                     // querying the target network's interface

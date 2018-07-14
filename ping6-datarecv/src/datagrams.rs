@@ -19,9 +19,10 @@ pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
 
     // ipv6 payload length is 2-byte
     let mut raw_buf = vec![0; ::std::u16::MAX as usize];
-    let mut stdout_locked = match datagram_conf.binary {
-        true => Some(movable_io_lock(io::stdout())),
-        false => None
+    let mut stdout_locked = if datagram_conf.binary {
+        Some(movable_io_lock(io::stdout()))
+    } else {
+        None
     };
     loop {
         if signal_received() {
@@ -85,7 +86,7 @@ fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
         return false;
     }
 
-    return true;
+    true
 }
 
 fn binary_print(
@@ -127,9 +128,10 @@ fn regular_print(payload: &[u8], src: Ipv6Addr, raw: Raw) -> Result<()> {
     let payload_for_print = match raw {
         Raw::Yes => Some(payload),
         Raw::No => {
-            match validate_payload(payload) {
-                true => Some(&payload[4..]),
-                false => None
+            if validate_payload(payload) {
+                Some(&payload[4..])
+            } else {
+                None
             }
         }
     };

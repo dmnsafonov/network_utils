@@ -61,8 +61,8 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
         )?,
         window_size: stream_conf.window_size,
         sock: async_sock,
-        mtu: mtu,
-        data_out: data_out,
+        mtu,
+        data_out,
         send_buf: BytesMut::with_capacity(mtu as usize),
         // if we assumed default mtu, then the incoming packet size is unknown
         recv_buf: BytesMut::with_capacity(::std::u16::MAX as usize),

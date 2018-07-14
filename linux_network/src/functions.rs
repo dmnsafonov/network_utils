@@ -129,6 +129,7 @@ pub fn get_interface_mtu<F,T>(fd: &F, ifname: T) -> Result<c_int> where
     Ok(ifr.un.ifr_mtu)
 }}
 
+#[allow(transmute_ptr_to_ptr)]
 pub fn make_sockaddr_in6_v6_dgram<T>(
     addr_str: T,
     socktype: Option<SockType>,

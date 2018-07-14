@@ -8,7 +8,8 @@ use ::ping6_datacommon::*;
 
 use ::stream::packet::make_stream_server_icmpv6_packet;
 
-pub fn make_send_fut_raw<'a>(
+#[allow(too_many_arguments)]
+pub fn make_send_fut_raw(
     mut sock: futures::IPv6RawSocketAdapter,
     mut send_buf: &mut BytesMut,
     src: Ipv6Addr,
