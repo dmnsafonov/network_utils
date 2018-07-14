@@ -2,10 +2,6 @@
 #![warn(bare_trait_objects)]
 #![warn(clippy)]
 
-// for boolean_enums
-#![feature(plugin)]
-#![plugin(interpolate_idents)]
-
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate boolean_enums;
 extern crate bytes;
