@@ -1,6 +1,0 @@
-[package]
-name = "numeric_enums"
-version = "0.1.0"
-authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
-
-[dependencies]

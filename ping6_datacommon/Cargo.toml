@@ -5,7 +5,7 @@ authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 
 [dependencies]
 bitflags = "^1.0.3"
-boolean_enums = { path = "../boolean_enums" }
+boolean-enums = "^0.2.0"
 byteorder = "^1.2.3"
 capabilities = "^0.3.0"
 failure = "^0.1.1"
