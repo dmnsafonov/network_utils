@@ -1,3 +1,5 @@
+#![allow(bare_trait_objects)] // triggered by failure_derive
+
 use ::std::io;
 
 use ::failure::Fail;

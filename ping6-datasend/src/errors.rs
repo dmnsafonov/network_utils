@@ -1,3 +1,5 @@
+#![allow(bare_trait_objects)] // triggered by failure_derive
+
 pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
 #[derive(Debug, Fail)]
