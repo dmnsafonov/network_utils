@@ -9,4 +9,4 @@ members = [
 ]
 
 [patch.crates-io]
-seccomp-sys = { path = "../seccomp-sys" }
+seccomp-sys = { git = "https://github.com/polachok/seccomp-sys.git" }
