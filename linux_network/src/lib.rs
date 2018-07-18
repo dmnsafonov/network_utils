@@ -17,7 +17,7 @@ extern crate pnet_packet;
 #[cfg(feature = "async")] extern crate tokio;
 
 #[macro_use] extern crate boolean_enums;
-#[macro_use] extern crate numeric_enums;
+#[macro_use] extern crate enum_repr;
 
 #[macro_use] mod util;
 #[macro_use] pub mod bpf;
@@ -51,6 +51,6 @@ use self::util::check_for_eagain;
 
 pub use self::errors::ErrorKind::{Again, Interrupted};
 
-pub use numeric_enums::*;
+pub use enum_repr::*;
 
 pub use pnet_packet::ipv6::Ipv6;

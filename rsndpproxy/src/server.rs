@@ -105,7 +105,7 @@ impl Server {
         ifc: &InterfaceConfig
     ) -> Result<futures::IPv6RawSocketAdapter> {
         let send_sock_raw = IPv6RawSocket::new(
-            IpProto::IcmpV6.bits(),
+            IpProto::IcmpV6.repr(),
             SockFlag::empty()
         )?;
         debug!("created a raw socket for interface {}", ifc.name);

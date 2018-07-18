@@ -353,7 +353,7 @@ pub mod SockOpts {
         unsafe fn to_set_sock_opt_arg(
             &'a self
         ) -> Result<(Self::Owner, *const c_void, socklen_t)> {
-            let ptr = Box::into_raw(Box::new(self.bits()));
+            let ptr = Box::into_raw(Box::new(self.repr()));
             Ok((
                 Box::from_raw(ptr),
                 ptr as *const c_void,
@@ -382,8 +382,8 @@ pub mod SockOpts {
                     let (_, ptr, len) = self.val.to_set_sock_opt_arg()?;
                     n1try!(::libc::setsockopt(
                         fd.as_raw_fd(),
-                        $level.bits(),
-                        $opt.bits(),
+                        $level.repr(),
+                        $opt.repr(),
                         ptr,
                         len
                     ));

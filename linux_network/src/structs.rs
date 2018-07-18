@@ -74,12 +74,12 @@ impl icmp6_filter {
     }
 
     pub fn pass(&mut self, icmp_type: IcmpV6Type) {
-        let tp = icmp_type.bits();
+        let tp = icmp_type.repr();
         self.icmp6_filt[tp as usize >> 5] &= !(1 << (tp & 31));
     }
 
     pub fn block(&mut self, icmp_type: IcmpV6Type) {
-        let tp = icmp_type.bits();
+        let tp = icmp_type.repr();
         self.icmp6_filt[tp as usize >> 5] |= 1 << (tp & 31);
     }
 }
