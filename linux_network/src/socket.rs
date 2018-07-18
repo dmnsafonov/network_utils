@@ -363,7 +363,7 @@ pub mod SockOpts {
     }
 
     macro_rules! gen_sock_opt {
-        ($name:ident, $opt:expr, $level:expr, $typ:ty) => (
+        ($name:ident, $opt:expr, $typ:ty) => (
             pub struct $name<'a> {
                 val: &'a $typ
             }
@@ -382,7 +382,7 @@ pub mod SockOpts {
                     let (_, ptr, len) = self.val.to_set_sock_opt_arg()?;
                     n1try!(::libc::setsockopt(
                         fd.as_raw_fd(),
-                        $level.repr(),
+                        $opt.get_sock_opt_level().repr(),
                         $opt.repr(),
                         ptr,
                         len
@@ -394,7 +394,7 @@ pub mod SockOpts {
     }
 
     macro_rules! gen_sock_opt_any_sized {
-        ($name:ident, $opt:expr, $level:expr, $typ:ty) => (
+        ($name:ident, $opt:expr, $typ:ty) => (
             impl<'a> ToSetSockOptArg<'a> for $typ {
                 type Owner = &'a $typ;
 
@@ -408,25 +408,21 @@ pub mod SockOpts {
                 }
             }
 
-            gen_sock_opt!($name, $opt, $level, $typ);
+            gen_sock_opt!($name, $opt, $typ);
         )
     }
 
-    gen_sock_opt!(IpHdrIncl, SockOpt::IpHdrIncl, SockOptLevel::IPv6, bool);
-    gen_sock_opt_any_sized!(IcmpV6Filter, SockOpt::IcmpV6Filter,
-        SockOptLevel::IcmpV6, icmp6_filter);
-    gen_sock_opt!(BindToDevice, SockOpt::BindToDevice,
-        SockOptLevel::Socket, str);
-    gen_sock_opt!(DontRoute, SockOpt::DontRoute, SockOptLevel::Socket, bool);
-    gen_sock_opt!(V6Only, SockOpt::V6Only, SockOptLevel::IPv6, bool);
-    gen_sock_opt_any_sized!(AttachFilter, SockOpt::AttachFilter,
-        SockOptLevel::Socket, sock_fprog);
-    gen_sock_opt!(LockFilter, SockOpt::LockFilter,
-        SockOptLevel::Socket, bool);
-    gen_sock_opt!(UnicastHops, SockOpt::UnicastHops,
-        SockOptLevel::IPv6, c_int);
-    gen_sock_opt!(V6MtuDiscover, SockOpt::V6MtuDiscover,
-        SockOptLevel::IPv6, V6PmtuType);
+    gen_sock_opt!(IpHdrIncl, SockOptIPv6::IpHdrIncl, bool);
+    gen_sock_opt_any_sized!(IcmpV6Filter, SockOptICMPv6::IcmpV6Filter,
+        icmp6_filter);
+    gen_sock_opt!(BindToDevice, SockOptSocket::BindToDevice, str);
+    gen_sock_opt!(DontRoute, SockOptSocket::DontRoute, bool);
+    gen_sock_opt!(V6Only, SockOptIPv6::V6Only, bool);
+    gen_sock_opt_any_sized!(AttachFilter, SockOptSocket::AttachFilter,
+        sock_fprog);
+    gen_sock_opt!(LockFilter, SockOptSocket::LockFilter, bool);
+    gen_sock_opt!(UnicastHops, SockOptIPv6::UnicastHops, c_int);
+    gen_sock_opt!(V6MtuDiscover, SockOptIPv6::V6MtuDiscover, V6PmtuType);
 }
 
 #[cfg(feature = "seccomp")]

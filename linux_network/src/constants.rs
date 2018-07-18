@@ -183,50 +183,94 @@ bitflags!(
 );
 
 // not exhaustive
-gen_enum!(pub IpProto: c_int;
-    (IPPROTO_IPV6 => IPv6),
-    (IPPROTO_ICMPV6 => IcmpV6)
-);
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum IpProto {
+    IPv6 = IPPROTO_IPV6 as isize,
+    IcmpV6 = IPPROTO_ICMPV6 as isize
+}
 
 // not exhaustive
-gen_enum!(pub SockOptLevel: c_int;
-    (SOL_SOCKET => Socket),
-    (IPPROTO_IPV6 => IPv6),
-    (IPPROTO_ICMPV6 => IcmpV6)
-);
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum SockOptLevel {
+    Socket = SOL_SOCKET as isize,
+    IPv6 = IPPROTO_IPV6 as isize,
+    IcmpV6 = IPPROTO_ICMPV6 as isize
+}
+
+pub trait SockOptLevelGetter {
+    fn get_sock_opt_level(self) -> SockOptLevel;
+}
 
 // not exhaustive
-gen_enum!(pub SockOpt: c_int;
-    (IP_HDRINCL => IpHdrIncl),
-    (ICMPV6_FILTER => IcmpV6Filter),
-    (SO_BINDTODEVICE => BindToDevice),
-    (SO_DONTROUTE => DontRoute),
-    (IPV6_V6ONLY => V6Only),
-    (SO_ATTACH_FILTER => AttachFilter),
-    (SO_LOCK_FILTER => LockFilter),
-    (IPV6_UNICAST_HOPS => UnicastHops),
-    (IPV6_MTU_DISCOVER => V6MtuDiscover)
-);
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum SockOptIPv6 {
+    IpHdrIncl = IP_HDRINCL as isize,
+    V6Only = IPV6_V6ONLY as isize,
+    UnicastHops = IPV6_UNICAST_HOPS as isize,
+    V6MtuDiscover = IPV6_MTU_DISCOVER as isize
+}
 
-gen_enum!(pub V6PmtuType: c_int;
-    (IPV6_PMTUDISC_DONT => Dont),
-    (IPV6_PMTUDISC_WANT => Want),
-    (IPV6_PMTUDISC_DO => Do),
-    (IPV6_PMTUDISC_PROBE => Probe)
-);
+impl SockOptLevelGetter for SockOptIPv6 {
+    fn get_sock_opt_level(self) -> SockOptLevel {
+        SockOptLevel::IPv6
+    }
+}
 
-gen_enum!(pub IcmpV6Type: uint8_t;
-    (ICMP6_ECHO_REQUEST => EchoRequest),
-    (ICMP6_ECHO_REPLY => EchoReply),
-    (MLD_LISTENER_QUERY => MldListenerQuery),
-    (MLD_LISTENER_REPORT => MldListenerReport),
-    (MLD_LISTENER_REDUCTION => MldListenerReduction),
-    (ND_ROUTER_SOLICIT => NdRouterSolicit),
-    (ND_ROUTER_ADVERT => NdRouterAdvert),
-    (ND_NEIGHBOR_SOLICIT => NdNeighborSolicit),
-    (ND_NEIGHBOR_ADVERT => NdNeighborAdvert),
-    (ND_REDIRECT => NdRedirect)
-);
+// not exhaustive
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum SockOptICMPv6 {
+    IcmpV6Filter = ICMPV6_FILTER as isize
+}
+
+impl SockOptLevelGetter for SockOptICMPv6 {
+    fn get_sock_opt_level(self) -> SockOptLevel {
+        SockOptLevel::IcmpV6
+    }
+}
+
+// not exhaustive
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum SockOptSocket {
+    BindToDevice = SO_BINDTODEVICE as isize,
+    DontRoute = SO_DONTROUTE as isize,
+    AttachFilter = SO_ATTACH_FILTER as isize,
+    LockFilter = SO_LOCK_FILTER as isize
+}
+
+impl SockOptLevelGetter for SockOptSocket {
+    fn get_sock_opt_level(self) -> SockOptLevel {
+        SockOptLevel::Socket
+    }
+}
+
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum V6PmtuType {
+    Dont = IPV6_PMTUDISC_DONT as isize,
+    Want = IPV6_PMTUDISC_WANT as isize,
+    Do = IPV6_PMTUDISC_DO as isize,
+    Probe = IPV6_PMTUDISC_PROBE as isize
+}
+
+#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
+#[EnumReprType = "c_int"]
+pub enum IcmpV6Type {
+    EchoRequest = ICMP6_ECHO_REQUEST as isize,
+    EchoReply = ICMP6_ECHO_REPLY as isize,
+    MldListenerQuery = MLD_LISTENER_QUERY as isize,
+    MldListenerReport = MLD_LISTENER_REPORT as isize,
+    MldListenerReduction = MLD_LISTENER_REDUCTION as isize,
+    NdRouterSolicit = ND_ROUTER_SOLICIT as isize,
+    NdRouterAdvert = ND_ROUTER_ADVERT as isize,
+    NdNeighborSolicit = ND_NEIGHBOR_SOLICIT as isize,
+    NdNeighborAdvert = ND_NEIGHBOR_ADVERT as isize,
+    NdRedirect = ND_REDIRECT as isize
+}
 
 bitflags!(
     pub struct RecvFlags: c_int {
