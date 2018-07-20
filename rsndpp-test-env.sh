@@ -53,5 +53,5 @@ elif [[ "$1" == "list-pids" ]]; then
     echo outer:
     ip netns pids rsp-outer
 else
-    echo 'use setup, clean, innershell, middleshell, outershell, or list-pids'
+    echo 'use setup, clean, innershell, middleshell, outershell, kill, or list-pids'
 fi
