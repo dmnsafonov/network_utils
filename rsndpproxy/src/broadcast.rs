@@ -56,7 +56,7 @@ impl<T> Receiver<T> {
     pub fn clone(other: &Receiver<T>) -> Receiver<T> {
         let id = other.inner.next_id.fetch_add(1, Ordering::Relaxed);
         other.inner.rx_count.fetch_add(1, Ordering::Relaxed);
-        debug_assert!(other.inner.rx_tasks.read().unwrap()[id].is_some());
+        debug_assert!(other.inner.rx_tasks.read().unwrap()[id].is_none());
         assert!(id < other.inner.rx_tasks.read().unwrap().len());
 
         Receiver {

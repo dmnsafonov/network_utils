@@ -221,8 +221,8 @@ fn handle_signals(mut sender: Sender<QuitKind>) {
                 }
 
                 if !sender.are_receivers_present() {
-                    debug!("no signal broadcast readers, \
-                        the broadcast worker quitting");
+                    debug!("no signal broadcast readers left, \
+                        broadcast worker quitting");
                     return Ok(Async::Ready(()));
                 }
             }
