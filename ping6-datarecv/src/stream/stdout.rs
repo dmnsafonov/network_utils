@@ -29,6 +29,7 @@ gen_evented_eventedfd!(StdoutWrapper);
 #[derive(Clone)]
 pub struct StdoutBytesWriter(Arc<UnsafeCell<StdoutBytesWriterImpl>>);
 unsafe impl Send for StdoutBytesWriter {}
+unsafe impl Sync for StdoutBytesWriter {}
 
 struct StdoutBytesWriterImpl {
     stdout: PollEvented2<StdoutWrapper>,
