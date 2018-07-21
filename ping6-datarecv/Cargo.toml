@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Dmitry Safonov <dimanss47@dimanss47.net>"]
 
 [dependencies]
-boolean-enums = "^0.2.0"
+boolean-enums = "^0.3.0"
 bytes = "^0.4.7"
 clap = "^2.26.2"
 env_logger = "^0.4.3"

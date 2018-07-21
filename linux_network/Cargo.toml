@@ -8,7 +8,7 @@ async = ["bytes", "mio", "owning_ref", "tokio"]
 
 [dependencies]
 bitflags = "^1.0.3"
-boolean-enums = "^0.2.0"
+boolean-enums = "^0.3.0"
 bytes = { version = "^0.4.7", optional = true }
 enum-kinds-macros = "^0.1.1"
 enum-kinds-traits = "^0.1.0"
