@@ -15,9 +15,9 @@ use ::linux_network::*;
 
 use ::errors::Result;
 
-struct StdoutLockWrapper<'a>(io::StdoutLock<'a>);
+struct StdoutWrapper(io::Stdout);
 
-impl<'a> Write for StdoutLockWrapper<'a> {
+impl Write for StdoutWrapper {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write(buf)
     }
@@ -27,33 +27,30 @@ impl<'a> Write for StdoutLockWrapper<'a> {
     }
 }
 
-impl<'a> AsRawFd for StdoutLockWrapper<'a> {
+impl AsRawFd for StdoutWrapper {
     fn as_raw_fd(&self) -> RawFd {
-        // safe, because it essencially returns STDOUT_FILENO without locking
-        io::stdout().as_raw_fd()
+        self.0.as_raw_fd()
     }
 }
 
-gen_evented_eventedfd_lifetimed!(StdoutLockWrapper<'gen_lifetime>);
+gen_evented_eventedfd!(StdoutWrapper);
 
 #[derive(Clone)]
-pub struct StdoutBytesWriter<'a>(Arc<Mutex<StdoutBytesWriterImpl<'a>>>);
-unsafe impl<'a> Send for StdoutBytesWriter<'a> {}
-unsafe impl<'a> Sync for StdoutBytesWriter<'a> {}
+pub struct StdoutBytesWriter(Arc<Mutex<StdoutBytesWriterImpl>>);
 
-struct StdoutBytesWriterImpl<'a> {
-    stdout: PollEvented2<StdoutLockWrapper<'a>>,
+struct StdoutBytesWriterImpl {
+    stdout: PollEvented2<StdoutWrapper>,
     drop_nonblock: bool
 }
 
-impl<'a> StdoutBytesWriter<'a> {
-    pub fn new(handle: &Handle, stdout: io::StdoutLock<'a>)
-            -> Result<StdoutBytesWriter<'a>> {
+impl StdoutBytesWriter {
+    pub fn new(handle: &Handle)
+            -> Result<StdoutBytesWriter> {
         let old = set_fd_nonblock(&io::stdout(), Nonblock::Yes)?;
         let ret = Arc::new(Mutex::new(
             StdoutBytesWriterImpl {
                 stdout: PollEvented2::new_with_handle(
-                    StdoutLockWrapper(stdout),
+                    StdoutWrapper(io::stdout()),
                     handle
                 )?,
                 drop_nonblock: !old
@@ -63,7 +60,7 @@ impl<'a> StdoutBytesWriter<'a> {
     }
 }
 
-impl<'a> Write for StdoutBytesWriter<'a> {
+impl Write for StdoutBytesWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut theself = self.0.lock().unwrap();
         theself.stdout.get_mut().write(buf)
@@ -75,14 +72,14 @@ impl<'a> Write for StdoutBytesWriter<'a> {
     }
 }
 
-impl<'a> AsyncWrite for StdoutBytesWriter<'a> {
+impl AsyncWrite for StdoutBytesWriter {
     fn shutdown(&mut self) -> ::futures::Poll<(), io::Error> {
         try_nb!(self.flush());
         Ok(Async::Ready(()))
     }
 }
 
-impl<'a> Drop for StdoutBytesWriter<'a> {
+impl Drop for StdoutBytesWriter {
     fn drop(&mut self) {
         let theself = self.0.lock().unwrap();
         if theself.drop_nonblock {

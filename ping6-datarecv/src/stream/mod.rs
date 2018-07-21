@@ -5,8 +5,6 @@ pub mod stdout;
 pub mod stm;
 pub mod util;
 
-use ::std::io;
-
 use ::bytes::BytesMut;
 
 use ::linux_network::*;
@@ -47,11 +45,7 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
     };
 
     let async_sock = futures::IPv6RawSocketAdapter::new(rt.reactor(), sock)?;
-    let stdout = io::stdout();
-    let data_out = StdoutBytesWriter::new(
-        rt.reactor(),
-        unsafe { (&stdout as *const io::Stdout).as_ref().unwrap().lock() }
-    )?;
+    let data_out = StdoutBytesWriter::new(rt.reactor())?;
 
     let init_state = StreamCommonState {
         config: unsafe { (&config as *const Config).as_ref().unwrap() },

@@ -70,7 +70,7 @@ pub enum StreamMachine<'s> {
         active: ActiveStreamCommonState,
         task: Arc<Mutex<Option<Task>>>,
         recv_stream: SendBox<StreamE<(Bytes, SocketAddrV6)>>,
-        write_future: Option<WriteBorrow<StdoutBytesWriter<'s>>>,
+        write_future: Option<WriteBorrow<StdoutBytesWriter>>,
         timeout: Delay,
         ack_sender_handle: AckGenHandle,
         fin_seqno: Option<u16>
@@ -734,7 +734,7 @@ pub struct StreamCommonState<'a> {
     pub window_size: u32,
     pub sock: futures::IPv6RawSocketAdapter,
     pub mtu: u16,
-    pub data_out: StdoutBytesWriter<'a>,
+    pub data_out: StdoutBytesWriter,
     pub send_buf: BytesMut,
     pub recv_buf: BytesMut,
     pub handle: ::tokio::runtime::TaskExecutor

@@ -15,7 +15,6 @@ use ::util::*;
 pub use ::nix::sys::socket::SockFlag;
 
 pub struct IPv6RawSocket(RawFd);
-unsafe impl Sync for IPv6RawSocket {}
 
 impl IPv6RawSocket {
     pub fn new(proto: c_int, flags: SockFlag)
@@ -118,7 +117,6 @@ pub struct IPv6PacketSocket {
     macaddr: MacAddr,
     proto: c_ushort
 }
-unsafe impl Sync for IPv6PacketSocket {}
 
 impl IPv6PacketSocket {
     pub fn new<T>(proto: u16, flags: SockFlag, if_name: T)
