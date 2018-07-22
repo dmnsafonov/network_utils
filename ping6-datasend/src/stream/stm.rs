@@ -21,7 +21,7 @@ use ::send_box::SendBox;
 
 use ::config::*;
 use ::errors::{Error, Result};
-use ::stdin_iterator::StdinBytesReader;
+use ::stdin::StdinBytesReader;
 use ::stream::buffers::*;
 use ::stream::packet::*;
 
@@ -734,7 +734,7 @@ pub struct StreamCommonState<'a> {
     pub dst: SocketAddrV6,
     pub sock: futures::IPv6RawSocketAdapter,
     pub mtu: u16,
-    pub data_source: StdinBytesReader<'a>,
+    pub data_source: StdinBytesReader,
     pub send_buf: BytesMut,
     pub recv_buf: BytesMut,
     pub next_seqno: Wrapping<u16>,

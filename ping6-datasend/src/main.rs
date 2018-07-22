@@ -29,7 +29,7 @@ extern crate ping6_datacommon;
 mod config;
 mod datagrams;
 mod errors;
-mod stdin_iterator;
+mod stdin;
 mod stream;
 mod util;
 

@@ -2,7 +2,6 @@ mod buffers;
 mod packet;
 mod stm;
 
-use ::std::io;
 use ::std::num::Wrapping;
 
 use ::rand::*;
@@ -15,7 +14,7 @@ use ::ping6_datacommon::*;
 
 use ::config::*;
 use ::errors::{Error, Result};
-use ::stdin_iterator::StdinBytesReader;
+use ::stdin::StdinBytesReader;
 use ::util::InitState;
 
 use self::stm::*;
@@ -45,11 +44,7 @@ pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
     };
 
     let async_sock = futures::IPv6RawSocketAdapter::new(rt.reactor(), sock)?;
-    let stdin = io::stdin();
-    let data = StdinBytesReader::new(
-        rt.reactor(),
-        unsafe { (&stdin as *const io::Stdin).as_ref().unwrap().lock() }
-    )?;
+    let data = StdinBytesReader::new(rt.reactor())?;
 
     let init_state = StreamCommonState {
         config: unsafe { (&config as *const Config).as_ref().unwrap() },

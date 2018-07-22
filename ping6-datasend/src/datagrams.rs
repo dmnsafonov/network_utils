@@ -13,7 +13,7 @@ use ::ping6_datacommon::*;
 use ::config::*;
 use ::errors::{Error, Result};
 use ::util::*;
-use ::stdin_iterator::*;
+use ::stdin::StdinBytesIterator;
 
 pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
     let datagram_conf = extract!(ModeConfig::Datagram(_), config.mode)
