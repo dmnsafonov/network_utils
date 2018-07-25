@@ -16,8 +16,10 @@ use ::util::*;
 use ::stdin::StdinBytesIterator;
 
 pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
-    let datagram_conf = extract!(ModeConfig::Datagram(_), config.mode)
-        .unwrap();
+    let datagram_conf = match config.mode {
+        ModeConfig::Datagram(ref conf) => conf,
+        _ => unreachable!()
+    };
 
     let mut process_message = |i: &[u8]| -> Result<bool> {
         if signal_received() {

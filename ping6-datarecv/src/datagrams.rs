@@ -13,9 +13,13 @@ use ::config::*;
 use ::errors::Result;
 use ::util::*;
 
-pub fn datagram_mode((config, bound_addr, mut sock): InitState) -> Result<()> {
-    let datagram_conf = extract!(ModeConfig::Datagram(_), config.mode)
-        .unwrap();
+pub fn datagram_mode(
+    (config, bound_addr, mut sock): InitState
+) -> Result<()> {
+    let datagram_conf = match config.mode {
+        ModeConfig::Datagram(ref conf) => conf,
+        _ => unreachable!()
+    };
 
     // ipv6 payload length is 2-byte
     let mut raw_buf = vec![0; ::std::u16::MAX as usize];

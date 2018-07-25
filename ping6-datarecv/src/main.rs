@@ -5,7 +5,6 @@
 extern crate bytes;
 #[macro_use] extern crate clap;
 extern crate env_logger;
-#[macro_use] extern crate enum_extract;
 #[macro_use] extern crate enum_kinds_macros;
 extern crate enum_kinds_traits;
 #[macro_use] extern crate failure;

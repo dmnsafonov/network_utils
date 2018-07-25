@@ -20,8 +20,10 @@ use ::util::InitState;
 use self::stm::*;
 
 pub fn stream_mode((config, src, dst, sock): InitState) -> Result<()> {
-    let _stream_conf = extract!(ModeConfig::Stream(_), config.mode.clone())
-        .unwrap();
+    let _stream_conf = match config.mode {
+        ModeConfig::Stream(ref conf) => conf,
+        _ => unreachable!()
+    };
 
     let mut rt = ::tokio::runtime::Builder::new()
         .threadpool_builder({
