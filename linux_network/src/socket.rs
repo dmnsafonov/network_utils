@@ -14,24 +14,48 @@ use ::util::*;
 
 pub use ::nix::sys::socket::SockFlag;
 
-pub struct IPv6RawSocket(RawFd);
+pub struct IPv6RawSocket(IPv6RawSocketImpl);
+struct IPv6RawSocketImpl(RawFd);
 
 impl IPv6RawSocket {
     pub fn new(proto: c_int, flags: SockFlag)
             -> Result<IPv6RawSocket> {
         Ok(
-            IPv6RawSocket(
+            IPv6RawSocket(IPv6RawSocketImpl(
                 socket(
                     AddressFamily::Inet6,
                     SockType::Raw,
                     flags,
                     proto
                 )?
-            )
+            ))
         )
     }
 
-    pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> { unsafe {
+    pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> {
+        self.0.bind(addr)
+    }
+
+    pub fn recvfrom<'a>(
+        &mut self,
+        buf: &'a mut [u8],
+        flags: RecvFlags
+    ) -> Result<(&'a mut [u8], SocketAddrV6)> {
+        self.0.recvfrom(buf, flags)
+    }
+
+    pub fn sendto(
+        &mut self,
+        buf: &[u8],
+        addr: SocketAddrV6,
+        flags: SendFlags
+    ) -> Result<size_t> {
+        self.0.sendto(buf, addr, flags)
+    }
+}
+
+impl IPv6RawSocketImpl {
+    fn bind(&mut self, addr: SocketAddrV6) -> Result<()> { unsafe {
         let addr_in = make_sockaddr_in6(addr);
         n1try!(bind(
             self.0,
@@ -41,8 +65,11 @@ impl IPv6RawSocket {
         Ok(())
     }}
 
-    pub fn recvfrom<'a>(&mut self, buf: &'a mut [u8], flags: RecvFlags)
-            -> Result<(&'a mut [u8], SocketAddrV6)> { unsafe {
+    fn recvfrom<'a>(
+        &mut self,
+        buf: &'a mut [u8],
+        flags: RecvFlags
+    ) -> Result<(&'a mut [u8], SocketAddrV6)> { unsafe {
         let mut addr: sockaddr_in6 = zeroed();
 
         let mut addr_size = size_of_val(&addr) as socklen_t;
@@ -65,7 +92,7 @@ impl IPv6RawSocket {
         Ok((&mut buf[..size as usize], sockaddr))
     }}
 
-    pub fn sendto(
+    fn sendto(
         &mut self,
         buf: &[u8],
         addr: SocketAddrV6,
@@ -87,13 +114,20 @@ impl IPv6RawSocket {
 
 impl Drop for IPv6RawSocket {
     fn drop(&mut self) {
-        log_if_err(::nix::unistd::close(self.0).map_err(|e| e.into()));
+        log_if_err(::nix::unistd::close(self.as_raw_fd())
+            .map_err(|e| e.into()));
+    }
+}
+
+impl AsRawFd for IPv6RawSocketImpl {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
     }
 }
 
 impl AsRawFd for IPv6RawSocket {
     fn as_raw_fd(&self) -> RawFd {
-        self.0
+        self.0.as_raw_fd()
     }
 }
 
@@ -111,7 +145,8 @@ fn make_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 { unsafe {
     addr_in
 }}
 
-pub struct IPv6PacketSocket {
+pub struct IPv6PacketSocket(IPv6PacketSocketImpl);
+struct IPv6PacketSocketImpl {
     fd: RawFd,
     if_index: c_int,
     macaddr: MacAddr,
@@ -141,7 +176,7 @@ impl IPv6PacketSocket {
             c_int::from(proto)
         )?;
 
-        let mut ret = IPv6PacketSocket {
+        let mut ret = IPv6PacketSocketImpl {
             fd: sock,
             if_index: -1,
             macaddr: if_addr,
@@ -161,11 +196,41 @@ impl IPv6PacketSocket {
             ));
         }
 
-        Ok(ret)
+        Ok(IPv6PacketSocket(ret))
     }
 
-    pub fn recvpacket(&mut self, maxsize: size_t, flags: RecvFlags)
-            -> Result<(Ipv6, MacAddr)> { unsafe {
+    pub fn recvpacket(
+        &mut self,
+        maxsize: size_t,
+        flags: RecvFlags
+    ) -> Result<(Ipv6, MacAddr)> {
+        self.0.recvpacket(maxsize, flags)
+    }
+
+    pub fn sendpacket(
+            &mut self,
+            packet: &Ipv6,
+            dest: Option<MacAddr>,
+            flags: SendFlags
+    ) -> Result<size_t> {
+        self.0.sendpacket(packet, dest, flags)
+    }
+
+    pub fn get_interface_index(&self) -> c_int {
+        self.0.get_interface_index()
+    }
+
+    pub fn get_interface_mac(&self) -> MacAddr {
+        self.0.get_interface_mac()
+    }
+}
+
+impl IPv6PacketSocketImpl {
+    fn recvpacket(
+        &mut self,
+        maxsize: size_t,
+        flags: RecvFlags
+    ) -> Result<(Ipv6, MacAddr)> { unsafe {
         let mut packet = MutableIpv6Packet::owned(vec![0; maxsize])
             .ok_or(Error::BufferTooSmall {
                 len: maxsize as usize
@@ -189,7 +254,7 @@ impl IPv6PacketSocket {
         Ok((packet.from_packet(), mac))
     }}
 
-    pub fn sendpacket(
+    fn sendpacket(
             &mut self,
             packet: &Ipv6,
             dest: Option<MacAddr>,
@@ -223,24 +288,31 @@ impl IPv6PacketSocket {
         )
     }}
 
-    pub fn get_interface_index(&self) -> c_int {
+    fn get_interface_index(&self) -> c_int {
         self.if_index
     }
 
-    pub fn get_interface_mac(&self) -> MacAddr {
+    fn get_interface_mac(&self) -> MacAddr {
         self.macaddr
     }
 }
 
 impl Drop for IPv6PacketSocket {
     fn drop(&mut self) {
-        log_if_err(::nix::unistd::close(self.fd).map_err(|e| e.into()));
+        log_if_err(::nix::unistd::close(self.as_raw_fd())
+            .map_err(|e| e.into()));
+    }
+}
+
+impl AsRawFd for IPv6PacketSocketImpl {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
     }
 }
 
 impl AsRawFd for IPv6PacketSocket {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        self.0.as_raw_fd()
     }
 }
 
@@ -445,8 +517,9 @@ fn allow_syscall<T>(ctx: &mut ::seccomp::Context, fd: &T, syscall: c_long)
 pub mod futures {
     use super::*;
 
+    use ::std::cell::UnsafeCell;
     use ::std::io;
-    use ::std::sync::*;
+    use ::std::sync::Arc;
 
     use ::bytes::*;
     use ::mio;
@@ -461,7 +534,10 @@ pub mod futures {
 
     #[derive(Clone)]
     pub struct IPv6RawSocketAdapter(IPv6RawSocketPE);
-    type IPv6RawSocketPE = Arc<Mutex<PollEvented2<IPv6RawSocket>>>;
+    type IPv6RawSocketPE = Arc<UnsafeCell<PollEvented2<IPv6RawSocket>>>;
+
+    unsafe impl Send for IPv6RawSocketAdapter {}
+    unsafe impl Sync for IPv6RawSocketAdapter {}
 
     impl IPv6RawSocketAdapter {
         pub fn new(handle: &Handle, inner: IPv6RawSocket)
@@ -469,7 +545,7 @@ pub mod futures {
             set_fd_nonblock(&inner, Nonblock::Yes)?;
             Ok(
                 IPv6RawSocketAdapter(
-                    Arc::new(Mutex::new(
+                    Arc::new(UnsafeCell::new(
                         PollEvented2::new_with_handle(inner, handle)?
                     ))
                 )
@@ -477,8 +553,8 @@ pub mod futures {
         }
 
         pub fn bind(&mut self, addr: SocketAddrV6) -> Result<()> {
-            let mut poll_evented = self.0.lock().unwrap();
-            poll_evented.get_mut().bind(addr)
+            let fd = self.as_raw_fd();
+            IPv6RawSocketImpl(fd).bind(addr)
         }
 
         pub fn recvfrom_direct<'a>(
@@ -489,7 +565,7 @@ pub mod futures {
             (&'a mut [u8], SocketAddrV6),
             ::errors::Error
         > {
-            let mut poll_evented = self.0.lock().unwrap();
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
             let ready = Ready::readable();
 
             if let Async::NotReady = poll_evented.poll_read_ready(ready)
@@ -497,7 +573,8 @@ pub mod futures {
                 return Err(make_again());
             }
 
-            match poll_evented.get_mut().recvfrom(buf, flags) {
+            let fd = poll_evented.get_ref().as_raw_fd();
+            match IPv6RawSocketImpl(fd).recvfrom(buf, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
                     if let Again = err.kind() {
@@ -518,14 +595,15 @@ pub mod futures {
             addr: SocketAddrV6,
             flags: SendFlags
         ) -> ::std::result::Result<size_t, ::errors::Error> {
-            let mut poll_evented = self.0.lock().unwrap();
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
 
             if let Async::NotReady = poll_evented.poll_write_ready()
                     .map_err(Error::TokioError)? {
                 return Err(make_again());
             }
 
-            match poll_evented.get_mut().sendto(buf, addr, flags) {
+            let fd = poll_evented.get_ref().as_raw_fd();
+            match IPv6RawSocketImpl(fd).sendto(buf, addr, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
                     if let Again = err.kind() {
@@ -561,7 +639,7 @@ pub mod futures {
 
     impl AsRawFd for IPv6RawSocketAdapter {
         fn as_raw_fd(&self) -> RawFd {
-            let poll_evented = self.0.lock().unwrap();
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
             poll_evented.get_ref().as_raw_fd()
         }
     }
@@ -575,6 +653,9 @@ pub mod futures {
         buf: BytesMut,
         flags: RecvFlags
     }
+
+    unsafe impl Send for IPv6RawSocketRecvfromFuture {}
+    unsafe impl Sync for IPv6RawSocketRecvfromFuture {}
 
     impl IPv6RawSocketRecvfromFuture {
         fn new(
@@ -628,6 +709,9 @@ pub mod futures {
         flags: SendFlags
     }
 
+    unsafe impl Send for IPv6RawSocketSendtoFuture {}
+    unsafe impl Sync for IPv6RawSocketSendtoFuture {}
+
     impl IPv6RawSocketSendtoFuture {
         fn new(
             sock: IPv6RawSocketPE,
@@ -666,7 +750,10 @@ pub mod futures {
 
     #[derive(Clone)]
     pub struct IPv6PacketSocketAdapter(IPv6PacketSocketPE);
-    type IPv6PacketSocketPE = Arc<Mutex<PollEvented2<IPv6PacketSocket>>>;
+    type IPv6PacketSocketPE = Arc<UnsafeCell<PollEvented2<IPv6PacketSocket>>>;
+
+    unsafe impl Send for IPv6PacketSocketAdapter {}
+    unsafe impl Sync for IPv6PacketSocketAdapter {}
 
     impl IPv6PacketSocketAdapter {
         pub fn new(handle: &Handle, inner: IPv6PacketSocket)
@@ -674,7 +761,7 @@ pub mod futures {
             set_fd_nonblock(&inner, Nonblock::Yes)?;
             Ok(
                 IPv6PacketSocketAdapter(
-                    Arc::new(Mutex::new(
+                    Arc::new(UnsafeCell::new(
                         PollEvented2::new_with_handle(inner, handle)?
                     ))
                 )
@@ -689,7 +776,7 @@ pub mod futures {
             (Ipv6, MacAddr),
             ::errors::Error
         > {
-            let mut poll_evented = self.0.lock().unwrap();
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
             let ready = Ready::readable();
 
             if let Async::NotReady = poll_evented.poll_read_ready(ready)
@@ -697,7 +784,10 @@ pub mod futures {
                 return Err(make_again());
             }
 
-            match poll_evented.get_mut().recvpacket(maxsize, flags) {
+            let common_sock = &poll_evented.get_ref().0;
+            let mut sock = IPv6PacketSocketImpl { .. *common_sock };
+
+            match sock.recvpacket(maxsize, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
                     if let Again = err.kind() {
@@ -718,14 +808,17 @@ pub mod futures {
             dest: Option<MacAddr>,
             flags: SendFlags
         ) -> ::std::result::Result<size_t, ::errors::Error> {
-            let mut poll_evented = self.0.lock().unwrap();
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
 
             if let Async::NotReady = poll_evented.poll_write_ready()
                     .map_err(Error::TokioError)? {
                 return Err(make_again());
             }
 
-            match poll_evented.get_mut().sendpacket(packet, dest, flags) {
+            let common_sock = &poll_evented.get_ref().0;
+            let mut sock = IPv6PacketSocketImpl { .. *common_sock };
+
+            match sock.sendpacket(packet, dest, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
                     if let Again = err.kind() {
@@ -764,17 +857,19 @@ pub mod futures {
         }
 
         pub fn get_interface_mac(&self) -> MacAddr {
-            self.0.lock().unwrap().get_ref().get_interface_mac()
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
+            poll_evented.get_ref().get_interface_mac()
         }
 
         pub fn get_interface_index(&self) -> c_int {
-            self.0.lock().unwrap().get_ref().get_interface_index()
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
+            poll_evented.get_ref().get_interface_index()
         }
     }
 
     impl AsRawFd for IPv6PacketSocketAdapter {
         fn as_raw_fd(&self) -> RawFd {
-            let poll_evented = self.0.lock().unwrap();
+            let poll_evented = unsafe { self.0.get().as_ref().unwrap() };
             poll_evented.get_ref().as_raw_fd()
         }
     }
@@ -788,6 +883,9 @@ pub mod futures {
         maxsize: size_t,
         flags: RecvFlags
     }
+
+    unsafe impl Send for IPv6PacketSocketRecvpacketFuture {}
+    unsafe impl Sync for IPv6PacketSocketRecvpacketFuture {}
 
     impl IPv6PacketSocketRecvpacketFuture {
         fn new(
@@ -831,6 +929,9 @@ pub mod futures {
         destination: Option<MacAddr>,
         flags: SendFlags
     }
+
+    unsafe impl Send for IPv6PacketSocketSendpacketFuture {}
+    unsafe impl Sync for IPv6PacketSocketSendpacketFuture {}
 
     impl IPv6PacketSocketSendpacketFuture {
         fn new(
