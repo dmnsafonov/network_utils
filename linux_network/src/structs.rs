@@ -131,9 +131,8 @@ impl Display for MacAddr {
             .collect::<Vec<String>>();
         let s = octets.iter()
             .flat_map(|x| x.chars())
-            .collect::<String>()
-            [1..]
-            .to_string();
+            .skip(1)
+            .collect::<String>();
         write!(f, "{}", s)
     }
 }
