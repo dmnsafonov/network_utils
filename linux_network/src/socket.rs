@@ -577,7 +577,7 @@ pub mod futures {
             match IPv6RawSocketImpl(fd).recvfrom(buf, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
-                    if let Again = err.kind() {
+                    if let Again = (&err).into() {
                         poll_evented.clear_read_ready(ready)
                             .map_err(Error::TokioError)?;
                         return Err(err);
@@ -606,7 +606,7 @@ pub mod futures {
             match IPv6RawSocketImpl(fd).sendto(buf, addr, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
-                    if let Again = err.kind() {
+                    if let Again = (&err).into() {
                         poll_evented.clear_write_ready()
                             .map_err(Error::TokioError)?;
                         return Err(err);
@@ -790,7 +790,7 @@ pub mod futures {
             match sock.recvpacket(maxsize, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
-                    if let Again = err.kind() {
+                    if let Again = (&err).into() {
                         poll_evented.clear_read_ready(ready)
                             .map_err(Error::TokioError)?;
                         return Err(err);
@@ -821,7 +821,7 @@ pub mod futures {
             match sock.sendpacket(packet, dest, flags) {
                 Err(e) => {
                     let err = e.downcast::<Error>().unwrap();
-                    if let Again = err.kind() {
+                    if let Again = (&err).into() {
                         poll_evented.clear_write_ready()
                             .map_err(Error::TokioError)?;
                         return Err(err);

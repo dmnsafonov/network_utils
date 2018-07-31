@@ -45,7 +45,7 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
             Ok(_) => (),
             Err(e) => {
                 let err = e.downcast_ref::<::linux_network::errors::Error>()
-                    .map(|x| x.kind());
+                    .map(|x| x.into());
                 if let Some(Interrupted) = err {
                     info!("system call interrupted");
                     return Ok(true);

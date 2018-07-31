@@ -9,7 +9,7 @@ pub struct Config {
 }
 
 #[derive(EnumKind)]
-#[enum_kind_name(ModeConfigKind)]
+#[enum_kind(ModeConfigKind)]
 pub enum ModeConfig {
     Datagram(DatagramConfig),
     Stream(StreamConfig)

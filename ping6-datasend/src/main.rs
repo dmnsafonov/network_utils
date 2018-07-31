@@ -5,8 +5,7 @@
 extern crate bytes;
 #[macro_use] extern crate clap;
 extern crate env_logger;
-#[macro_use] extern crate enum_kinds_macros;
-extern crate enum_kinds_traits;
+#[macro_use] extern crate enum_kinds;
 #[macro_use] extern crate failure;
 #[macro_use] extern crate futures;
 extern crate libc;
@@ -31,8 +30,6 @@ mod errors;
 mod stdin;
 mod stream;
 mod util;
-
-use enum_kinds_traits::ToKind;
 
 use linux_network::*;
 use ping6_datacommon::*;
@@ -60,7 +57,7 @@ fn main() {
 fn the_main() -> Result<()> {
     let state = init()?;
 
-    match state.0.mode.kind() {
+    match (&state.0.mode).into() {
         ModeConfigKind::Datagram => datagram_mode(state),
         ModeConfigKind::Stream => stream_mode(state)
     }
@@ -106,8 +103,11 @@ fn init() -> Result<InitState> {
     } else {
         false
     };
-    setup_seccomp(&sock, use_stdin.into(),
-        (config.mode.kind() == ModeConfigKind::Stream).into())?;
+    setup_seccomp(
+        &sock,
+        use_stdin.into(),
+        (ModeConfigKind::from(&config.mode) == ModeConfigKind::Stream).into()
+    )?;
 
     Ok((config, src, dst, sock))
 }

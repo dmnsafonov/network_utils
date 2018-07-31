@@ -40,7 +40,7 @@ pub fn datagram_mode(
                 Err(e) => {
                     let err_opt =
                         e.downcast_ref::<::linux_network::errors::Error>()
-                            .map(|x| x.kind());
+                            .map(|x| x.into());
                     if let Some(Interrupted) = err_opt {
                         debug!("system call interrupted");
                         continue;

@@ -30,7 +30,7 @@ macro_rules! try_async_val {
     ($e:expr) => (
         match $e {
             Err(e) => {
-                match e.kind() {
+                match (&e).into() {
                     Again => return Ok(Async::NotReady),
                     _ => return Err(e)
                 }

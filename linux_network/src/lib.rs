@@ -4,8 +4,7 @@
 
 #[macro_use] extern crate bitflags;
 #[cfg(feature = "async")] extern crate bytes;
-#[macro_use] extern crate enum_kinds_macros;
-extern crate enum_kinds_traits;
+#[cfg(feature = "async")] #[macro_use] extern crate enum_kinds;
 #[macro_use] extern crate failure;
 extern crate interfaces;
 #[macro_use] extern crate log;
@@ -38,8 +37,6 @@ pub mod futures {
     pub use socket::futures::*;
 }
 
-pub use enum_kinds_traits::ToKind;
-
 use nix::libc;
 
 pub use self::bpf::*;
@@ -49,6 +46,7 @@ pub use self::socket::*;
 pub use self::structs::*;
 use self::util::check_for_eagain;
 
+#[cfg(feature = "async")]
 pub use self::errors::ErrorKind::{Again, Interrupted};
 
 pub use enum_repr::*;

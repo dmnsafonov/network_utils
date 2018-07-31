@@ -10,8 +10,9 @@ pub fn error_to_errno(x: &dyn Fail) -> Option<i32> {
     x.downcast_ref::<io::Error>().and_then(|e| e.raw_os_error())
 }
 
-#[derive(Debug, EnumKind, Fail)]
-#[enum_kind_name(ErrorKind)]
+#[cfg_attr(feature = "async", derive(EnumKind))]
+#[cfg_attr(feature = "async", enum_kind(ErrorKind))]
+#[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "system call would block")]
     Again(#[cause] io::Error),
