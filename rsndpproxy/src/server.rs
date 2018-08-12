@@ -24,7 +24,13 @@ pub struct Server {
     drop_allmulti: DropAllmulti,
     ifname: String,
     queued_sends: Arc<AtomicUsize>,
-    max_queued: usize
+    max_queued: usize,
+    stats: Arc<PacketStats>
+}
+
+struct PacketStats {
+    packets_received: AtomicUsize,
+    packets_sent: AtomicUsize
 }
 
 gen_boolean_enum!(DropAllmulti);
@@ -46,11 +52,14 @@ impl Server {
         let mtu = get_interface_mtu(&recv_sock, &ifc.name)? as usize;
         let prefixes = ifc.prefixes.clone();
 
+        let stats = Arc::new(PacketStats::new());
+
         let input = Self::make_input_stream(
                 recv_sock.clone(),
                 mtu,
                 prefixes.clone(),
-                ifc.name.clone()
+                ifc.name.clone(),
+                stats.clone()
             );
 
         Ok(Server {
@@ -61,7 +70,8 @@ impl Server {
             drop_allmulti,
             ifname: ifc.name.clone(),
             queued_sends: Arc::new(AtomicUsize::new(0)),
-            max_queued: ifc.max_queued
+            max_queued: ifc.max_queued,
+            stats
         })
     }
 
@@ -158,7 +168,8 @@ impl Server {
         sock: IPv6PacketSocketAdapter,
         mtu: usize,
         prefixes: Vec<Arc<PrefixConfig>>,
-        if_name: impl AsRef<str>
+        if_name: impl AsRef<str>,
+        stats: Arc<PacketStats>
     ) -> impl Stream<
         Item = (Solicitation, Arc<PrefixConfig>),
         Error = ::failure::Error
@@ -173,6 +184,8 @@ impl Server {
         }).filter_map(move |(packet, _)| {
             // validate common solicitation features
             debug!("received a packet on {}", if_name.as_ref());
+
+            stats.add_received();
 
             let solicit = match Solicitation::parse(&packet) {
                 Some(s) => s,
@@ -289,6 +302,13 @@ impl Drop for Server {
                     .map_err(|e| e.into())
             );
         }
+
+        info!(
+            "received {} and sent {} packets on interface {}",
+            self.stats.get_received(),
+            self.stats.get_sent(),
+            self.ifname
+        );
     }
 }
 
@@ -371,10 +391,36 @@ impl Future for Server {
                         x
                     })
                 );
+                self.stats.add_sent();
                 debug!("advertisement queued on {}", self.ifname);
             }
         }
 
         Ok(Async::NotReady)
+    }
+}
+
+impl PacketStats {
+    fn new() -> PacketStats {
+        PacketStats {
+            packets_received: AtomicUsize::new(0),
+            packets_sent: AtomicUsize::new(0)
+        }
+    }
+
+    fn add_received(&self) {
+        self.packets_received.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn add_sent(&self) {
+        self.packets_sent.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn get_received(&self) -> usize {
+        self.packets_received.load(Ordering::Relaxed)
+    }
+
+    fn get_sent(&self) -> usize {
+        self.packets_sent.load(Ordering::Relaxed)
     }
 }
