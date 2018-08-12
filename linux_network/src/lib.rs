@@ -13,6 +13,7 @@ extern crate nix;
 #[cfg(feature = "async")] extern crate owning_ref;
 extern crate pnet_packet;
 #[cfg(feature = "seccomp")] extern crate seccomp;
+#[cfg(feature = "async")] extern crate spin;
 #[cfg(feature = "async")] extern crate tokio;
 
 #[macro_use] extern crate boolean_enums;
