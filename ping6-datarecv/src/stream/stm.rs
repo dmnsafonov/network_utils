@@ -1,4 +1,4 @@
-#![allow(large_enum_variant, type_complexity)]
+#![allow(clippy::large_enum_variant, clippy::type_complexity)]
 
 use ::std::net::*;
 use ::std::num::Wrapping;
@@ -130,7 +130,7 @@ pub enum TerminationReason {
 pub struct WriteBorrow<T>(WriteAll<T, OwningRef<TrimmingBufferSlice, [u8]>>);
 
 impl<T> WriteBorrow<T> where T: AsyncWrite {
-    fn new(write: T, buf: TrimmingBufferSlice) -> WriteBorrow<T> {
+    fn new(write: T, buf: TrimmingBufferSlice) -> Self {
         WriteBorrow(
             write_all(
                 write,
@@ -270,6 +270,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         })
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn poll_wait_for_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForAck<'s>>
     ) -> Poll<AfterWaitForAck<'s>, ::failure::Error> {
@@ -352,6 +353,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
 
                 let seqno = seqno_tracker_ref.lock().unwrap()
                     .pos_to_sequential(Wrapping(packet.seqno));
+                #[allow(clippy::cast_possible_truncation)]
                 debug!("packet position in the receive window: {}",
                     seqno as u32 + 1);
 
@@ -480,7 +482,7 @@ impl<'s> PollStreamMachine<'s> for StreamMachine<'s> {
         })
     }
 
-    #[allow(needless_return)]
+    #[allow(clippy::needless_return)]
     fn poll_wait_for_last_ack<'a>(
         state: &'a mut RentToOwn<'a, WaitForLastAck<'s>>
     ) -> Poll<AfterWaitForLastAck<'s>, ::failure::Error> {
@@ -633,6 +635,7 @@ fn make_connection_timeout_delay() -> Instant {
 }
 
 fn clean_and_get_space(order: &mut DataOrderer, mtu: u16) -> usize {
+    #[allow(clippy::cast_possible_truncation)]
     let space_required = mtu - STREAM_CLIENT_HEADER_SIZE_WITH_IP as u16;
     if order.get_space_left() < space_required as usize {
         order.cleanup();
@@ -640,6 +643,7 @@ fn clean_and_get_space(order: &mut DataOrderer, mtu: u16) -> usize {
     order.get_space_left()
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn poll_recv_stream(
     state: &mut ReceivePackets,
     space: usize
@@ -654,6 +658,7 @@ fn poll_recv_stream(
 
         if data.len() > state.common.mtu as usize {
             return Err(Error::MtuLessThanReal {
+                #[allow(clippy::cast_possible_truncation)]
                 packet_size: data.len() as u16
             }.into());
         }

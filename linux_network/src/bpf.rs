@@ -3,7 +3,7 @@ use ::std::fmt::*;
 use ::structs::raw::*;
 
 pub struct BpfProg {
-    pub _filters: Vec<sock_filter>,
+    pub filters: Vec<sock_filter>,
     pub fprog: sock_fprog
 }
 
@@ -15,7 +15,7 @@ impl BpfProg {
 
 impl Debug for BpfProg {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{:?}", self._filters)
+        write!(f, "{:?}", self.filters)
     }
 }
 
@@ -61,13 +61,13 @@ macro_rules! bpf_filter {
 
     ( ( $( $acc:tt )+ );;; ($len:expr);;; ) => ({
         let mut ret = Box::new(BpfProg {
-            _filters: vec![ $( $acc )* ],
+            filters: vec![ $( $acc )* ],
             fprog: $crate::structs::raw::sock_fprog {
                 len: $len,
                 filter: ::std::ptr::null_mut()
             }
         });
-        ret.fprog.filter = ret._filters.as_mut_ptr();
+        ret.fprog.filter = ret.filters.as_mut_ptr();
         ret
     })
 }

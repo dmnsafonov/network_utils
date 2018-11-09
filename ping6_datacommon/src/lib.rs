@@ -1,6 +1,7 @@
 #![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![warn(clippy)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::stutter)]
 
 #[macro_use] extern crate bitflags;
 extern crate byteorder;
@@ -98,6 +99,7 @@ pub fn drop_caps() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn ping6_data_checksum<T>(payload: T) -> u16 where T: AsRef<[u8]> {
     use std::hash::Hasher;
     use seahash::*;
@@ -110,7 +112,7 @@ pub fn ping6_data_checksum<T>(payload: T) -> u16 where T: AsRef<[u8]> {
     (hasher.finish() & 0xffff) as u16
 }
 
-static SIGNAL_FLAG: AtomicBool = ATOMIC_BOOL_INIT;
+static SIGNAL_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub fn setup_signal_handler() -> Result<()> {
     let sigact = SigAction::new(
@@ -153,6 +155,7 @@ pub fn allow_defaults() -> Result<Context> {
     Ok(ctx)
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn allow_syscall(ctx: &mut Context, syscall: c_long) -> Result<()> {
     ctx.add_rule(
         Rule::new(
@@ -196,6 +199,7 @@ fn allow_write_on(ctx: &mut Context, fd: RawFd) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn allow_fd_syscall(ctx: &mut Context, fd: RawFd, syscall: c_long)
         -> Result<()> {
     ctx.add_rule(
@@ -220,14 +224,14 @@ pub trait LockableIo<'a> {
 impl<'a> LockableIo<'a> for io::Stdin {
     type LockType = io::StdinLock<'a>;
     fn movable_lock(&'a mut self) -> Self::LockType {
-        io::Stdin::lock(self)
+        Self::lock(self)
     }
 }
 
 impl<'a> LockableIo<'a> for io::Stdout {
     type LockType = io::StdoutLock<'a>;
     fn movable_lock(&'a mut self) -> Self::LockType {
-        io::Stdout::lock(self)
+        Self::lock(self)
     }
 }
 
@@ -252,16 +256,16 @@ pub fn movable_io_lock<'a, T>(io: T)
 pub struct IRange<Idx>(pub Idx, pub Idx);
 
 impl<Idx> IRange<Idx> where Idx: Ord {
-    #[allow(needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn contains_point(&self, x: Idx) -> bool {
         x >= self.0 && x <= self.1
     }
 
-    pub fn contains_range(&self, IRange(l,r): IRange<Idx>) -> bool {
+    pub fn contains_range(&self, IRange(l,r): Self) -> bool {
         self.contains_point(l) && self.contains_point(r)
     }
 
-    pub fn intersects(&self, IRange(l,r): IRange<Idx>) -> bool {
+    pub fn intersects(&self, IRange(l,r): Self) -> bool {
         self.contains_point(l) || self.contains_point(r)
     }
 }

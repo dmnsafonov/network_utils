@@ -20,8 +20,8 @@ impl<S,E> TimeoutResultStream<S> where
         S: Stream<Error = E>,
         E: From<Error> {
     pub fn new(stream: S, duration: Duration)
-            -> TimeoutResultStream<S> {
-        TimeoutResultStream {
+            -> Self {
+        Self {
             stream: Some(stream),
             duration,
             sleep: None

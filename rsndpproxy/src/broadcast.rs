@@ -53,13 +53,13 @@ pub fn broadcaster<T>(max_receivers: usize) -> (Receiver<T>, Sender<T>) {
 }
 
 impl<T> Receiver<T> {
-    pub fn clone(other: &Receiver<T>) -> Receiver<T> {
+    pub fn clone(other: &Self) -> Self {
         let id = other.inner.next_id.fetch_add(1, Ordering::Relaxed);
         other.inner.rx_count.fetch_add(1, Ordering::Relaxed);
         debug_assert!(other.inner.rx_tasks.read().unwrap()[id].is_none());
         assert!(id < other.inner.rx_tasks.read().unwrap().len());
 
-        Receiver {
+        Self {
             inner: other.inner.clone(),
             id
         }

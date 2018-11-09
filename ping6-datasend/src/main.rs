@@ -1,9 +1,9 @@
-#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![warn(clippy)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::stutter)]
 
 extern crate bytes;
-#[macro_use] extern crate clap;
+extern crate clap;
 extern crate env_logger;
 #[macro_use] extern crate enum_kinds;
 #[macro_use] extern crate failure;
@@ -43,7 +43,7 @@ use util::InitState;
 fn main() {
     if let Err(e) = the_main() {
         let mut first = true;;
-        for i in e.causes() {
+        for i in e.iter_chain() {
             if !first {
                 eprint!(": ");
             }

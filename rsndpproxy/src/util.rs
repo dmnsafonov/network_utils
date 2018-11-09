@@ -12,12 +12,12 @@ pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
     }
 }
 
-#[allow(needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value)]
 pub fn log_err(err: ::failure::Error) {
     let mut out = String::new();
 
     let mut first = true;;
-    for i in err.causes() {
+    for i in err.iter_chain() {
         if !first {
             out += ": ";
         }

@@ -36,10 +36,11 @@ struct PacketStats {
 gen_boolean_enum!(DropAllmulti);
 
 impl Server {
+    #[allow(clippy::cast_sign_loss)]
     pub fn new(
         ifc: &InterfaceConfig,
         quit: Receiver<::QuitKind>
-    ) -> Result<Server> {
+    ) -> Result<Self> {
         for i in &ifc.prefixes {
             if !i.reply_unconditionally {
                 unimplemented!();
@@ -62,7 +63,7 @@ impl Server {
                 stats.clone()
             );
 
-        Ok(Server {
+        Ok(Self {
             recv_sock,
             send_sock,
             input: unsafe { SendBox::new(Box::new(input)) },
@@ -158,7 +159,7 @@ impl Server {
             bpf_stmt!(B::LD | B::B | B::ABS, 40);
             bpf_jump!(B::JMP | B::JEQ | B::K, ND_NEIGHBOR_SOLICIT, 0, 1);
 
-            bpf_stmt!(B::RET | B::K, ::std::u32::MAX);
+            bpf_stmt!(B::RET | B::K, u32::max_value());
 
             bpf_stmt!(B::RET | B::K, 0);
         )
@@ -316,6 +317,7 @@ impl Future for Server {
     type Item = ();
     type Error = ();
 
+    #[allow(clippy::cast_sign_loss)]
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         debug!("waiting for a solicitation");
 
@@ -401,8 +403,8 @@ impl Future for Server {
 }
 
 impl PacketStats {
-    fn new() -> PacketStats {
-        PacketStats {
+    fn new() -> Self {
+        Self {
             packets_received: AtomicUsize::new(0),
             packets_sent: AtomicUsize::new(0)
         }

@@ -1,6 +1,6 @@
 use ::std::fmt::*;
 
-use ::libc::*;
+use ::nlibc::*;
 
 use ::errors::{Error, Result};
 use ::*;
@@ -65,12 +65,12 @@ pub struct icmp6_filter {
 }
 
 impl icmp6_filter {
-    pub fn new() -> icmp6_filter {
-        icmp6_filter { icmp6_filt: [0xffff_ffff; 8] }
+    pub fn new() -> Self {
+        Self { icmp6_filt: [0xffff_ffff; 8] }
     }
 
-    pub fn new_pass() -> icmp6_filter {
-        icmp6_filter { icmp6_filt: [0; 8] }
+    pub fn new_pass() -> Self {
+        Self { icmp6_filt: [0; 8] }
     }
 
     pub fn pass(&mut self, icmp_type: IcmpV6Type) {
@@ -94,17 +94,17 @@ impl Default for icmp6_filter {
 pub struct MacAddr([u8; 6]);
 
 impl MacAddr {
-    #[allow(many_single_char_names)]
-    pub fn new(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8) -> MacAddr {
+    #[allow(clippy::many_single_char_names)]
+    pub fn new(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8) -> Self {
         MacAddr([a, b, c, d, e, f])
     }
 
-    #[allow(trivially_copy_pass_by_ref)]
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn as_bytes(&self) -> &[u8] {
         &self.0[..]
     }
 
-    pub fn from_bytes<T>(x: T) -> Result<MacAddr> where T: AsRef<[u8]> {
+    pub fn from_bytes<T>(x: T) -> Result<Self> where T: AsRef<[u8]> {
         let s = x.as_ref();
         if s.len() != 6 {
             return Err(Error::WrongSize.into());

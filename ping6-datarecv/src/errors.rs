@@ -1,4 +1,5 @@
 #![allow(bare_trait_objects)] // triggered by failure_derive
+#![allow(clippy::pub_enum_variant_names)]
 
 use ::std::io;
 
@@ -34,13 +35,13 @@ pub enum Error {
 }
 
 impl From<::linux_network::errors::Error> for Error {
-    fn from(err: ::linux_network::errors::Error) -> Error {
+    fn from(err: ::linux_network::errors::Error) -> Self {
         Error::LinuxNetworkError(err)
     }
 }
 
 impl From<::tokio_timer::Error> for Error {
-    fn from(err: ::tokio_timer::Error) -> Error {
+    fn from(err: ::tokio_timer::Error) -> Self {
         Error::TimerError(err)
     }
 }

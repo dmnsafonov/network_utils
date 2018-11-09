@@ -1,7 +1,8 @@
 #![allow(non_upper_case_globals)]
+#![allow(clippy::cast_sign_loss)]
 
 pub mod raw {
-    use ::libc::*;
+    use ::nlibc::*;
 
     pub const SECBIT_NOROOT: c_int = 1;
     pub const SECBIT_NOROOT_LOCKED: c_int = 1 << 1;
@@ -12,9 +13,9 @@ pub mod raw {
     pub const SECBIT_NO_CAP_AMBIENT_RAISE: c_int = 1 << 6;
     pub const SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED: c_int = 1 << 7;
 
-    pub const S_ISUID: mode_t = ::libc::S_ISUID as mode_t;
-    pub const S_ISGID: mode_t = ::libc::S_ISGID as mode_t;
-    pub const S_ISVTX: mode_t = ::libc::S_ISVTX as mode_t;
+    pub const S_ISUID: mode_t = ::nlibc::S_ISUID as mode_t;
+    pub const S_ISGID: mode_t = ::nlibc::S_ISGID as mode_t;
+    pub const S_ISVTX: mode_t = ::nlibc::S_ISVTX as mode_t;
 
     pub const ICMPV6_FILTER: c_int = 1;
 
@@ -106,7 +107,7 @@ pub mod raw {
     pub const F_WRLCK: c_int = 1;
 }
 
-use ::libc::*;
+use ::nlibc::*;
 
 use self::raw::*;
 use self::raw::{S_ISUID, S_ISGID, S_ISVTX};
@@ -183,20 +184,20 @@ bitflags!(
 );
 
 // not exhaustive
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "c_int")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IpProto {
-    IPv6 = IPPROTO_IPV6 as isize,
-    IcmpV6 = IPPROTO_ICMPV6 as isize
+    IPv6 = IPPROTO_IPV6,
+    IcmpV6 = IPPROTO_ICMPV6
 }
 
 // not exhaustive
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "c_int")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SockOptLevel {
-    Socket = SOL_SOCKET as isize,
-    IPv6 = IPPROTO_IPV6 as isize,
-    IcmpV6 = IPPROTO_ICMPV6 as isize
+    Socket = SOL_SOCKET,
+    IPv6 = IPPROTO_IPV6,
+    IcmpV6 = IPPROTO_ICMPV6
 }
 
 pub trait SockOptLevelGetter {
@@ -204,13 +205,13 @@ pub trait SockOptLevelGetter {
 }
 
 // not exhaustive
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "c_int")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SockOptIPv6 {
-    IpHdrIncl = IP_HDRINCL as isize,
-    V6Only = IPV6_V6ONLY as isize,
-    UnicastHops = IPV6_UNICAST_HOPS as isize,
-    V6MtuDiscover = IPV6_MTU_DISCOVER as isize
+    IpHdrIncl = IP_HDRINCL,
+    V6Only = IPV6_V6ONLY,
+    UnicastHops = IPV6_UNICAST_HOPS,
+    V6MtuDiscover = IPV6_MTU_DISCOVER
 }
 
 impl SockOptLevelGetter for SockOptIPv6 {
@@ -220,10 +221,10 @@ impl SockOptLevelGetter for SockOptIPv6 {
 }
 
 // not exhaustive
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "c_int")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SockOptICMPv6 {
-    IcmpV6Filter = ICMPV6_FILTER as isize
+    IcmpV6Filter = ICMPV6_FILTER
 }
 
 impl SockOptLevelGetter for SockOptICMPv6 {
@@ -233,13 +234,13 @@ impl SockOptLevelGetter for SockOptICMPv6 {
 }
 
 // not exhaustive
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "c_int")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SockOptSocket {
-    BindToDevice = SO_BINDTODEVICE as isize,
-    DontRoute = SO_DONTROUTE as isize,
-    AttachFilter = SO_ATTACH_FILTER as isize,
-    LockFilter = SO_LOCK_FILTER as isize
+    BindToDevice = SO_BINDTODEVICE,
+    DontRoute = SO_DONTROUTE,
+    AttachFilter = SO_ATTACH_FILTER,
+    LockFilter = SO_LOCK_FILTER
 }
 
 impl SockOptLevelGetter for SockOptSocket {
@@ -248,28 +249,28 @@ impl SockOptLevelGetter for SockOptSocket {
     }
 }
 
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "c_int")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum V6PmtuType {
-    Dont = IPV6_PMTUDISC_DONT as isize,
-    Want = IPV6_PMTUDISC_WANT as isize,
-    Do = IPV6_PMTUDISC_DO as isize,
-    Probe = IPV6_PMTUDISC_PROBE as isize
+    Dont = IPV6_PMTUDISC_DONT,
+    Want = IPV6_PMTUDISC_WANT,
+    Do = IPV6_PMTUDISC_DO,
+    Probe = IPV6_PMTUDISC_PROBE
 }
 
-#[derive(Clone, Copy, Debug, EnumRepr, Eq, Hash, PartialEq)]
-#[EnumReprType = "c_int"]
+#[EnumRepr(type = "uint8_t")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IcmpV6Type {
-    EchoRequest = ICMP6_ECHO_REQUEST as isize,
-    EchoReply = ICMP6_ECHO_REPLY as isize,
-    MldListenerQuery = MLD_LISTENER_QUERY as isize,
-    MldListenerReport = MLD_LISTENER_REPORT as isize,
-    MldListenerReduction = MLD_LISTENER_REDUCTION as isize,
-    NdRouterSolicit = ND_ROUTER_SOLICIT as isize,
-    NdRouterAdvert = ND_ROUTER_ADVERT as isize,
-    NdNeighborSolicit = ND_NEIGHBOR_SOLICIT as isize,
-    NdNeighborAdvert = ND_NEIGHBOR_ADVERT as isize,
-    NdRedirect = ND_REDIRECT as isize
+    EchoRequest = ICMP6_ECHO_REQUEST,
+    EchoReply = ICMP6_ECHO_REPLY,
+    MldListenerQuery = MLD_LISTENER_QUERY,
+    MldListenerReport = MLD_LISTENER_REPORT,
+    MldListenerReduction = MLD_LISTENER_REDUCTION,
+    NdRouterSolicit = ND_ROUTER_SOLICIT,
+    NdRouterAdvert = ND_ROUTER_ADVERT,
+    NdNeighborSolicit = ND_NEIGHBOR_SOLICIT,
+    NdNeighborAdvert = ND_NEIGHBOR_ADVERT,
+    NdRedirect = ND_REDIRECT
 }
 
 bitflags!(

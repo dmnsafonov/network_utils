@@ -26,8 +26,8 @@ pub struct AckWait {
 }
 
 impl AckWait {
-    pub fn new(seqno: Wrapping<u16>, data: TrimmingBufferSlice) -> AckWait {
-        AckWait {
+    pub fn new(seqno: Wrapping<u16>, data: TrimmingBufferSlice) -> Self {
+        Self {
             seqno,
             data
         }
@@ -46,8 +46,8 @@ impl<'a> RangeTrackerParentHandle<'a, AckWait>
 }
 
 impl AckWaitlist {
-    pub fn new(window_size: u32, mtu: u16) -> AckWaitlist {
-        assert!(window_size <= u32::from(::std::u16::MAX) + 1);
+    pub fn new(window_size: u32, mtu: u16) -> Self {
+        assert!(window_size <= u32::from(u16::max_value()) + 1);
         let ret = AckWaitlist(Arc::new(Mutex::new(AckWaitlistImpl {
             inner: VecDeque::with_capacity(
                 window_size as usize * mtu as usize
@@ -68,7 +68,7 @@ impl AckWaitlist {
         let mut theself = self.0.lock().unwrap();
         debug_assert!(theself.inner.is_empty()
             || wait.seqno > theself.inner.back().unwrap().seqno
-            || (theself.inner.back().unwrap().seqno.0 == ::std::u16::MAX
+            || (theself.inner.back().unwrap().seqno.0 == u16::max_value()
                 && wait.seqno.0 == 0));
         assert!(theself.inner.capacity() - theself.inner.len() > 0);
         theself.inner.push_back(wait);
@@ -79,7 +79,7 @@ impl AckWaitlist {
     pub fn remove(&mut self, range: IRange<Wrapping<u16>>) -> bool {
         if range.0 > range.1 {
             self.remove_non_wrapping(IRange(range.0,
-                    Wrapping(::std::u16::MAX)))
+                    Wrapping(u16::max_value())))
                 && self.remove_non_wrapping(IRange(Wrapping(0), range.1))
         } else {
             self.remove_non_wrapping(range)
@@ -168,6 +168,7 @@ impl AckWaitlist {
         AckWaitlistIteratorInternal(OwningHandle::new_with_fn(lock,
             |x| {
                 let y = unsafe { x.as_ref().unwrap() };
+                #[allow(clippy::default_trait_access)]
                 DerefWrapper(AckWaitlistIteratorInternalImpl {
                     tracker_iter: y.del_tracker.iter().peekable(),
                     inner: y.inner.iter().enumerate(),
@@ -213,6 +214,7 @@ impl<'a> Iterator for AckWaitlistIteratorInternal<'a> {
                 }
             }
 
+            #[allow(clippy::cast_possible_truncation)]
             return Some((ind as u32, wait));
         }
 

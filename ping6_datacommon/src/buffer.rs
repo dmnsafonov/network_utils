@@ -37,7 +37,7 @@ impl<'a> RangeTrackerParentHandle<'a, u8> for TrimmingBufferImplBufferGetter {
 }
 
 impl TrimmingBuffer {
-    pub fn new(size: usize) -> TrimmingBuffer {
+    pub fn new(size: usize) -> Self {
         let ret = TrimmingBuffer(Arc::new(RwLock::new(TrimmingBufferImpl {
             inner: VecDeque::with_capacity(size),
             first_available: 0,
@@ -102,9 +102,9 @@ impl TrimmingBuffer {
     fn take_range(&mut self, range: IRange<usize>) -> TrimmingBufferSlice {
         let mut theself = self.0.write().unwrap();
 
-        let ilen = theself.inner.len();
+        let inner_len = theself.inner.len();
         let len = range.len();
-        debug_assert!(range.0 < ilen && range.1 < ilen);
+        debug_assert!(range.0 < inner_len && range.1 < inner_len);
         debug_assert!(
             !theself.del_tracker.is_range_tracked(range).unwrap_or(true)
         );

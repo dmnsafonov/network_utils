@@ -27,6 +27,7 @@ pub trait RangeTrackerParentHandle<'a, E>
 }
 
 impl<P, E> RangeTracker<P, E> {
+    #[allow(clippy::cast_possible_wrap)]
     pub fn track_range<T>(&mut self, newrange: IRange<T>)
             where DTRange: From<IRange<T>>, T: Ord {
         assert!(newrange.0 <= newrange.1);
@@ -71,6 +72,7 @@ impl<P, E> RangeTracker<P, E> {
     }
 
     // consume (0 =.. take_range()) after the call
+    #[allow(clippy::cast_possible_wrap)]
     pub fn take_range(&mut self) -> Option<usize> {
         if self.rangeset.is_empty() {
             return None;
@@ -78,13 +80,13 @@ impl<P, E> RangeTracker<P, E> {
 
         let offset_first = self._get_first();
         let first = offset_first.offset(-(self.offset as isize));
-        if first.0 != 0 {
-            None
-        } else {
+        if first.0 == 0 {
             self.rangeset.remove(&offset_first);
             self.offset = self.offset.checked_add(first.1 + 1)
                 .expect("no overflow");
             Some(first.1)
+        } else {
+            None
         }
     }
 
@@ -126,8 +128,9 @@ pub struct NoParent;
 pub struct NoElement;
 
 impl RangeTracker<NoParent, NoElement> {
-    pub fn new() -> RangeTracker<NoParent, NoElement> {
-        RangeTracker {
+    #[allow(clippy::default_trait_access)]
+    pub fn new() -> Self {
+        Self {
             tracked: NoParent,
             rangeset: BTreeSet::new(),
             offset: 0,
@@ -144,8 +147,9 @@ impl Default for RangeTracker<NoParent, NoElement> {
 
 impl<P, E> RangeTracker<P, E>
         where for<'a> P: RangeTrackerParentHandle<'a, E> {
-    pub fn new_with_parent(tracked: P) -> RangeTracker<P, E> {
-        RangeTracker {
+    #[allow(clippy::default_trait_access)]
+    pub fn new_with_parent(tracked: P) -> Self {
+        Self {
             tracked,
             rangeset: BTreeSet::new(),
             offset: 0,
@@ -185,11 +189,12 @@ impl<P, E> RangeTracker<P, E>
     }
 }
 
+#[allow(clippy::cast_sign_loss)]
 fn is_subslice<T>(slice: &[T], sub: &[T]) -> bool {
     assert!(!slice.is_empty());
     assert!(!sub.is_empty());
-    assert!(slice.len() <= ::std::isize::MAX as usize);
-    assert!(sub.len() <= ::std::isize::MAX as usize);
+    assert!(slice.len() <= isize::max_value() as usize);
+    assert!(sub.len() <= isize::max_value() as usize);
 
     let slice_start = slice.as_ptr();
     let slice_end = slice[(slice.len() - 1) .. slice.len()].as_ptr();
@@ -203,6 +208,7 @@ impl<'a, P, E> IntoIterator for &'a RangeTracker<P, E> {
     type Item = <RangeTrackerIterator<'a, P, E> as Iterator>::Item;
     type IntoIter = RangeTrackerIterator<'a, P, E>;
 
+    #[allow(clippy::default_trait_access)]
     fn into_iter(self) -> Self::IntoIter {
         RangeTrackerIterator {
             parent: self,
@@ -221,6 +227,7 @@ pub struct RangeTrackerIterator<'a, P, E> where P: 'a, E: 'a {
 impl<'a, P, E> Iterator for RangeTrackerIterator<'a, P, E> {
     type Item = IRange<usize>;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|x| {
             let DTRange(s,e) = x.offset(-(self.parent.offset as isize));
@@ -233,7 +240,8 @@ impl<'a, P, E> Iterator for RangeTrackerIterator<'a, P, E> {
 pub struct DTRange(usize,usize);
 
 impl DTRange {
-    fn offset(&self, off: isize) -> DTRange {
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+    fn offset(&self, off: isize) -> Self {
         DTRange (
             ((self.0 as isize).checked_add(off)
                 .expect("no overflow")) as usize,
@@ -244,7 +252,7 @@ impl DTRange {
 }
 
 impl PartialOrd for DTRange {
-    fn partial_cmp(&self, other: &DTRange) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         assert!(self.0 <= self.1);
         assert!(other.0 <= other.1);
         if self == other {
@@ -260,7 +268,7 @@ impl PartialOrd for DTRange {
 }
 
 impl Ord for DTRange {
-    fn cmp(&self, other: &DTRange) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).expect("nonoverlapping ranges")
     }
 }
@@ -268,6 +276,7 @@ impl Ord for DTRange {
 macro_rules! gen_dtrange_from_irange {
     ( $t:ty ) => (
         impl From<IRange<$t>> for DTRange {
+            #[allow(clippy::cast_possible_truncation)]
             fn from(r: IRange<$t>) -> DTRange {
                 DTRange(r.0 as usize, r.1 as usize)
             }

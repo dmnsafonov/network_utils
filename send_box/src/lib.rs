@@ -1,6 +1,6 @@
 #![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![warn(clippy)]
+#![warn(clippy::pedantic)]
 
 use std::ops::*;
 use std::sync::atomic::*;
@@ -9,7 +9,7 @@ pub struct SendBox<T>(Box<T>) where T: ?Sized;
 unsafe impl<T> Send for SendBox<T> where T: ?Sized {}
 
 impl<T> SendBox<T> where T: ?Sized {
-    pub unsafe fn new(x: Box<T>) -> SendBox<T> {
+    pub unsafe fn new(x: Box<T>) -> Self {
         fence(Ordering::Release);
         SendBox(x)
     }

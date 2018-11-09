@@ -59,15 +59,15 @@ pub fn datagram_mode((config, src, dst, mut sock): InitState) -> Result<()> {
         Ok(true)
     };
 
-    if !datagram_conf.inline_messages.is_empty() {
-        for i in &datagram_conf.inline_messages {
-            if !process_message(i.as_bytes())? {
+    if datagram_conf.inline_messages.is_empty() {
+        for i in StdinBytesIterator::new() {
+            if !process_message(&(*i?))? {
                 break;
             }
         }
     } else {
-        for i in StdinBytesIterator::new() {
-            if !process_message(&(*i?))? {
+        for i in &datagram_conf.inline_messages {
+            if !process_message(i.as_bytes())? {
                 break;
             }
         }
@@ -80,7 +80,7 @@ fn form_checked_payload<T>(payload: T)
         -> Result<Vec<u8>> where T: AsRef<[u8]> {
     let b = payload.as_ref();
     let len = b.len();
-    if len > ::std::u16::MAX as usize {
+    if len > u16::max_value() as usize {
         return Err(Error::PayloadTooBig {
             size: len
         }.into());
@@ -90,6 +90,7 @@ fn form_checked_payload<T>(payload: T)
 
     let mut ret = Vec::with_capacity(len + 4);
     ret.put_u16_be(checksum);
+    #[allow(clippy::cast_possible_truncation)]
     ret.put_u16_be(len as u16);
     ret.put(b);
 

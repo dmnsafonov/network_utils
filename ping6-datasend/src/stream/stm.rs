@@ -1,4 +1,4 @@
-#![allow(large_enum_variant, type_complexity)]
+#![allow(clippy::large_enum_variant, clippy::type_complexity)]
 
 use ::std::cell::*;
 use ::std::collections::VecDeque;
@@ -130,11 +130,11 @@ pub enum NextData {
 }
 
 impl NextData {
-    fn from_tb_slice(slice: TrimmingBufferSlice) -> NextData {
+    fn from_tb_slice(slice: TrimmingBufferSlice) -> Self {
         NextData::Input(slice)
     }
 
-    fn from_retransmission(payload: Vec<u8>, seqno: u16) -> NextData {
+    fn from_retransmission(payload: Vec<u8>, seqno: u16) -> Self {
         NextData::Retransmission(payload, seqno)
     }
 }
@@ -536,13 +536,13 @@ fn fill_read_buf(
         let mtu = state.common.mtu as usize;
         if sp < mtu {
             state.read_buf.cleanup();
-            let sp = state.read_buf.get_space_left();
-            if sp < mtu {
+            let lesser_sp = state.read_buf.get_space_left();
+            if lesser_sp < mtu {
                 state.ack_wait.cleanup();
                 state.read_buf.cleanup();
                 state.read_buf.get_space_left()
             } else {
-                sp
+                lesser_sp
             }
         } else {
             sp
@@ -615,6 +615,7 @@ fn make_data_send_fut<'s>(
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn fill_next_data(state: &mut SendData) {
     if state.next_data.borrow().is_none() {
         let mut retransmit_queue = state.retransmit_queue.borrow_mut();
@@ -632,9 +633,9 @@ fn fill_next_data(state: &mut SendData) {
                 }
             }
 
-            if let Some(slice) =
-                    state.read_buf.take((state.common.mtu
-                        - STREAM_CLIENT_HEADER_SIZE_WITH_IP as u16) as usize) {
+            let maybe_slice = state.read_buf.take((state.common.mtu
+                - STREAM_CLIENT_HEADER_SIZE_WITH_IP as u16) as usize);
+            if let Some(slice) = maybe_slice {
                 state.next_data.replace(Some(
                     NextData::from_tb_slice(slice)
                 ));
@@ -649,6 +650,7 @@ fn fill_next_data(state: &mut SendData) {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn poll_receive_packets(state: &mut SendData) -> Result<bool> {
     let recv_async = state.recv_stream.borrow_mut().poll()?;
     if let Async::Ready(Some((packet_buff, _))) = recv_async {

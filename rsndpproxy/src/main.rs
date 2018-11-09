@@ -1,6 +1,7 @@
 #![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![warn(clippy)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::stutter, clippy::enum_glob_use)]
 
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate boolean_enums;
@@ -62,7 +63,7 @@ use util::*;
 fn main() {
     if let Err(e) = early_main() {
         let mut first = true;;
-        for i in e.causes() {
+        for i in e.iter_chain() {
             if !first {
                 eprint!(": ");
             }

@@ -3,7 +3,7 @@ use ::std::mem::*;
 use ::std::ptr::*;
 use ::std::os::unix::prelude::*;
 
-use ::libc::*;
+use ::nlibc::*;
 use ::nix::sys::socket::SockType;
 
 use ::*;
@@ -39,6 +39,7 @@ pub fn get_securebits() -> Result<SecBits> { unsafe {
     )
 }}
 
+#[allow(clippy::cast_sign_loss)]
 pub fn set_securebits(bits: SecBits) -> Result<()> { unsafe {
     n1try!(prctl(PR_SET_SECUREBITS, bits.bits() as c_ulong));
     Ok(())
@@ -63,11 +64,12 @@ pub fn drop_supplementary_groups() -> Result<()> { unsafe {
 pub fn umask(mask: UmaskPermissions)
         -> Result<UmaskPermissions> { unsafe {
     Ok(
-        UmaskPermissions::from_bits(::libc::umask(mask.bits()))
+        UmaskPermissions::from_bits(::nlibc::umask(mask.bits()))
             .expect("valid umask bits")
     )
 }}
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn fcntl_lock_fd<F>(fd: &mut F) -> Result<()>
         where F: AsRawFd { unsafe {
     let mut lock: flock = zeroed();
@@ -129,7 +131,8 @@ pub fn get_interface_mtu<F,T>(fd: &F, ifname: T) -> Result<c_int> where
     Ok(ifr.un.ifr_mtu)
 }}
 
-#[allow(transmute_ptr_to_ptr)]
+#[allow(clippy::transmute_ptr_to_ptr, clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation)]
 pub fn make_sockaddr_in6_v6_dgram<T>(
     addr_str: T,
     socktype: Option<SockType>,
@@ -139,7 +142,7 @@ pub fn make_sockaddr_in6_v6_dgram<T>(
 ) -> Result<sockaddr_in6> where T: AsRef<str> { unsafe {
     let mut ai: addrinfo = zeroed();
     ai.ai_family = AF_INET6;
-    ai.ai_socktype = socktype.map(|x| x as c_int).unwrap_or(0);
+    ai.ai_socktype = socktype.map_or(0, |x| x as c_int);
     ai.ai_protocol = proto;
     ai.ai_flags = flags.bits();
 

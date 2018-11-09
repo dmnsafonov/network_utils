@@ -1,6 +1,7 @@
 #![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![warn(clippy)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::stutter)]
 
 #[macro_use] extern crate bitflags;
 #[cfg(feature = "async")] extern crate bytes;
@@ -38,7 +39,7 @@ pub mod futures {
     pub use socket::futures::*;
 }
 
-use nix::libc;
+use nix::libc as nlibc;
 
 pub use self::bpf::*;
 pub use self::constants::*;

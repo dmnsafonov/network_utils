@@ -37,8 +37,7 @@ struct StdoutBytesWriterImpl {
 }
 
 impl StdoutBytesWriter {
-    pub fn new(handle: &Handle)
-            -> Result<StdoutBytesWriter> {
+    pub fn new(handle: &Handle) -> Result<Self> {
         let old = set_fd_nonblock(&io::stdout(), Nonblock::Yes)?;
         let ret = Arc::new(UnsafeCell::new(
             StdoutBytesWriterImpl {

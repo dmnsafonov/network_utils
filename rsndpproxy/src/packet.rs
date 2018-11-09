@@ -79,7 +79,7 @@ impl Advertisement {
 }
 
 impl Solicitation {
-    pub fn parse(packet: &Ipv6) -> Option<Solicitation> {
+    pub fn parse(packet: &Ipv6) -> Option<Self> {
         // validates only the points required
         // by https://tools.ietf.org/html/rfc4861#section-6.1.1
 
@@ -124,7 +124,7 @@ impl Solicitation {
             return None;
         }
 
-        Some(Solicitation {
+        Some(Self {
             src,
             dst,
             target: solicit.target_addr,

@@ -3,7 +3,7 @@ use ::std::mem::*;
 use ::std::net::*;
 use ::std::os::unix::prelude::*;
 
-use ::libc::*;
+use ::nlibc::*;
 use ::nix::sys::socket::{AddressFamily, SockType, socket};
 use ::pnet_packet::*;
 use ::pnet_packet::ipv6::*;
@@ -18,8 +18,7 @@ pub struct IPv6RawSocket(IPv6RawSocketImpl);
 struct IPv6RawSocketImpl(RawFd);
 
 impl IPv6RawSocket {
-    pub fn new(proto: c_int, flags: SockFlag)
-            -> Result<IPv6RawSocket> {
+    pub fn new(proto: c_int, flags: SockFlag) -> Result<Self> {
         Ok(
             IPv6RawSocket(IPv6RawSocketImpl(
                 socket(
@@ -54,6 +53,7 @@ impl IPv6RawSocket {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 impl IPv6RawSocketImpl {
     fn bind(&mut self, addr: SocketAddrV6) -> Result<()> { unsafe {
         let addr_in = make_sockaddr_in6(addr);
@@ -65,6 +65,7 @@ impl IPv6RawSocketImpl {
         Ok(())
     }}
 
+    #[allow(clippy::cast_sign_loss)]
     fn recvfrom<'a>(
         &mut self,
         buf: &'a mut [u8],
@@ -73,7 +74,7 @@ impl IPv6RawSocketImpl {
         let mut addr: sockaddr_in6 = zeroed();
 
         let mut addr_size = size_of_val(&addr) as socklen_t;
-        let size = n1try!(::libc::recvfrom(
+        let size = n1try!(::nlibc::recvfrom(
             self.0,
             ref_to_mut_cvoid(buf),
             buf.len() as size_t,
@@ -92,6 +93,7 @@ impl IPv6RawSocketImpl {
         Ok((&mut buf[..size as usize], sockaddr))
     }}
 
+    #[allow(clippy::cast_sign_loss)]
     fn sendto(
         &mut self,
         buf: &[u8],
@@ -101,7 +103,7 @@ impl IPv6RawSocketImpl {
         let addr_in = make_sockaddr_in6(addr);
         let addr_size = size_of_val(&addr_in) as socklen_t;
 
-        Ok(n1try!(::libc::sendto(
+        Ok(n1try!(::nlibc::sendto(
             self.0,
             ref_to_cvoid(buf),
             buf.len() as size_t,
@@ -154,8 +156,9 @@ struct IPv6PacketSocketImpl {
 }
 
 impl IPv6PacketSocket {
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     pub fn new<T>(proto: u16, flags: SockFlag, if_name: T)
-            -> Result<IPv6PacketSocket> where
+            -> Result<Self> where
             T: AsRef<str> {
         let name = if_name.as_ref();
         let iface = ::interfaces::Interface::get_by_name(name)
@@ -226,6 +229,7 @@ impl IPv6PacketSocket {
 }
 
 impl IPv6PacketSocketImpl {
+    #[allow(clippy::cast_possible_truncation)]
     fn recvpacket(
         &mut self,
         maxsize: size_t,
@@ -238,7 +242,7 @@ impl IPv6PacketSocketImpl {
 
         let mut addr: sockaddr_ll = zeroed();
         let mut addr_size = size_of_val(&addr) as socklen_t;
-        n1try!(::libc::recvfrom(
+        n1try!(::nlibc::recvfrom(
             self.fd,
             ref_to_mut_cvoid(packet.packet_mut()),
             maxsize,
@@ -254,6 +258,7 @@ impl IPv6PacketSocketImpl {
         Ok((packet.from_packet(), mac))
     }}
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn sendpacket(
             &mut self,
             packet: &Ipv6,
@@ -277,7 +282,7 @@ impl IPv6PacketSocketImpl {
         );
 
         Ok(n1try!(
-            ::libc::sendto(
+            ::nlibc::sendto(
                 self.fd,
                 ref_to_cvoid(buf.packet()),
                 len as size_t,
@@ -323,6 +328,7 @@ pub trait SocketCommon where
         opt.set(&*self)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn set_allmulti<T>(&mut self, allmulti: bool, ifname: T)
             -> Result<bool>
             where T: AsRef<str> {
@@ -366,6 +372,7 @@ pub trait SetSockOpt<'a> where Self: 'a {
 pub mod SockOpts {
     use super::*;
     use ::raw::sock_fprog;
+    use ::nlibc::c_void;
 
     pub trait ToSetSockOptArg<'a> where Self: 'a {
         type Owner;
@@ -377,6 +384,7 @@ pub mod SockOpts {
     impl<'a> ToSetSockOptArg<'a> for bool {
         type Owner = Box<c_int>;
 
+        #[allow(clippy::cast_possible_truncation)]
         unsafe fn to_set_sock_opt_arg(
             &'a self
         ) -> Result<(Self::Owner, *const c_void, socklen_t)> {
@@ -392,6 +400,7 @@ pub mod SockOpts {
     impl<'a> ToSetSockOptArg<'a> for str {
         type Owner = CString;
 
+        #[allow(clippy::cast_possible_truncation)]
         unsafe fn to_set_sock_opt_arg(
             &'a self
         ) -> Result<(Self::Owner, *const c_void, socklen_t)> {
@@ -402,9 +411,11 @@ pub mod SockOpts {
         }
     }
 
+    #[allow(clippy::use_self)]
     impl<'a> ToSetSockOptArg<'a> for c_int {
         type Owner = Box<c_int>;
 
+        #[allow(clippy::cast_possible_truncation)]
         unsafe fn to_set_sock_opt_arg(
             &'a self
         ) -> Result<(Self::Owner, *const c_void, socklen_t)> {
@@ -420,6 +431,7 @@ pub mod SockOpts {
     impl<'a> ToSetSockOptArg<'a> for V6PmtuType {
         type Owner = Box<c_int>;
 
+        #[allow(clippy::cast_possible_truncation)]
         unsafe fn to_set_sock_opt_arg(
             &'a self
         ) -> Result<(Self::Owner, *const c_void, socklen_t)> {
@@ -450,7 +462,7 @@ pub mod SockOpts {
                 fn set<T: SocketCommon>(&self, fd: &T)
                         -> Result<()> { unsafe {
                     let (_, ptr, len) = self.val.to_set_sock_opt_arg()?;
-                    n1try!(::libc::setsockopt(
+                    n1try!(::nlibc::setsockopt(
                         fd.as_raw_fd(),
                         $opt.get_sock_opt_level().repr(),
                         $opt.repr(),
@@ -468,6 +480,7 @@ pub mod SockOpts {
             impl<'a> ToSetSockOptArg<'a> for $typ {
                 type Owner = &'a $typ;
 
+                #[allow(clippy::cast_possible_truncation)]
                 unsafe fn to_set_sock_opt_arg(&'a self)
                         -> Result<(&'a $typ, *const c_void, socklen_t)> {
                     Ok((
@@ -496,6 +509,7 @@ pub mod SockOpts {
 }
 
 #[cfg(feature = "seccomp")]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn allow_syscall<T>(ctx: &mut ::seccomp::Context, fd: &T, syscall: c_long)
         -> Result<()> where T: AsRawFd {
     use ::seccomp::*;
@@ -543,8 +557,8 @@ pub mod futures {
     }
 
     impl<T> PollEventedLocker<T> where T: Evented {
-        fn new(inner: PollEvented2<T>) -> PollEventedLocker<T> {
-            PollEventedLocker {
+        fn new(inner: PollEvented2<T>) -> Self {
+            Self {
                 poll_evented: inner,
                 read_lock: SpinMutex::new(()),
                 write_lock: SpinMutex::new(())
@@ -584,8 +598,7 @@ pub mod futures {
     unsafe impl Sync for IPv6RawSocketAdapter {}
 
     impl IPv6RawSocketAdapter {
-        pub fn new(handle: &Handle, inner: IPv6RawSocket)
-                -> Result<IPv6RawSocketAdapter> {
+        pub fn new(handle: &Handle, inner: IPv6RawSocket) -> Result<Self> {
             set_fd_nonblock(&inner, Nonblock::Yes)?;
             Ok(
                 IPv6RawSocketAdapter(
@@ -705,7 +718,7 @@ pub mod futures {
             sock: IPv6RawSocketRef,
             buf: BytesMut,
             flags: RecvFlags
-        ) -> IPv6RawSocketRecvfromFuture {
+        ) -> Self {
             IPv6RawSocketRecvfromFuture(
                 Some(IPv6RawSocketRecvfromFutureState {
                     sock,
@@ -761,7 +774,7 @@ pub mod futures {
             buf: Bytes,
             addr: SocketAddrV6,
             flags: SendFlags
-        ) -> IPv6RawSocketSendtoFuture {
+        ) -> Self {
             IPv6RawSocketSendtoFuture(
                 Some(IPv6RawSocketSendtoFutureState {
                     sock,
@@ -800,7 +813,7 @@ pub mod futures {
 
     impl IPv6PacketSocketAdapter {
         pub fn new(handle: &Handle, inner: IPv6PacketSocket)
-                -> Result<IPv6PacketSocketAdapter> {
+                -> Result<Self> {
             set_fd_nonblock(&inner, Nonblock::Yes)?;
             Ok(
                 IPv6PacketSocketAdapter(
@@ -933,7 +946,7 @@ pub mod futures {
             sock: IPv6PacketSocketRef,
             maxsize: size_t,
             flags: RecvFlags
-        ) -> IPv6PacketSocketRecvpacketFuture {
+        ) -> Self {
             IPv6PacketSocketRecvpacketFuture(
                 Some(IPv6PacketSocketRecvpacketFutureState {
                     sock,
@@ -980,7 +993,7 @@ pub mod futures {
             packet: Ipv6,
             destination: Option<MacAddr>,
             flags: SendFlags
-        ) -> IPv6PacketSocketSendpacketFuture {
+        ) -> Self {
             IPv6PacketSocketSendpacketFuture(
                 Some(IPv6PacketSocketSendpacketFutureState {
                     sock,
@@ -1024,12 +1037,12 @@ pub mod futures {
     }
 }
 
-#[allow(transmute_ptr_to_ptr)]
+#[allow(clippy::transmute_ptr_to_ptr)]
 unsafe fn as_sockaddr<T>(x: &T) -> &sockaddr {
     transmute::<&T, &sockaddr>(x)
 }
 
-#[allow(transmute_ptr_to_ptr)]
+#[allow(clippy::transmute_ptr_to_ptr)]
 unsafe fn as_sockaddr_mut<T>(x: &mut T) -> &mut sockaddr {
     transmute::<&mut T, &mut sockaddr>(x)
 }

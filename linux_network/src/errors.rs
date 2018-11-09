@@ -1,4 +1,5 @@
 #![allow(bare_trait_objects)] // triggered by failure_derive
+#![allow(clippy::pub_enum_variant_names)]
 
 use ::std::io;
 

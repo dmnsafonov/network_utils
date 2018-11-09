@@ -27,7 +27,7 @@ impl OrderedTrimmingBufferSlice {
 }
 
 impl<'a> PartialEq for OrderedTrimmingBufferSlice {
-    fn eq(&self, other: &OrderedTrimmingBufferSlice) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         let l = parse_stream_client_packet(&self.0).seqno;
         let r = parse_stream_client_packet(&other.0).seqno;
 
@@ -38,7 +38,7 @@ impl<'a> PartialEq for OrderedTrimmingBufferSlice {
 impl Eq for OrderedTrimmingBufferSlice {}
 
 impl PartialOrd for OrderedTrimmingBufferSlice {
-    fn partial_cmp(&self, other: &OrderedTrimmingBufferSlice)
+    fn partial_cmp(&self, other: &Self)
             -> Option<::std::cmp::Ordering> {
         let l = parse_stream_client_packet(&self.0).seqno;
         let r = parse_stream_client_packet(&other.0).seqno;
@@ -48,7 +48,7 @@ impl PartialOrd for OrderedTrimmingBufferSlice {
 }
 
 impl Ord for OrderedTrimmingBufferSlice {
-    fn cmp(&self, other: &OrderedTrimmingBufferSlice) -> ::std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
@@ -67,8 +67,8 @@ impl Deref for OrderedTrimmingBufferSlice {
 }
 
 impl DataOrderer {
-    pub fn new(window_size: u32, mtu: u16) -> DataOrderer {
-        DataOrderer {
+    pub fn new(window_size: u32, mtu: u16) -> Self {
+        Self {
             buffer: TrimmingBuffer::new(window_size as usize * mtu as usize),
             order: BinaryHeap::with_capacity(window_size as usize)
         }
@@ -108,11 +108,11 @@ pub struct SeqnoTracker {
     window_start: Wrapping<u16>
 }
 
-const U16_MAX_P1: usize = ::std::u16::MAX as usize + 1;
+const U16_MAX_P1: usize = u16::max_value() as usize + 1;
 
 impl SeqnoTracker {
-    pub fn new(next_seqno: Wrapping<u16>) -> SeqnoTracker {
-        SeqnoTracker {
+    pub fn new(next_seqno: Wrapping<u16>) -> Self {
+        Self {
             tracker: RangeTracker::new(),
             window_start: next_seqno
         }
@@ -121,11 +121,11 @@ impl SeqnoTracker {
     pub fn add(&mut self, x: Wrapping<u16>) -> bool {
         let ax = self.pos_to_sequential(x);
         let range = IRange(ax, ax);
-        if !self.tracker.is_range_tracked(range).unwrap() {
+        if self.tracker.is_range_tracked(range).unwrap() {
+            false
+        } else {
             self.tracker.track_range(IRange(ax, ax));
             true
-        } else {
-            false
         }
     }
 
@@ -148,6 +148,7 @@ impl SeqnoTracker {
         (ret, window_start)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn pos_from_sequential(&self, x: usize) -> Wrapping<u16> {
         Wrapping((x % U16_MAX_P1) as u16) + self.window_start
     }
@@ -167,9 +168,8 @@ pub struct TimedAckSeqnoGenerator {
 }
 
 impl TimedAckSeqnoGenerator {
-    pub fn new(tracker: Arc<Mutex<SeqnoTracker>>, dur: Duration)
-            -> TimedAckSeqnoGenerator {
-        TimedAckSeqnoGenerator {
+    pub fn new(tracker: Arc<Mutex<SeqnoTracker>>, dur: Duration) -> Self {
+        Self {
             tracker,
             period: dur,
             interval: None,

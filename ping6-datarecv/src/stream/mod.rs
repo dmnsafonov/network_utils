@@ -18,6 +18,7 @@ use ::util::InitState;
 
 use self::stm::*;
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
     let stream_conf = match config.mode {
         ModeConfig::Stream(ref x) => x,
@@ -25,18 +26,15 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
     };
 
     let mut rt = ::tokio::runtime::Builder::new()
-        .threadpool_builder({
-            let mut builder = ::tokio::executor::thread_pool::Builder::new();
-            builder.pool_size(2);
-            builder
-        }).build()?;
+        .core_threads(1)
+        .build()?;
 
     let mtu = match config.bind_interface {
         Some(ref s) => {
             let mtu = get_interface_mtu(&sock, s)?;
             assert!(mtu >= 1280);
-            if mtu as usize >= ::std::u16::MAX as usize {
-                ::std::u16::MAX
+            if mtu as usize >= u16::max_value() as usize {
+                u16::max_value()
             } else {
                 mtu as u16
             }
@@ -59,7 +57,7 @@ pub fn stream_mode((config, _, sock): InitState) -> Result<()> {
         data_out,
         send_buf: BytesMut::with_capacity(mtu as usize),
         // if we assumed default mtu, then the incoming packet size is unknown
-        recv_buf: BytesMut::with_capacity(::std::u16::MAX as usize),
+        recv_buf: BytesMut::with_capacity(u16::max_value() as usize),
         handle: rt.executor()
     };
 

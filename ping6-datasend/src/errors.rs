@@ -1,4 +1,5 @@
 #![allow(bare_trait_objects)] // triggered by failure_derive
+#![allow(clippy::pub_enum_variant_names)]
 
 pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
@@ -32,19 +33,19 @@ pub enum Error {
 }
 
 impl From<::ping6_datacommon::errors::Error> for Error {
-    fn from(err: ::ping6_datacommon::errors::Error) -> Error {
+    fn from(err: ::ping6_datacommon::errors::Error) -> Self {
         Error::CommonLibError(err)
     }
 }
 
 impl From<::linux_network::errors::Error> for Error {
-    fn from(err: ::linux_network::errors::Error) -> Error {
+    fn from(err: ::linux_network::errors::Error) -> Self {
         Error::LinuxNetworkError(err)
     }
 }
 
 impl From<::tokio_timer::Error> for Error {
-    fn from(err: ::tokio_timer::Error) -> Error {
+    fn from(err: ::tokio_timer::Error) -> Self {
         Error::TimerError(err)
     }
 }

@@ -78,8 +78,7 @@ struct StdinBytesReaderImpl {
 }
 
 impl StdinBytesReader {
-    pub fn new(handle: &Handle)
-            -> Result<StdinBytesReader> {
+    pub fn new(handle: &Handle) -> Result<Self> {
         let old = set_fd_nonblock(&io::stdin(), Nonblock::Yes)?;
         Ok(StdinBytesReader(Arc::new(UnsafeCell::new(StdinBytesReaderImpl {
             stdin: PollEvented2::new_with_handle(

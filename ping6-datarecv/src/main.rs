@@ -1,9 +1,10 @@
-#![allow(unknown_lints)]
 #![warn(bare_trait_objects)]
-#![warn(clippy)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::stutter)]
 
+#[macro_use] extern crate boolean_enums;
 extern crate bytes;
-#[macro_use] extern crate clap;
+extern crate clap;
 extern crate env_logger;
 #[macro_use] extern crate enum_kinds;
 #[macro_use] extern crate failure;
@@ -19,8 +20,7 @@ extern crate send_box;
 extern crate tokio;
 extern crate tokio_timer;
 
-#[macro_use] extern crate boolean_enums;
-#[macro_use] extern crate linux_network;
+extern crate linux_network;
 extern crate ping6_datacommon;
 
 mod config;
@@ -41,7 +41,7 @@ use util::InitState;
 fn main() {
     if let Err(e) = the_main() {
         let mut first = true;;
-        for i in e.causes() {
+        for i in e.iter_chain() {
             if !first {
                 eprint!(": ");
             }

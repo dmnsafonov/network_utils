@@ -22,7 +22,7 @@ pub fn datagram_mode(
     };
 
     // ipv6 payload length is 2-byte
-    let mut raw_buf = vec![0; ::std::u16::MAX as usize];
+    let mut raw_buf = vec![0; u16::max_value() as usize];
     let mut stdout_locked = if datagram_conf.binary {
         Some(movable_io_lock(io::stdout()))
     } else {
@@ -72,6 +72,7 @@ pub fn datagram_mode(
     Ok(())
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn validate_payload<T>(payload_arg: T) -> bool where T: AsRef<[u8]> {
     let payload = payload_arg.as_ref();
 
@@ -101,6 +102,7 @@ fn binary_print(
 ) -> Result<()> {
     let payload_for_print;
     let mut buf = [0;2];
+    #[allow(clippy::cast_possible_truncation)]
     BE::write_u16(&mut buf, payload.len() as u16);
     if raw.into() {
         write_binary(

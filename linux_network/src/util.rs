@@ -1,5 +1,5 @@
 use ::std::net::Ipv6Addr;
-use ::libc::*;
+use ::nlibc::*;
 
 #[inline]
 pub fn check_for_eagain(x: c_int) -> bool {
@@ -73,7 +73,7 @@ pub fn log_if_err<T>(x: ::std::result::Result<T, ::failure::Error>) {
         let mut out = String::new();
 
         let mut first = true;;
-        for i in e.causes() {
+        for i in e.iter_chain() {
             if !first {
                 out += ": ";
             }

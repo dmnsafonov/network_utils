@@ -29,8 +29,8 @@ impl AckSender {
         dst: SocketAddrV6,
         mtu: u16,
         sock: IPv6RawSocketAdapter
-    ) -> AckSender {
-        AckSender {
+    ) -> Self {
+        Self {
             ack_gen, src, dst,
             send_buf: BytesMut::with_capacity(mtu as usize),
             sock,
